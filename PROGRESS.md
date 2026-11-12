@@ -359,6 +359,12 @@ Priority order for the next session:
 - Added `Message::channel_id` and channel-filtered rendering.
 - Removed `discord_token` from `settings.json` after moving credentials to the
   keyring.
+- Added paginated channel history, a variable-height virtualised message list,
+  inline attachments/embeds behind a byte-bounded image cache, and a first-run
+  bot-token sign-in page.
+- Added REST rate limiting (`src/api/ratelimit.rs`, 11 tests). The rules follow
+  Discord's documented limits; the code is Rustcord's own, not Yapfast's
+  (GPL-3.0 vs MIT/Apache). See `DECISIONS.md` D13–D16.
 
 ---
 

@@ -1,9 +1,14 @@
+use crate::api::ratelimit::{
+    global_from_body, retry_after_from_body, RateLimitHeaders, RateLimiter, Route, MAX_WAIT_SECS,
+};
 use crate::models::{Attachment, Embed, Message, Presence, Reaction, User};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 pub const API_BASE: &str = "https://discord.com/api/v10";
 
@@ -13,6 +18,10 @@ pub const API_BASE: &str = "https://discord.com/api/v10";
 pub struct DiscordClient {
     http: reqwest::Client,
     token: String,
+    /// Discord's buckets for this client, and when this client started (the
+    /// clock the limiter measures against).
+    limiter: Mutex<RateLimiter>,
+    started: Instant,
 }
 
 impl DiscordClient {
@@ -30,7 +39,23 @@ impl DiscordClient {
             format!("Bot {token}")
         };
 
-        Ok(Self { http, token })
+        Ok(Self {
+            http,
+            token,
+            limiter: Mutex::new(RateLimiter::new()),
+            started: Instant::now(),
+        })
+    }
+
+    fn limits(&self) -> std::sync::MutexGuard<'_, RateLimiter> {
+        // A panicking request must not turn every later request into a panic.
+        self.limiter
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn now(&self) -> f64 {
+        self.started.elapsed().as_secs_f64()
     }
 
     async fn get<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
@@ -40,22 +65,82 @@ impl DiscordClient {
     }
 
     async fn get_text(&self, path: &str) -> Result<String> {
-        let url = format!("{API_BASE}{path}");
-        let response = self
-            .http
-            .get(&url)
-            .header(AUTHORIZATION, &self.token)
-            .header(USER_AGENT, "Rustcord/0.1")
-            .send()
-            .await
-            .with_context(|| format!("GET {url} failed"))?;
+        self.request(reqwest::Method::GET, path, None).await
+    }
 
-        response
-            .error_for_status()
-            .with_context(|| format!("Discord returned an error for {path}"))?
-            .text()
-            .await
-            .with_context(|| format!("could not read Discord response for {path}"))
+    /// One HTTP round trip that honours Discord's rate limits.
+    ///
+    /// Waits for the route's bucket before sending, records what Discord reports,
+    /// and retries once after a 429 using the body's `retry_after`. A wait longer
+    /// than [`MAX_WAIT_SECS`] is reported to the caller instead of slept on, so a
+    /// punished account shows a message rather than appearing to hang.
+    async fn request(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: Option<serde_json::Value>,
+    ) -> Result<String> {
+        let route = Route::new(method.as_str(), path);
+        let url = format!("{API_BASE}{path}");
+
+        for attempt in 0..2 {
+            let wait = self.limits().wait_seconds(&route, self.now());
+            if wait > 0.0 {
+                if wait > MAX_WAIT_SECS {
+                    anyhow::bail!("Discord rate limit on {path}: retry in {wait:.0}s");
+                }
+                tokio::time::sleep(Duration::from_secs_f64(wait)).await;
+            }
+
+            let mut builder = self
+                .http
+                .request(method.clone(), &url)
+                .header(AUTHORIZATION, &self.token)
+                .header(USER_AGENT, "Rustcord/0.1");
+            if let Some(body) = &body {
+                builder = builder.json(body);
+            }
+
+            let response = builder
+                .send()
+                .await
+                .with_context(|| format!("{method} {url} failed"))?;
+            let status = response.status();
+            let headers = RateLimitHeaders::from_headers(response.headers());
+
+            if status.as_u16() == 429 {
+                let retry_body = response.text().await.unwrap_or_default();
+                let body_retry = retry_after_from_body(&retry_body);
+                let global = headers.global || global_from_body(&retry_body);
+                let mut headers = headers;
+                headers.global = global;
+
+                let wait = self
+                    .limits()
+                    .note_429(&route, &headers, body_retry, self.now());
+
+                if attempt == 0 && wait <= MAX_WAIT_SECS {
+                    log::warn!("rate limited on {path}; retrying in {wait:.1}s");
+                    tokio::time::sleep(Duration::from_secs_f64(wait.max(0.05))).await;
+                    continue;
+                }
+
+                anyhow::bail!("Discord rate limited {path}; retry in {wait:.0}s");
+            }
+
+            self.limits().observe(&route, &headers, self.now());
+
+            if !status.is_success() {
+                anyhow::bail!("Discord returned an error for {path}: HTTP {status}");
+            }
+
+            return response
+                .text()
+                .await
+                .with_context(|| format!("could not read Discord response for {path}"));
+        }
+
+        anyhow::bail!("Discord kept rate limiting {path}; try again later")
     }
 
     pub async fn get_gateway_url(&self) -> Result<String> {
@@ -95,22 +180,16 @@ impl DiscordClient {
     }
 
     pub async fn send_message(&self, channel_id: &str, content: &str) -> Result<Message> {
-        let url = format!("{API_BASE}/channels/{channel_id}/messages");
-        let response = self
-            .http
-            .post(&url)
-            .header(AUTHORIZATION, &self.token)
-            .json(&serde_json::json!({ "content": content }))
-            .send()
-            .await
-            .with_context(|| format!("POST {url} failed"))?
-            .error_for_status()
-            .context("Discord rejected the message")?;
+        let body = self
+            .request(
+                reqwest::Method::POST,
+                &format!("/channels/{channel_id}/messages"),
+                Some(serde_json::json!({ "content": content })),
+            )
+            .await?;
 
-        let raw: DiscordMessage = response
-            .json()
-            .await
-            .context("could not decode Discord message")?;
+        let raw: DiscordMessage =
+            serde_json::from_str(&body).context("could not decode Discord message")?;
         Message::try_from(raw)
     }
 }

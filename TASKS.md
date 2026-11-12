@@ -47,7 +47,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   "Load older messages", duplicate-free prepend, and 429 behaviour.
 - [ ] Handle `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_REACTION_*`,
   `TYPING_START`.
-- [ ] Rate-limit queue for REST (`X-RateLimit-*` headers, bucket per route).
+- [x] REST rate limiting (`src/api/ratelimit.rs`, `DECISIONS.md` D16): per-route
+  buckets keyed by major id, `X-RateLimit-*` accounting, global 429 handling,
+  `retry_after` from the body, one retry, and a 60 s ceiling that errors instead
+  of hanging. 11 pure tests; a real 429 is still unverified.
 - [x] Attachments and embeds render inline through a byte-bounded LRU image
   cache (`src/images.rs`): 48 MB default budget, CDN allowlist, 12 MB / 4096 px
   download caps, LRU eviction, decode worker spawned on first request. Only rows

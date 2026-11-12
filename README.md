@@ -66,6 +66,9 @@ Measured on the development machine (Arch, Wayland, release build):
 | Steady-state CPU | 0.0%, 0.2 fps while idle |
 | Threads (no gateway token, no images) | 2 |
 
+The sign-in screen measures lower (141 MB RSS / 45 MB PSS) because no channel
+surface is built until there is a session.
+
 RSS for a GL application counts shared library pages in full, and on this machine
 ~100 MB of it is the proprietary NVIDIA driver stack (`libnvidia-gpucomp`,
 `libnvidia-eglcore`). Rustcord also pins libglvnd to the NVIDIA EGL vendor, which

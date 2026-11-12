@@ -213,3 +213,37 @@ forbid, regardless of which app performs it. D2 already ruled the path out.
 **Consequences.** There is one credential path in the app, and the page cannot be
 repurposed to harvest an account password. Requests for account login are
 declined by policy, not by accident (`HANDOFF.md`).
+
+## D16. Rate limits are tracked per route and major id, client-side
+
+**Context.** Discord counts requests in buckets and may answer `429` with a
+`retry_after`. A client that ignores this either hammers the API or serialises
+every request behind one global gate, which makes switching channels feel dead.
+The reference behaviour is documented by Discord and written up by Yapfast; the
+implementation here is Rustcord's own (see the licensing note at the end).
+
+**Decision.** `src/api/ratelimit.rs`:
+
+- A request's bucket key is its method, its path with ids templated
+  (`GET /channels/:id/messages`), and the **major id** it carries. Two channels
+  therefore count separately, as Discord counts them.
+- `X-RateLimit-Limit` / `-Remaining` / `-Reset-After` are recorded per bucket; a
+  bucket at zero waits until its window resets.
+- `429` handling prefers the body's `retry_after` over `Retry-After`, treats
+  `global: true` as account-wide, and retries **once**. A 429 with no timing
+  information waits one second rather than hot-looping.
+- A wait longer than 60 s is surfaced as an error to the caller instead of being
+  slept on, so a punished account shows a message instead of appearing hung.
+- Buckets are keyed per route rather than shared through `X-RateLimit-Bucket`.
+  That can only be more conservative than Discord's accounting, and it keeps the
+  model small enough to test purely.
+
+**Consequences.** The arithmetic is pure (`now` is passed in), so 11 tests cover
+routing, per-channel isolation, expiry, global 429s, missing headers and body
+parsing without sleeping or touching the network. Behaviour against a real 429
+is still unverified.
+
+**Licensing note.** Yapfast is GPL-3.0 and Rustcord is MIT OR Apache-2.0, so no
+Yapfast code was read into this file. Its published documentation of Discord's
+documented limits was used as a checklist; the implementation and the tests are
+Rustcord's.

@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **102 passed (97 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **113 passed (108 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -22,6 +22,7 @@ Release binary, 1280×800 window, default settings, theme file loaded.
 | Peak (`VmHWM`) | 196 MB | **160 MB** | kernel high-water mark |
 | Idle CPU | 3–8% after ~10 s (repaint loop) | **0.0% (0.2 fps)** | ticks/s; frames at debug |
 | Threads | 2 | 2 | `/proc/<pid>/status` |
+| Sign-in screen | — | **141 MB / 45 MB PSS** | same commands, no session yet |
 
 Reproduce with `scripts/measure-memory.sh 20`. The script prints RSS, PSS, peak,
 CPU ticks and thread count per second.
@@ -77,6 +78,19 @@ rebuild (driver and font warm-up), and later samples caught 5-second bursts of
 0.02% of a core and the frame counter showed 0.2 fps at idle, so the loader is
 innocent. See `DECISIONS.md` D14 — idle CPU is only meaningful next to a frame
 count.
+
+## REST rate limits
+
+Every REST call now goes through `api/ratelimit.rs` (`DECISIONS.md` D16):
+requests are keyed by route plus the channel/guild they target, `X-RateLimit-*`
+is recorded per bucket, a zeroed bucket waits for its window, `429` prefers the
+body's `retry_after`, global limits pause everything, and one retry is allowed.
+A wait over 60 s is returned as an error instead of stalling the UI thread's
+task.
+
+Covered by 11 pure tests (routing, per-channel isolation, expiry, global and
+local 429s, malformed headers, body parsing). **Not yet exercised against a real
+`429`** — that needs live traffic with a valid token.
 
 ## Sign-in
 

@@ -31,6 +31,8 @@ and embeds render through a bounded image cache:
 - `src/settings.rs` — `image_cache_mb` (default 48, clamped 8–512).
 - `src/ui/login.rs` — first-run bot-token sign-in page with a shape check, a
   demo-mode skip, and a Sign out path in Settings → Privacy (D15).
+- `src/api/ratelimit.rs` — per-route/per-major-id buckets, `X-RateLimit-*`
+  accounting, global 429s, one retry, 60 s ceiling (D16).
 
 ## Immediate next task
 
@@ -47,10 +49,11 @@ neither history paging nor image rendering has been seen working:
 
 ## Then, in order
 
-1. REST rate-limit handling: parse `X-RateLimit-*` and `retry_after`, queue
-   requests per route bucket (`src/api/discord.rs`).
-2. `MESSAGE_UPDATE` / `MESSAGE_DELETE` / `MESSAGE_REACTION_*` / `TYPING_START`,
-   each with a synthetic payload test before touching the socket loop.
+1. `MESSAGE_UPDATE` / `MESSAGE_DELETE` / `MESSAGE_REACTION_*` / `TYPING_START`,
+   each with a synthetic payload test before touching the socket loop. The
+   models already carry reactions and attachments; only the events are missing.
+2. Gateway identify cap and jittered backoff (Yapfast's account-safety pattern:
+   at most 10 IDENTIFYs an hour, random 50–100 % of each backoff step).
 3. Packaging: icon asset + PKGBUILD.
 
 ## Rules for the next session
