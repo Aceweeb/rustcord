@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Folder colours (`DECISIONS.md` D38): eight-colour palette assigned to new
+  folders in turn, `Folder colour` submenu with swatches plus `No colour`, stored
+  normalised as `#rrggbb`, invalid values refused, white rings for expanded and
+  selected, theme surface as fallback. 2 model tests; swatches not seen live.
 - [x] Clickable channel peek (`DECISIONS.md` D37): rows open the channel through
   `select_channel`; the flyout survives the pointer leaving the icon via a stored
   icon+flyout rect and a 14 px reach, on the foreground layer so clicks land. 3

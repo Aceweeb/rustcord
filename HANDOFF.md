@@ -7,12 +7,22 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 249 lib + 5 bin tests passing
+- `cargo test --all-targets`: 251 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Folder colours (`DECISIONS.md` D38):
+
+- `src/rail.rs` — `GuildFolder::color` (optional `#rrggbb`), `FOLDER_COLORS`
+  palette assigned round-robin by `new_folder`, `set_folder_color` with
+  normalisation and refusal of invalid values; 2 tests.
+- `src/ui/sidebar.rs` — folder tiles fill with their colour, white rings for
+  expanded/selected instead of repainting, `Folder colour` submenu swatches and
+  `RailAction::SetFolderColor`.
+
 
 Clickable channel peek (`DECISIONS.md` D37):
 

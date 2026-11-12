@@ -20,7 +20,23 @@ pub struct GuildFolder {
     pub name: String,
     #[serde(default)]
     pub guilds: Vec<String>,
+    /// `#rrggbb`, or `None` for the theme's own surface. A folder created from a
+    /// server gets the next palette colour so groups are distinguishable at once.
+    #[serde(default)]
+    pub color: Option<String>,
 }
+
+/// Discord-ish folder colours, in the order new folders pick them up.
+pub const FOLDER_COLORS: [(&str, &str); 8] = [
+    ("Blurple", "#5865f2"),
+    ("Green", "#3ba55d"),
+    ("Yellow", "#faa81a"),
+    ("Red", "#ed4245"),
+    ("Pink", "#eb459e"),
+    ("Purple", "#9b59b6"),
+    ("Teal", "#1abc9c"),
+    ("Orange", "#e67e22"),
+];
 
 impl GuildFolder {
     pub fn contains(&self, guild_id: &str) -> bool {
@@ -183,10 +199,14 @@ impl GuildRail {
 
         let name = name.trim();
         let name = if name.is_empty() { "Folder" } else { name };
+        let color = FOLDER_COLORS[self.folders.len() % FOLDER_COLORS.len()]
+            .1
+            .to_string();
         self.folders.push(GuildFolder {
             id: id.clone(),
             name: name.to_string(),
             guilds: vec![guild_id.to_string()],
+            color: Some(color),
         });
         // `order` is left alone: `normalized_order` appends guilds it does not
         // mention in received order, so a folder never jumps to the top.
@@ -235,6 +255,28 @@ impl GuildRail {
             return false;
         };
         folder.name = name.to_string();
+        true
+    }
+
+    /// Set or clear a folder's colour. Values are normalised to `#rrggbb`; an
+    /// unparsable value is refused so a typo in `settings.json` cannot paint a
+    /// folder black by accident.
+    pub fn set_folder_color(&mut self, folder_id: &str, color: Option<&str>) -> bool {
+        let parsed = match color {
+            Some(value) => match crate::utils::parse_css_color(value) {
+                Some(color) => Some(crate::utils::color_to_hex(color)),
+                None => return false,
+            },
+            None => None,
+        };
+        let Some(folder) = self
+            .folders
+            .iter_mut()
+            .find(|folder| folder.id == folder_id)
+        else {
+            return false;
+        };
+        folder.color = parsed;
         true
     }
 
@@ -410,6 +452,48 @@ mod tests {
         assert_eq!(ids(&rail.items(&guilds)), vec!["2", "3"]);
         assert_eq!(rail.folders.len(), 1, "the folder is kept, not deleted");
         assert_eq!(rail.folders[0].id, folder);
+    }
+
+    #[test]
+    fn new_folders_get_distinct_palette_colours() {
+        let mut rail = GuildRail::default();
+        rail.new_folder("1", "One");
+        rail.new_folder("2", "Two");
+
+        let first = rail.folder_of("1").unwrap().color.clone().expect("colour");
+        let second = rail.folder_of("2").unwrap().color.clone().expect("colour");
+        assert!(FOLDER_COLORS.iter().any(|(_, hex)| *hex == first));
+        assert_ne!(first, second, "neighbouring folders are distinguishable");
+
+        // Wrapping past the palette repeats rather than running out.
+        for index in 3..12 {
+            rail.new_folder(&index.to_string(), "More");
+        }
+        assert!(rail.folders.iter().all(|folder| folder.color.is_some()));
+    }
+
+    #[test]
+    fn folder_colours_can_be_set_cleared_and_validated() {
+        let mut rail = GuildRail::default();
+        let folder = rail.new_folder("1", "One");
+
+        assert!(rail.set_folder_color(&folder, Some("#5865F2")));
+        assert_eq!(
+            rail.folder_of("1").unwrap().color.as_deref(),
+            Some("#5865f2"),
+            "stored normalised"
+        );
+
+        assert!(rail.set_folder_color(&folder, None));
+        assert_eq!(rail.folder_of("1").unwrap().color, None);
+
+        assert!(!rail.set_folder_color(&folder, Some("not a colour")));
+        assert_eq!(
+            rail.folder_of("1").unwrap().color,
+            None,
+            "invalid left it alone"
+        );
+        assert!(!rail.set_folder_color("missing", Some("#3ba55d")));
     }
 
     #[test]

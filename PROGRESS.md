@@ -8,8 +8,8 @@
 
 Last updated: 2026-11-12 (Europe/Berlin)
 
-Latest increment: the server peek's channels are clickable, with the flyout kept
-open across the gap (D37); a native message log of edits and deletions (D36); a
+Latest increment: a colour per folder, assigned from a palette and editable from
+the folder menu (D38); the server peek's channels are clickable (D37); a native message log of edits and deletions (D36); a
 hover peek of a server's channels beside the rail (D35);
 folder renaming from the folder menu (D34); keyboard-only navigation with an
 in-place focus ring (D33);

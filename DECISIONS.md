@@ -1070,3 +1070,36 @@ hovered icon wins, the flyout stays open (with its original icon anchor) while t
 pointer is on it including the gap, and leaving closes it. Actually clicking a row
 in a live window has not been observed — this environment's credential is rejected
 by Discord (D28), so the panel is not reachable signed in.
+
+## D38. Folder colours are palette-first, stored as `#rrggbb`, drawn as identity
+
+Grouped servers all look alike in a 72 px rail — four initials in a dark rounded
+square. A colour per folder makes the groups readable at a glance, so it is stored
+with the rest of the local rail layout (`GuildFolder::color`, D32/D34) and drawn on
+the tile itself.
+
+**Palette-first, not a colour picker.** `FOLDER_COLORS` is eight Discord-ish
+colours; `new_folder` assigns the next one by folder count, so two folders created
+back to back are different colours without the user touching anything, and the
+ninth wraps rather than running out. The folder menu's `Folder colour` submenu
+offers those eight swatches (labelled with a coloured dot, not just the name) plus
+`No colour` for the theme's own surface. A full picker would add a dialog and a
+validation surface for a cosmetic choice; the palette covers "tell these apart"
+with one click.
+
+**Stored form and validation.** The value is `#rrggbb` or absent, normalised through
+`parse_css_color`/`color_to_hex` on write, so `#5865F2` and `#5865f2` cannot become
+two different-looking entries in `settings.json`. An unparsable value is refused
+rather than defaulted — a hand-edited typo leaves the folder unchanged, and a value
+that somehow reaches the drawing code without parsing falls back to the theme
+surface instead of painting something arbitrary.
+
+**Expansion and selection stay legible.** The fill is always the folder's colour, so
+its identity never changes as you click; expansion adds a 1.5 px white ring and a
+folder holding the selected server gets a 2 px ring. Initials stay white on every
+palette entry, which is why the palette stops at mid-dark colours.
+
+**Not verified visually.** Colour assignment, normalisation, clearing, invalid
+input and the serde roundtrip are covered by tests (2 new), and the binary starts,
+but the swatches have not been seen in a signed-in window — same credential blocker
+as D34/D37.

@@ -43,6 +43,7 @@ enum RailAction {
     RemoveFromFolder(String),
     DeleteFolder(String),
     RenameFolder(String),
+    SetFolderColor(String, Option<String>),
 }
 
 fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
@@ -135,6 +136,33 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                             ui.close();
                                         }
                                         ui.separator();
+                                        ui.menu_button("Folder colour", |ui| {
+                                            for (name, hex) in crate::rail::FOLDER_COLORS {
+                                                let swatch = crate::utils::parse_css_color(hex)
+                                                    .unwrap_or(Color32::WHITE);
+                                                if ui
+                                                    .button(
+                                                        RichText::new(format!("● {name}"))
+                                                            .color(swatch),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    actions.push(RailAction::SetFolderColor(
+                                                        folder.id.clone(),
+                                                        Some(hex.to_string()),
+                                                    ));
+                                                    ui.close();
+                                                }
+                                            }
+                                            ui.separator();
+                                            if ui.button("No colour").clicked() {
+                                                actions.push(RailAction::SetFolderColor(
+                                                    folder.id.clone(),
+                                                    None,
+                                                ));
+                                                ui.close();
+                                            }
+                                        });
                                         if ui.button("Rename folder…").clicked() {
                                             actions
                                                 .push(RailAction::RenameFolder(folder.id.clone()));
@@ -234,6 +262,12 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
             RailAction::DeleteFolder(id) => {
                 layout_changed |= app.settings.guild_rail.delete_folder(&id);
                 app.rail_expanded.remove(&id);
+            }
+            RailAction::SetFolderColor(id, colour) => {
+                layout_changed |= app
+                    .settings
+                    .guild_rail
+                    .set_folder_color(&id, colour.as_deref());
             }
             RailAction::RenameFolder(id) => {
                 if let Some(folder) = app
@@ -414,12 +448,22 @@ fn folder_icon(
 ) -> egui::Response {
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(GUILD_ICON, GUILD_ICON), egui::Sense::click());
-    let fill = if open || active {
-        theme.accent
-    } else {
-        theme.surface
-    };
+    // The folder's own colour is its identity in the rail; expansion and the
+    // selected member are shown with a ring instead of repainting it.
+    let fill = folder
+        .color
+        .as_deref()
+        .and_then(crate::utils::parse_css_color)
+        .unwrap_or(theme.surface);
     ui.painter().rect_filled(rect, 16.0, fill);
+    if open || active {
+        ui.painter().rect_stroke(
+            rect.expand(1.0),
+            16.0,
+            egui::Stroke::new(if active { 2.0 } else { 1.5 }, Color32::WHITE),
+            egui::StrokeKind::Inside,
+        );
+    }
     if focused {
         ui.painter().rect_stroke(
             rect.expand(1.0),
