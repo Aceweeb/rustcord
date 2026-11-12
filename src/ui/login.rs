@@ -625,6 +625,78 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     if qr_refresh {
         app.refresh_qr();
     }
+
+    // ── Logout button (when a session is active) ─────────────────
+    if !app.login.token.is_empty() || app.identity.is_some() {
+        egui::Frame::group(ui.style())
+            .fill(theme_surface)
+            .inner_margin(16.0)
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new("Signed in as")
+                        .small()
+                        .color(theme_muted),
+                );
+                ui.add_space(4.0);
+                if let Some(identity) = &app.identity {
+                    ui.horizontal(|ui| {
+                        if let Some(avatar_url) = &identity.identity.avatar {
+                            ui.add_space(20.0);
+                        }
+                        ui.label(
+                            RichText::new(format!(
+                                "{} (token: {})",
+                                identity.identity.username,
+                                if app.token_is_bot {
+                                    "bot"
+                                } else {
+                                    "personal"
+                                },
+                            ))
+                            .small()
+                            .color(theme_text),
+                        );
+                    });
+                } else if !app.token_draft.is_empty() {
+                    ui.horizontal(|ui| {
+                        ui.add_space(20.0);
+                        ui.label(
+                            RichText::new(if app.token_is_bot {
+                                "Bot token (signed in)"
+                            } else {
+                                "Personal-account token (signed in)"
+                            })
+                            .small()
+                            .color(theme_text),
+                        );
+                    });
+                }
+                ui.add_space(8.0);
+                if ui
+                    .add(
+                        egui::Button::new(
+                            RichText::new("Sign out")
+                                .color(theme_background)
+                                .size(15.0),
+                        )
+                        .fill(theme_danger.gamma_multiply(0.15))
+                        .min_size(egui::vec2(ui.available_width(), 34.0)),
+                    )
+                    .clicked()
+                {
+                    app.sign_out();
+                }
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new("Signed-out tokens are removed from the keyring.")
+                        .small()
+                        .color(theme_muted),
+                );
+            });
+    }
+
 }
 
 /// Action returned by the QR panel.

@@ -33,6 +33,7 @@ pub enum SettingsSection {
     Notifications,
     Shortcuts,
     Privacy,
+    Account,
     Diagnostics,
     About,
 }
@@ -47,7 +48,7 @@ impl SettingsSection {
         SettingsSection::Notifications,
         SettingsSection::Shortcuts,
         SettingsSection::Privacy,
-        SettingsSection::Diagnostics,
+        SettingsSection::Account,
         SettingsSection::About,
     ];
 
@@ -61,6 +62,7 @@ impl SettingsSection {
             Self::Notifications => "Notifications",
             Self::Shortcuts => "Shortcuts",
             Self::Privacy => "Privacy",
+            Self::Account => "Account",
             Self::Diagnostics => "Diagnostics",
             Self::About => "About",
         }
@@ -76,6 +78,7 @@ impl SettingsSection {
             Self::Notifications => "🔔",
             Self::Shortcuts => "⌨",
             Self::Privacy => "🛡",
+            Self::Account => "👤",
             Self::Diagnostics => "🩺",
             Self::About => "ⓘ",
         }
@@ -156,6 +159,7 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
                                 }
                                 SettingsSection::Shortcuts => app.section_shortcuts(ui, &theme),
                                 SettingsSection::Privacy => app.section_privacy(ui, &theme),
+                                SettingsSection::Account => app.section_account(ui, &theme),
                                 SettingsSection::Diagnostics => app.section_diagnostics(ui, &theme),
                                 SettingsSection::About => app.section_about(ui, &theme),
                             };
@@ -1420,6 +1424,92 @@ impl RustcordApp {
             self.settings_ui.hex_draft.clear();
             dirty = true;
             self.status_line = Some("settings reset to defaults".to_string());
+
+    fn section_account(&mut self, ui: &mut egui::Ui, theme: &AppTheme) -> bool {
+        section_heading(
+            ui,
+            theme,
+            "Account",
+            "Tokens are stored in the OS keyring, never in settings or logs.",
+        );
+        let mut dirty = false;
+
+        // ── Active session ────────────────────────────────────────────
+        ui.add_space(4.0);
+        if self.token_draft.is_empty() {
+            ui.label(
+                RichText::new("No token stored — you are not signed in.")
+                    .small()
+                    .color(theme.muted),
+            );
+        } else {
+            let token_kind = if self.token_is_bot {
+                "bot token"
+            } else {
+                "personal-account token"
+            };
+            ui.label(
+                RichText::new(format!("Signed in with a {token_kind}"))
+                    .small()
+                    .color(theme.text),
+            );
+            ui.label(
+                RichText::new(format!(
+                    "The token is stored in the system keyring and is {}\nvalid for messaging and gateway connections.",
+                    if self.token_is_bot { "used as-is" } else { "sent raw" }
+                ))
+                .small()
+                .color(theme.muted),
+            );
+        }
+
+        // ── Identity session (OAuth2 identify only) ───────────────────
+        if self.identity.is_some() {
+            ui.add_space(8.0);
+            ui.separator();
+            ui.label(RichText::new("Discord identity").strong());
+            if let Some(identity) = &self.identity {
+                ui.label(
+                    RichText::new(format!(
+                        "Signed in as {} (@{})",
+                        identity.identity.display_name(),
+                        identity.identity.username
+                    ))
+                    .small()
+                    .color(theme.text),
+                );
+                if self.identity_expired {
+                    ui.label(
+                        RichText::new("Session expired — sign in again to refresh.")
+                            .small()
+                            .color(theme.danger),
+                    );
+                }
+            }
+        }
+
+        ui.add_space(10.0);
+        ui.separator();
+
+        // ── Sign out buttons ──────────────────────────────────────────
+        ui.label(
+            RichText::new("Sign out")
+                .small()
+                .color(theme.danger)
+                .strong(),
+        );
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            if ui.button("Sign out of everything").clicked() {
+                self.sign_out();
+            }
+            if self.identity.is_some() && ui.button("Sign out of identity only").clicked() {
+                self.sign_out_identity();
+            }
+        });
+
+        dirty
+    }
         }
 
         dirty
