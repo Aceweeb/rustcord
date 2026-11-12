@@ -1327,3 +1327,38 @@ is already ignored when recording inbound typing, so the composer never says
 **Unverified against a live channel.** The throttle is unit-tested and the code
 compiles, but no call has been made to Discord: this environment has no working bot
 session (D28). `TASKS.md` records it as `[~]`.
+
+## D45. Search covers the whole session cache, and channel is a first-class filter
+
+The original overlay searched `App::messages`, which already holds every message
+cached this session — but the UI said "held in this channel", the hint mentioned
+only authors, and there was no way to narrow by channel. That under-sold what the
+data could answer and made cross-channel results look like bugs.
+
+**Session-wide by construction.** `App::refresh_search` still scans `messages`
+(the buffer bounded by `ResourcePriority::history_cap()`), and results are newest
+first across all channels. The overlay now reports how many messages and how many
+distinct channels are in scope, so "nothing matched" has a clear meaning instead of
+implying the current channel was the only input.
+
+**Channel names resolve per search.** `search()` takes a channel-id → name map built
+from `App::channels` each time it runs. That keeps the filter and the result labels
+correct after a channel is renamed or a guild finishes loading, without an index to
+invalidate. A message whose channel is not in the map still matches a text query —
+it simply has no `#name` to print.
+
+**Filter syntax, not another dialog.** `in:#general`, `channel:general` and a bare
+`#general` all set the same lowercased channel fragment (substring match, like the
+author filter), and combine with `from:name` and free-text terms, which all must
+match. A bare `in:` is treated as an unfinished filter rather than a literal term,
+so typing the syntax never silently drops a term. The overlay prints what the query
+parsed to (`matching “ship” from bob in #general`) in the accent colour, which is
+the feedback that makes syntax discoverable without a second row of controls. Each
+result row leads with `#channel`, then author, time and snippet, and clicking it
+opens that channel as before.
+
+**Tests and limits.** Parsing (`in:#`, `channel:`, `#name`, unfinished markers),
+substring narrowing, unknown channels matching nothing, channel names on hits and
+orphan messages with no resolvable name are covered by two new tests. The ceiling is
+unchanged: 50 results, cached messages only, no index and no network — Discord's
+guild search remains a user-API endpoint this client cannot call (D20).

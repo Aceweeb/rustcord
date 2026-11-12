@@ -1499,8 +1499,15 @@ impl RustcordApp {
     /// Recompute results from the messages currently held.
     pub(crate) fn refresh_search(&mut self) {
         let query = crate::search::SearchQuery::parse(&self.search.query);
+        // Channel names for the `in:#name` filter and the result labels; built per
+        // search so a renamed or newly loaded channel is reflected immediately.
+        let names: std::collections::HashMap<String, String> = self
+            .channels
+            .iter()
+            .map(|channel| (channel.id.clone(), channel.name.clone()))
+            .collect();
         self.search.results =
-            crate::search::search(&self.messages, &query, crate::search::MAX_RESULTS);
+            crate::search::search(&self.messages, &names, &query, crate::search::MAX_RESULTS);
         self.search.needs_refresh = false;
     }
 

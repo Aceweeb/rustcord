@@ -7,12 +7,22 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 278 lib + 5 bin tests passing (283)
+- `cargo test --all-targets`: 280 lib + 5 bin tests passing (285)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Session-wide search with channel filters (`DECISIONS.md` D45):
+
+- `src/search.rs` — `SearchQuery::channel` parsed from `in:#name`,
+  `channel:name` and `#name`; `search(messages, channel_names, query, limit)` with
+  the channel filter and resolved `Hit::channel`; `describe()` includes the channel;
+  2 tests.
+- `src/app.rs` — `refresh_search` builds the id→name map from `channels` per search.
+- `src/ui/search.rs` — hint names both filters, header reports cached messages and
+  channels, parsed filter line in accent colour, rows lead with `#channel`.
 
 Outgoing typing indicators (`DECISIONS.md` D44):
 

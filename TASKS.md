@@ -4,6 +4,11 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [~] Session-wide search with channel filters (`DECISIONS.md` D45): every cached
+  message across channels, newest first, with `from:name`, `in:#channel` /
+  `channel:name` / `#name` filters, channel names on rows, cached-channel count and
+  a parsed-filter line; clicking a result opens its channel. Parsing and narrowing
+  tested; the overlay has not been typed into in a signed-in window (D28).
 - [~] Outgoing typing indicator (`DECISIONS.md` D44): `POST
   /channels/{id}/typing` on the first keystroke and then at most every eight
   seconds per channel, skipped for empty drafts, non-text channels and demo mode,

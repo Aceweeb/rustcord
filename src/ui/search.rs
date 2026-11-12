@@ -1,9 +1,10 @@
 //! Message-search overlay.
 //!
 //! A small floating panel rather than a page: search is something you do while
-//! looking at a channel, not somewhere you navigate to. It states its own limits
-//! (loaded history only) because Discord's guild search is a user-API endpoint
-//! this client deliberately cannot call.
+//! looking at a channel, not somewhere you navigate to. It searches everything
+//! cached this session across channels, with `from:` and `in:#channel` filters,
+//! and states its own limits because Discord's guild search is a user-API
+//! endpoint this client deliberately cannot call.
 
 use crate::app::RustcordApp;
 use egui::RichText;
@@ -21,7 +22,15 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
     // Snapshots, so the message list can change under us without a borrow fight.
     let results = app.search.results.clone();
     let held = app.messages.len();
+    let channels = app
+        .messages
+        .iter()
+        .filter_map(|message| message.channel_id.clone())
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
     let query_empty = app.search.query.trim().is_empty();
+    // Snapshot of the parsed filters, so the overlay shows what the syntax did.
+    let described = crate::search::SearchQuery::parse(&app.search.query).describe();
 
     egui::Window::new("Search")
         .title_bar(false)
@@ -34,7 +43,7 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
                 ui.label(RichText::new("Search").small().color(theme.muted));
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut app.search.query)
-                        .hint_text("loaded messages — from:name narrows to an author")
+                        .hint_text("cached messages — from:name · in:#channel")
                         .desired_width(ui.available_width()),
                 );
 
@@ -50,12 +59,19 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
             ui.add_space(6.0);
             ui.label(
                 RichText::new(format!(
-                    "{} result(s) · {held} message(s) held in this channel",
+                    "{} result(s) · {held} message(s) cached this session across {channels} channel(s)",
                     results.len()
                 ))
                 .small()
                 .color(theme.muted),
             );
+            if !described.is_empty() {
+                ui.label(
+                    RichText::new(format!("matching {described}"))
+                        .small()
+                        .color(theme.accent),
+                );
+            }
             ui.separator();
 
             egui::ScrollArea::vertical()
@@ -75,8 +91,13 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
                     }
 
                     for hit in &results {
+                        let source = hit
+                            .channel
+                            .as_deref()
+                            .map(|name| format!("#{name}  ·  "))
+                            .unwrap_or_default();
                         let label = format!(
-                            "{}  ·  {}\n{}",
+                            "{source}{}  ·  {}\n{}",
                             hit.author,
                             hit.timestamp.format("%d %b %H:%M"),
                             hit.snippet
@@ -96,7 +117,7 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
             ui.label(
                 RichText::new(
                     "Discord's server-side search needs a user token, so this searches only \
-                     messages already loaded in Rustcord.",
+                     messages cached in Rustcord this session. Filters: from:name, in:#channel.",
                 )
                 .small()
                 .color(theme.muted),

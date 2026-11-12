@@ -484,6 +484,13 @@ Priority order for the next session:
   composer. The pure throttle is tested at the eight-second boundary; suite now
   283.
 
+- Made search session-wide with a channel filter (D45). `SearchQuery` gained
+  `channel` parsed from `in:#name`, `channel:name` or a bare `#name`; `search()`
+  takes a channel-id→name map so the filter and the result labels stay correct
+  after renames; hits carry their channel name and the overlay leads each row with
+  `#channel`, reports how many channels are cached, and prints the parsed filter.
+  Two new tests; suite now 285.
+
 ---
 
 ## 7. Notes for the next agent

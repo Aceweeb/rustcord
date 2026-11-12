@@ -89,9 +89,11 @@ half-implemented stubs that pretend to work.
   textures to stay inside the budget.
 - Bot-token authentication stored in the OS keyring (`src/auth.rs`). Tokens are
   never written to `settings.json`.
-- Local message search (Ctrl+F) over the loaded history, with an author filter
-  (`from:name`). Discord's server-side search needs a user token, so the overlay
-  searches what is already in memory and says so.
+- Local full-text search (Ctrl+F) across every message cached this session, from
+  every channel opened so far, with `from:name` and `in:#channel` (or `#channel`)
+  filters. Results show the channel, author, time and a snippet, and clicking one
+  opens that channel. Discord's server-side search needs a user token, so the
+  overlay searches what is already in memory and says so.
 - Reconnects stay inside Discord's identify allowance (ten an hour, D19) with
   jittered backoff, so a broken token degrades into a slow retry instead of a
   lockout, and a crash loop cannot reset the ladder every two seconds.

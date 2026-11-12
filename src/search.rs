@@ -3,18 +3,20 @@
 //! Discord's guild-search endpoint (`GET /guilds/{id}/messages/search`) is part
 //! of the **user** API: a bot token cannot use it, and Rustcord does not hold a
 //! user token on purpose (`DECISIONS.md` D2, D15). The honest alternative is to
-//! search what the client actually holds: the loaded history of the open
-//! channel, which is bounded by `ResourcePriority::history_cap()`.
+//! search what the client actually holds: every message cached this session,
+//! across all channels that were opened, bounded by
+//! `ResourcePriority::history_cap()`. Results can be narrowed by author
+//! (`from:name`) and by channel (`in:#name`).
 //!
 //! That limit is stated in the UI rather than papered over. It also keeps the
 //! whole feature cheap: no index, no extra memory, no network. A search is a
-//! reverse scan over a few hundred messages with a case-insensitive substring
-//! test per token.
+//! reverse scan over the cache with a case-insensitive substring test per token.
 //!
 //! Everything here is pure and tested without a UI or a gateway.
 
 use crate::models::Message;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 
 /// Never return more than this, whatever the caller asks for.
 pub const MAX_RESULTS: usize = 50;
@@ -31,18 +33,41 @@ pub struct SearchQuery {
     pub terms: Vec<String>,
     /// Lowercased username fragment from `from:someone`.
     pub author: Option<String>,
+    /// Lowercased channel name fragment from `in:#general` (the `#` is optional).
+    pub channel: Option<String>,
 }
 
 impl SearchQuery {
-    /// Parse `text`, `from:name` and `@name`-after-`from:` forms.
+    /// Parse `text`, `from:name`, `@name`, and channel filters written as
+    /// `in:#name`, `channel:#name` or a bare `#name`.
     ///
     /// Unknown `word:value` tokens are treated as text, not as filters, so a
     /// colon in a message never silently drops the search term.
     pub fn parse(input: &str) -> Self {
         let mut terms = Vec::new();
         let mut author = None;
+        let mut channel = None;
 
         for token in input.split_whitespace() {
+            let channel_part = token
+                .strip_prefix("in:")
+                .or_else(|| token.strip_prefix("channel:"));
+            if let Some(rest) = channel_part {
+                let name = rest.trim_start_matches('#').trim().to_lowercase();
+                if !name.is_empty() {
+                    channel = Some(name);
+                }
+                // A bare `in:` is an unfinished filter, not a literal term.
+                continue;
+            }
+            if let Some(rest) = token.strip_prefix('#') {
+                // A bare `#general` is the same filter, which is what people type.
+                let name = rest.trim().to_lowercase();
+                if !name.is_empty() {
+                    channel = Some(name);
+                    continue;
+                }
+            }
             if let Some(rest) = token.strip_prefix("from:") {
                 let name = rest.trim_start_matches('@').trim().to_lowercase();
                 if !name.is_empty() {
@@ -62,12 +87,16 @@ impl SearchQuery {
             terms.push(token.to_lowercase());
         }
 
-        Self { terms, author }
+        Self {
+            terms,
+            author,
+            channel,
+        }
     }
 
     /// True when there is nothing to search for.
     pub fn is_empty(&self) -> bool {
-        self.terms.is_empty() && self.author.is_none()
+        self.terms.is_empty() && self.author.is_none() && self.channel.is_none()
     }
 
     /// A short description of the filter, for the results header.
@@ -78,6 +107,9 @@ impl SearchQuery {
         }
         if let Some(author) = &self.author {
             parts.push(format!("from {author}"));
+        }
+        if let Some(channel) = &self.channel {
+            parts.push(format!("in #{channel}"));
         }
         parts.join(" ")
     }
@@ -90,13 +122,22 @@ impl SearchQuery {
 pub struct Hit {
     pub message_id: String,
     pub channel_id: Option<String>,
+    /// Resolved channel name, so a result says where it came from.
+    pub channel: Option<String>,
     pub author: String,
     pub timestamp: DateTime<Utc>,
     pub snippet: String,
 }
 
-/// Search newest-first, stopping at `limit` (clamped to `1..=MAX_RESULTS`).
-pub fn search(messages: &[Message], query: &SearchQuery, limit: usize) -> Vec<Hit> {
+/// Search newest-first across the cached messages, stopping at `limit` (clamped
+/// to `1..=MAX_RESULTS`). `channel_names` maps channel id to display name so the
+/// `in:#name` filter and the result label both work.
+pub fn search(
+    messages: &[Message],
+    channel_names: &HashMap<String, String>,
+    query: &SearchQuery,
+    limit: usize,
+) -> Vec<Hit> {
     if query.is_empty() {
         return Vec::new();
     }
@@ -108,7 +149,7 @@ pub fn search(messages: &[Message], query: &SearchQuery, limit: usize) -> Vec<Hi
         if hits.len() >= limit {
             break;
         }
-        if let Some(hit) = hit_for(message, query) {
+        if let Some(hit) = hit_for(message, channel_names, query) {
             hits.push(hit);
         }
     }
@@ -116,9 +157,29 @@ pub fn search(messages: &[Message], query: &SearchQuery, limit: usize) -> Vec<Hi
     hits
 }
 
-fn hit_for(message: &Message, query: &SearchQuery) -> Option<Hit> {
+fn hit_for(
+    message: &Message,
+    channel_names: &HashMap<String, String>,
+    query: &SearchQuery,
+) -> Option<Hit> {
+    let channel = message
+        .channel_id
+        .as_ref()
+        .and_then(|id| channel_names.get(id))
+        .cloned();
+
     if let Some(author) = &query.author {
         if !message.author.username.to_lowercase().contains(author) {
+            return None;
+        }
+    }
+
+    if let Some(wanted) = &query.channel {
+        let matches = channel
+            .as_deref()
+            .map(|name| name.to_lowercase().contains(wanted))
+            .unwrap_or(false);
+        if !matches {
             return None;
         }
     }
@@ -131,6 +192,7 @@ fn hit_for(message: &Message, query: &SearchQuery) -> Option<Hit> {
     Some(Hit {
         message_id: message.id.clone(),
         channel_id: message.channel_id.clone(),
+        channel,
         author: message.author.username.clone(),
         timestamp: message.timestamp,
         snippet: snippet(&message.content, query.terms.first().map(String::as_str)),
@@ -209,8 +271,12 @@ mod tests {
         message
     }
 
+    fn names() -> HashMap<String, String> {
+        HashMap::from([("300".to_string(), "general".to_string())])
+    }
+
     fn hits(messages: &[Message], input: &str) -> Vec<Hit> {
-        search(messages, &SearchQuery::parse(input), MAX_RESULTS)
+        search(messages, &names(), &SearchQuery::parse(input), MAX_RESULTS)
     }
 
     #[test]
@@ -261,16 +327,19 @@ mod tests {
             .map(|index| message("alice", &format!("hello {index}"), index))
             .collect();
 
-        let found = search(&messages, &SearchQuery::parse("hello"), 3);
+        let found = search(&messages, &names(), &SearchQuery::parse("hello"), 3);
         assert_eq!(found.len(), 3);
         assert_eq!(found[0].message_id, "9");
         assert_eq!(found[2].message_id, "7");
 
         // A zero limit still returns one result rather than nothing.
-        assert_eq!(search(&messages, &SearchQuery::parse("hello"), 0).len(), 1);
+        assert_eq!(
+            search(&messages, &names(), &SearchQuery::parse("hello"), 0).len(),
+            1
+        );
         // And the hard ceiling holds.
         assert_eq!(
-            search(&messages, &SearchQuery::parse("hello"), 10_000).len(),
+            search(&messages, &names(), &SearchQuery::parse("hello"), 10_000).len(),
             10
         );
     }
@@ -339,11 +408,74 @@ mod tests {
     }
 
     #[test]
+    fn channel_filters_parse_and_narrow() {
+        assert_eq!(
+            SearchQuery::parse("in:#general hi").channel.as_deref(),
+            Some("general")
+        );
+        assert_eq!(
+            SearchQuery::parse("channel:General").channel.as_deref(),
+            Some("general")
+        );
+        assert_eq!(
+            SearchQuery::parse("#off-topic").channel.as_deref(),
+            Some("off-topic")
+        );
+        // A bare marker is not a filter.
+        assert_eq!(SearchQuery::parse("in:").channel, None);
+        assert!(SearchQuery::parse("in:").is_empty());
+
+        let mut other = message("alice", "ship it", 2);
+        other.channel_id = Some("301".to_string());
+        let messages = vec![message("alice", "ship it", 1), other];
+        let names = HashMap::from([
+            ("300".to_string(), "general".to_string()),
+            ("301".to_string(), "off-topic".to_string()),
+        ]);
+
+        let found = search(
+            &messages,
+            &names,
+            &SearchQuery::parse("in:#off"),
+            MAX_RESULTS,
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].channel.as_deref(), Some("off-topic"));
+        assert_eq!(found[0].channel_id.as_deref(), Some("301"));
+
+        // An unknown channel matches nothing rather than ignoring the filter.
+        assert!(search(
+            &messages,
+            &names,
+            &SearchQuery::parse("in:#missing"),
+            MAX_RESULTS
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn a_hit_names_its_channel_for_the_row_label() {
+        let found = hits(&[message("alice", "hello", 1)], "hello");
+        assert_eq!(found[0].channel.as_deref(), Some("general"));
+
+        // A message whose channel is not in the map still matches text queries;
+        // it just has no name to show.
+        let mut orphan = message("alice", "hello", 1);
+        orphan.channel_id = Some("999".to_string());
+        let found = hits(&[orphan], "hello");
+        assert_eq!(found[0].channel, None);
+    }
+
+    #[test]
     fn the_description_names_the_filter() {
         assert_eq!(
             SearchQuery::parse("hi from:bob").describe(),
             "“hi” from bob"
         );
         assert_eq!(SearchQuery::parse("from:bob").describe(), "from bob");
+        assert_eq!(
+            SearchQuery::parse("hi in:#general").describe(),
+            "“hi” in #general"
+        );
     }
 }
