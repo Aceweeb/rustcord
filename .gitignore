@@ -1,0 +1,4 @@
+/target
+/settings.json
+*.log
+massif.out

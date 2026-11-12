@@ -1,0 +1,50 @@
+[package]
+name = "rustcord"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "A lightweight Discord-compatible client scaffold written in Rust + egui"
+repository = "https://example.invalid/rustcord"
+
+[lib]
+name = "rustcord"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rustcord"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.37", default-features = false, features = [
+  "default_fonts",
+  "system_fonts",
+  "glow",
+  "x11",
+  "wayland",
+  "clipboard",
+  "links",
+] }
+egui = "0.37"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
+futures-util = "0.3"
+keyring = { version = "3", features = ["sync-secret-service"] }
+rpassword = "7"
+once_cell = "1"
+anyhow = "1"
+thiserror = "1"
+log = "0.4"
+env_logger = "0.11"
+open = "5"
+dirs = "6"
+chrono = { version = "0.4", features = ["serde"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

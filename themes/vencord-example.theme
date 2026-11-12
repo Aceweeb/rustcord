@@ -1,0 +1,22 @@
+/*
+ * Rustcord's Vencord-compatible theme subset.
+ * only CSS custom properties are read; selectors and arbitrary CSS are ignored.
+ * Drop this next to settings.json or point `theme_file` at it.
+ */
+:root {
+  --rustcord-theme-name: "Arch Afterglow";
+
+  --background-primary: #1e1f22;
+  --background-secondary: #2b2d31;
+  --background-secondary-alt: #232428;
+  --background-tertiary: #111214;
+
+  --text-normal: #dbdee1;
+  --text-muted: #949ba4;
+
+  --brand-experiment: #5865f2;
+  --brand-500: #5865f2;
+
+  --status-online: #23a55a;
+  --status-danger: #f23f43;
+}
