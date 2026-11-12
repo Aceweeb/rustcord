@@ -39,6 +39,29 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         ui.separator();
     });
 
+    // In-app alert banner (memory budget, test alerts). Dismissal mutates app
+    // state, so it is applied after the panel closure returns.
+    if let Some(alert) = app.alert.clone() {
+        let mut dismissed = false;
+        egui::Panel::top("alert_banner").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let color = match alert.kind {
+                    crate::app::AlertKind::Warn => app.plugins.theme().danger,
+                    crate::app::AlertKind::Info => app.plugins.theme().accent,
+                };
+                ui.label(RichText::new(&alert.text).strong().color(color));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button("Dismiss").clicked() {
+                        dismissed = true;
+                    }
+                });
+            });
+        });
+        if dismissed {
+            app.dismiss_alert();
+        }
+    }
+
     egui::Panel::right("member_list")
         .default_size(200.0)
         .resizable(true)
@@ -79,6 +102,16 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     if let Some(line) = &app.status_line {
         status.push_str(" · ");
         status.push_str(line);
+    }
+
+    // Live measurement, not an estimate: RSS/CPU come from /proc.
+    if let Some(sample) = app.monitor.sample {
+        status.push_str(" · ");
+        status.push_str(&crate::sysinfo::human_bytes(sample.rss_bytes));
+        if let Some(cpu) = app.monitor.cpu_percent {
+            status.push_str(&format!(" · {cpu:.1}% CPU"));
+        }
+        status.push_str(&format!(" · {} thr", sample.threads));
     }
     egui::Panel::bottom("status_bar").show(ui, |ui| {
         ui.label(
@@ -170,7 +203,8 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             }
                         });
                     });
-                    ui.add_space(10.0);
+                    let gap = if app.settings.compact_mode { 4.0 } else { 10.0 };
+                    ui.add_space(gap);
                 }
             });
 

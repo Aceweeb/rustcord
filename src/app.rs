@@ -1,13 +1,36 @@
 use crate::api::discord::DiscordClient;
 use crate::api::gateway::{GatewayClient, GatewayEvent, GatewayHandle, DEFAULT_INTENTS};
 use crate::auth;
+use crate::diagnostics;
 use crate::models::{Channel, ChannelKind, Guild, Message, Presence, Reaction, User};
+use crate::monitor::MemoryMonitor;
 use crate::plugins::PluginManager;
-use crate::settings::{ResourcePriority, Settings};
+use crate::settings::Settings;
+use crate::shortcuts::ShortcutAction;
+use crate::sysinfo;
 use crate::ui;
-use chrono::{Duration, Utc};
-use egui::RichText;
+use crate::ui::settings::SettingsUiState;
+use chrono::{Duration as ChronoDuration, Utc};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::time::Duration;
+
+/// Transient in-app banner shown above the chat.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlertKind {
+    Info,
+    Warn,
+}
+
+#[derive(Debug, Clone)]
+pub struct Alert {
+    pub text: String,
+    pub kind: AlertKind,
+    /// Wall-clock deadline from `egui`'s input time, in seconds.
+    /// `f64::MAX` means "stamp me on the next frame".
+    pub until: f64,
+    /// How long the banner should stay up, in seconds.
+    pub duration: f64,
+}
 
 pub struct RustcordApp {
     pub(crate) settings: Settings,
@@ -27,6 +50,11 @@ pub struct RustcordApp {
     pub(crate) token_draft: String,
     pub(crate) token_status: String,
     pub(crate) live_data: bool,
+    pub(crate) monitor: MemoryMonitor,
+    pub(crate) settings_ui: SettingsUiState,
+    pub(crate) alert: Option<Alert>,
+    pub(crate) frames: u64,
+    applied_ui_scale: f32,
     send_tx: Sender<SendResult>,
     send_results: Receiver<SendResult>,
 }
@@ -163,10 +191,232 @@ impl RustcordApp {
             token_draft,
             token_status,
             live_data: false,
+            monitor: MemoryMonitor::new(),
+            settings_ui: SettingsUiState::default(),
+            alert: None,
+            frames: 0,
+            applied_ui_scale: 0.0,
             send_tx,
             send_results,
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Settings integration
+    // -----------------------------------------------------------------------
+
+    /// Persist and apply a settings change: normalise, rebuild the theme, save.
+    pub(crate) fn settings_changed(&mut self) {
+        self.settings.normalize();
+        self.plugins.on_settings(&mut self.settings);
+        self.settings_ui.hex_draft.clear();
+        if let Err(err) = self.settings.save() {
+            log::warn!("could not persist settings: {err:#}");
+            self.status_line = Some(format!("could not save settings: {err:#}"));
+        }
+    }
+
+    fn apply_ui_scale(&mut self, ctx: &egui::Context) {
+        if (self.applied_ui_scale - self.settings.ui_scale).abs() > f32::EPSILON {
+            ctx.set_pixels_per_point(self.settings.ui_scale);
+            self.applied_ui_scale = self.settings.ui_scale;
+        }
+    }
+
+    pub(crate) fn push_alert(&mut self, text: String, kind: AlertKind, seconds: f64) {
+        self.alert = Some(Alert {
+            text,
+            kind,
+            // Stamped against the egui clock on the next frame, so the banner
+            // never inherits a stale wall-clock baseline.
+            until: f64::MAX,
+            duration: seconds.max(1.0),
+        });
+    }
+
+    pub(crate) fn dismiss_alert(&mut self) {
+        self.alert = None;
+    }
+
+    /// Clamp the message buffer to the configured history cap.
+    pub(crate) fn trim_history(&mut self) {
+        let cap = self.settings.resource_priority.history_cap();
+        if self.messages.len() > cap {
+            let excess = self.messages.len() - cap;
+            self.messages.drain(0..excess);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Shortcuts
+    // -----------------------------------------------------------------------
+
+    fn handle_shortcuts(&mut self, ctx: &egui::Context) {
+        // The shortcuts page owns key input while a rebind is pending.
+        if self.settings_ui.rebinding.is_some() {
+            return;
+        }
+
+        let events: Vec<(String, bool, bool, bool)> = ctx.input(|input| {
+            input
+                .events
+                .iter()
+                .filter_map(|event| match event {
+                    egui::Event::Key {
+                        key,
+                        pressed: true,
+                        modifiers,
+                        ..
+                    } => Some((
+                        format!("{key:?}"),
+                        modifiers.ctrl || modifiers.command,
+                        modifiers.shift,
+                        modifiers.alt,
+                    )),
+                    _ => None,
+                })
+                .collect()
+        });
+
+        for (key, ctrl, shift, alt) in events {
+            for action in ShortcutAction::ALL {
+                if self
+                    .settings
+                    .chord_for(action)
+                    .matches(&key, ctrl, shift, alt)
+                {
+                    self.dispatch(action);
+                    break;
+                }
+            }
+        }
+    }
+
+    fn dispatch(&mut self, action: ShortcutAction) {
+        match action {
+            ShortcutAction::ToggleSettings => self.show_settings = !self.show_settings,
+            ShortcutAction::NextChannel => self.cycle_channel(1),
+            ShortcutAction::PrevChannel => self.cycle_channel(-1),
+            ShortcutAction::NextGuild => self.cycle_guild(1),
+            ShortcutAction::PrevGuild => self.cycle_guild(-1),
+            ShortcutAction::RefreshView => {
+                self.plugins.on_settings(&mut self.settings);
+                self.status_line = Some("theme reloaded".to_string());
+            }
+            ShortcutAction::ToggleCompact => {
+                self.settings.compact_mode = !self.settings.compact_mode;
+                self.settings_changed();
+                self.status_line = Some(format!(
+                    "compact mode {}",
+                    if self.settings.compact_mode {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                ));
+            }
+            ShortcutAction::ExportDiagnostics => match diagnostics::export(&self.settings) {
+                Ok(path) => {
+                    self.settings_ui.export_status = Some(format!("written to {}", path.display()));
+                    self.status_line = Some(format!("diagnostics written to {}", path.display()));
+                }
+                Err(err) => {
+                    self.settings_ui.export_status = Some(format!("export failed: {err:#}"));
+                    self.status_line = Some(format!("export failed: {err:#}"));
+                }
+            },
+        }
+    }
+
+    fn cycle_channel(&mut self, delta: i32) {
+        let guild = self.selected_guild.clone();
+        let ids: Vec<String> = self
+            .channels
+            .iter()
+            .filter(|channel| {
+                Some(&channel.guild_id) == guild.as_ref() && channel.kind == ChannelKind::Text
+            })
+            .map(|channel| channel.id.clone())
+            .collect();
+        if ids.is_empty() {
+            return;
+        }
+
+        let current = self
+            .selected_channel
+            .as_ref()
+            .and_then(|id| ids.iter().position(|candidate| candidate == id))
+            .unwrap_or(0) as i32;
+        let next = (current + delta).rem_euclid(ids.len() as i32) as usize;
+        self.selected_channel = Some(ids[next].clone());
+    }
+
+    fn cycle_guild(&mut self, delta: i32) {
+        if self.guilds.is_empty() {
+            return;
+        }
+        let current = self
+            .selected_guild
+            .as_ref()
+            .and_then(|id| self.guilds.iter().position(|guild| &guild.id == id))
+            .unwrap_or(0) as i32;
+        let next = (current + delta).rem_euclid(self.guilds.len() as i32) as usize;
+        let guild_id = self.guilds[next].id.clone();
+        self.selected_guild = Some(guild_id.clone());
+
+        if let Some(first) = self
+            .channels
+            .iter()
+            .find(|channel| channel.guild_id == guild_id && channel.kind == ChannelKind::Text)
+        {
+            self.selected_channel = Some(first.id.clone());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Telemetry
+    // -----------------------------------------------------------------------
+
+    fn tick_telemetry(&mut self, ctx: &egui::Context) {
+        let interval = if self.show_settings {
+            Duration::from_millis(1000)
+        } else {
+            Duration::from_millis(5000)
+        };
+
+        if self.monitor.maybe_sample(interval)
+            && self.settings.memory_alerts
+            && self.monitor.over_budget(self.settings.memory_budget_mb)
+            && self.alert.is_none()
+        {
+            self.monitor.alerts_fired += 1;
+            let rss = self.monitor.rss_bytes().unwrap_or(0);
+            let text = format!(
+                "Memory budget exceeded: {} resident against a {} MB budget",
+                sysinfo::human_bytes(rss),
+                self.settings.memory_budget_mb
+            );
+            self.push_alert(text, AlertKind::Warn, 10.0);
+        }
+
+        // Stamp and expire banners against the egui clock.
+        let now = ctx.input(|input| input.time);
+        if let Some(alert) = &mut self.alert {
+            if alert.until == f64::MAX {
+                alert.until = now + alert.duration;
+            }
+            if now > alert.until {
+                self.alert = None;
+            }
+        }
+
+        // Keep repaints cheap but bounded: this is the only timer in the app.
+        ctx.request_repaint_after(interval);
+    }
+
+    // -----------------------------------------------------------------------
+    // Discord plumbing
+    // -----------------------------------------------------------------------
 
     fn poll_gateway(&mut self) {
         let mut events = Vec::new();
@@ -175,6 +425,8 @@ impl RustcordApp {
                 events.push(event);
             }
         }
+
+        let mut received_message = false;
 
         for event in events {
             match event {
@@ -216,6 +468,7 @@ impl RustcordApp {
                 }
                 GatewayEvent::Message(message) => {
                     self.messages.push(message);
+                    received_message = true;
                 }
                 GatewayEvent::Reconnecting {
                     attempt,
@@ -234,9 +487,13 @@ impl RustcordApp {
                 }
             }
         }
+
+        if received_message {
+            self.trim_history();
+        }
     }
 
-    fn restart_gateway(&mut self) {
+    pub(crate) fn restart_gateway(&mut self) {
         if let Some(handle) = self.gateway.take() {
             handle.shutdown();
         }
@@ -320,193 +577,25 @@ impl RustcordApp {
         self.plugins.on_message(&mut message);
         self.messages.push(message);
         self.draft.clear();
+        self.trim_history();
     }
 
     fn poll_send_results(&mut self) {
+        let mut sent = false;
         while let Ok(result) = self.send_results.try_recv() {
             match result {
                 SendResult::Sent(message) => {
                     self.messages.push(message);
                     self.status_line = Some("message sent".to_string());
+                    sent = true;
                 }
                 SendResult::Failed(err) => {
                     self.status_line = Some(format!("send failed: {err}"));
                 }
             }
         }
-    }
-
-    fn show_settings_window(&mut self, ctx: &egui::Context) {
-        let mut open = self.show_settings;
-        let mut changed = false;
-        let mut connect_requested = false;
-
-        egui::Window::new("Settings")
-            .open(&mut open)
-            .default_width(460.0)
-            .show(ctx, |ui| {
-                ui.heading("Discord connection");
-                ui.label(
-                    "Bot token. Stored in the OS keyring, never in settings.json. \
-                     Email/password login is intentionally not supported.",
-                );
-
-                let mut token = self.token_draft.clone();
-                if ui
-                    .add(
-                        egui::TextEdit::singleline(&mut token)
-                            .password(true)
-                            .hint_text("Bot <token>"),
-                    )
-                    .changed()
-                {
-                    self.token_draft = token;
-                    self.token_status = "Unsaved token".to_string();
-                }
-
-                ui.horizontal(|ui| {
-                    if ui.button("Save token").clicked() {
-                        match auth::store_discord_token(self.token_draft.trim()) {
-                            Ok(()) => {
-                                self.token_status = "Token saved to keyring".to_string();
-                            }
-                            Err(err) => {
-                                self.token_status = format!("Could not save token: {err:#}");
-                            }
-                        }
-                    }
-                    if ui.button("Connect gateway").clicked() {
-                        connect_requested = true;
-                    }
-                    if ui.button("Clear token").clicked() {
-                        match auth::clear_discord_token() {
-                            Ok(()) => {
-                                self.token_draft.clear();
-                                self.token_status = "Token cleared".to_string();
-                            }
-                            Err(err) => {
-                                self.token_status = format!("Could not clear token: {err:#}");
-                            }
-                        }
-                    }
-                });
-
-                ui.label(
-                    RichText::new(&self.token_status)
-                        .small()
-                        .color(self.plugins.theme().muted),
-                );
-                ui.label(
-                    RichText::new(&self.gateway_status)
-                        .small()
-                        .color(self.plugins.theme().muted),
-                );
-
-                ui.separator();
-                ui.heading("Appearance");
-                changed |= ui
-                    .checkbox(
-                        &mut self.settings.vencord_themes,
-                        "Enable Vencord-compatible themes",
-                    )
-                    .changed();
-
-                let mut theme_path = self
-                    .settings
-                    .theme_file
-                    .as_ref()
-                    .map(|path| path.display().to_string())
-                    .unwrap_or_default();
-
-                ui.horizontal(|ui| {
-                    ui.label("Theme file:");
-                    if ui
-                        .add(
-                            egui::TextEdit::singleline(&mut theme_path)
-                                .hint_text("~/.config/rustcord/theme.theme"),
-                        )
-                        .changed()
-                    {
-                        self.settings.theme_file = if theme_path.trim().is_empty() {
-                            None
-                        } else {
-                            Some(std::path::PathBuf::from(theme_path.trim()))
-                        };
-                        changed = true;
-                    }
-                });
-
-                ui.separator();
-                ui.heading("Integrations");
-                changed |= ui
-                    .checkbox(
-                        &mut self.settings.spotify_status_sync,
-                        "Sync Spotify now-playing to profile",
-                    )
-                    .changed();
-                changed |= ui
-                    .checkbox(
-                        &mut self.settings.streaming_notifications,
-                        "Show streaming indicators",
-                    )
-                    .changed();
-                changed |= ui
-                    .checkbox(&mut self.settings.show_blyat_banner, "Show Blyat banner")
-                    .changed();
-
-                ui.separator();
-                ui.heading("Performance");
-                ui.horizontal(|ui| {
-                    ui.label("Resource priority:");
-                    changed |= ui
-                        .selectable_value(
-                            &mut self.settings.resource_priority,
-                            ResourcePriority::Low,
-                            "Low",
-                        )
-                        .changed();
-                    changed |= ui
-                        .selectable_value(
-                            &mut self.settings.resource_priority,
-                            ResourcePriority::Balanced,
-                            "Balanced",
-                        )
-                        .changed();
-                    changed |= ui
-                        .selectable_value(
-                            &mut self.settings.resource_priority,
-                            ResourcePriority::Performance,
-                            "Performance",
-                        )
-                        .changed();
-                });
-
-                ui.separator();
-                ui.label(format!(
-                    "Loaded plugins: {}",
-                    self.plugins.names().join(", ")
-                ));
-
-                if ui.button("Save settings").clicked() {
-                    if let Err(err) = self.settings.save() {
-                        self.status_line = Some(format!("could not save settings: {err:#}"));
-                    } else {
-                        self.status_line = Some("settings saved".to_string());
-                    }
-                }
-            });
-
-        self.show_settings = open;
-
-        if connect_requested {
-            self.restart_gateway();
-        }
-
-        if changed {
-            self.plugins.on_settings(&mut self.settings);
-            if let Err(err) = self.settings.save() {
-                log::warn!("could not persist settings: {err:#}");
-            }
+        if sent {
+            self.trim_history();
         }
     }
 }
@@ -514,25 +603,27 @@ impl RustcordApp {
 impl eframe::App for RustcordApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.frames = self.frames.wrapping_add(1);
 
-        // Re-apply every frame so a theme-file reload is reflected immediately.
+        // Re-apply every frame so a preset switch or theme-file reload shows at
+        // once; this only writes a handful of colours.
+        self.apply_ui_scale(&ctx);
         self.plugins.theme().apply(&ctx);
 
         let now = ctx.input(|input| input.time) as f32;
         self.plugins.spotify.tick(now);
         self.poll_gateway();
         self.poll_send_results();
+        self.handle_shortcuts(&ctx);
+        self.tick_telemetry(&ctx);
 
-        if ctx.input(|input| input.modifiers.command && input.key_pressed(egui::Key::Comma)) {
-            self.show_settings = true;
+        if self.settings.compact_mode {
+            ui.spacing_mut().item_spacing = egui::vec2(6.0, 3.0);
         }
 
         ui::sidebar::show(self, ui);
         ui::chat::show(self, ui);
-
-        if self.show_settings {
-            self.show_settings_window(&ctx);
-        }
+        ui::settings::show(self, &ctx);
     }
 }
 
@@ -598,7 +689,7 @@ fn demo_messages(current_user: &User) -> Vec<Message> {
 fn message_at(author: &User, content: &str, minutes_ago: i64) -> Message {
     let mut message = Message::new(author.clone(), content);
     message.channel_id = Some("10".to_string());
-    message.timestamp = Utc::now() - Duration::minutes(minutes_ago);
+    message.timestamp = Utc::now() - ChronoDuration::minutes(minutes_ago);
     message
 }
 

@@ -1,3 +1,7 @@
+//! Colour utilities used by the theme engine and the UI.
+//!
+//! Everything here is pure so it can be unit-tested without an egui context.
+
 use egui::Color32;
 
 /// Return the first grapheme-ish character of a display name, uppercased.
@@ -69,6 +73,45 @@ pub fn parse_css_color(input: &str) -> Option<Color32> {
     None
 }
 
+/// `#rrggbb` representation, used for persistence and the settings hex field.
+pub fn color_to_hex(color: Color32) -> String {
+    format!("#{:02x}{:02x}{:02x}", color.r(), color.g(), color.b())
+}
+
+/// WCAG relative luminance of an sRGB colour (0.0 = black, 1.0 = white).
+pub fn relative_luminance(color: Color32) -> f32 {
+    fn channel(value: u8) -> f32 {
+        let c = value as f32 / 255.0;
+        if c <= 0.040_45 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055).powf(2.4)
+        }
+    }
+
+    0.2126 * channel(color.r()) + 0.7152 * channel(color.g()) + 0.0722 * channel(color.b())
+}
+
+/// WCAG contrast ratio between two colours, from 1.0 (identical) to 21.0.
+/// Useful both for theme QA tests and for picking readable accent text.
+pub fn contrast_ratio(a: Color32, b: Color32) -> f32 {
+    let la = relative_luminance(a);
+    let lb = relative_luminance(b);
+    let (lighter, darker) = if la > lb { (la, lb) } else { (lb, la) };
+    (lighter + 0.05) / (darker + 0.05)
+}
+
+/// Pick black or white, whichever reads better on `background`.
+pub fn readable_on(background: Color32) -> Color32 {
+    let black = Color32::from_rgb(0, 0, 0);
+    let white = Color32::from_rgb(255, 255, 255);
+    if contrast_ratio(background, black) >= contrast_ratio(background, white) {
+        black
+    } else {
+        white
+    }
+}
+
 pub fn format_duration(ms: u64) -> String {
     let total_seconds = ms / 1000;
     let minutes = total_seconds / 60;
@@ -105,6 +148,30 @@ mod tests {
         assert_eq!(
             parse_css_color("rgba(88, 101, 242, 0.5)"),
             Some(Color32::from_rgba_unmultiplied(88, 101, 242, 127))
+        );
+    }
+
+    #[test]
+    fn hex_roundtrip() {
+        let color = Color32::from_rgb(0x58, 0x65, 0xf2);
+        assert_eq!(color_to_hex(color), "#5865f2");
+        assert_eq!(parse_css_color(&color_to_hex(color)), Some(color));
+    }
+
+    #[test]
+    fn contrast_extremes_are_sane() {
+        let white = Color32::WHITE;
+        let black = Color32::BLACK;
+        assert!((contrast_ratio(white, black) - 21.0).abs() < 0.01);
+        assert!((contrast_ratio(white, white) - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn readable_on_picks_the_contrasting_ink() {
+        assert_eq!(readable_on(Color32::from_rgb(20, 20, 20)), Color32::WHITE);
+        assert_eq!(
+            readable_on(Color32::from_rgb(240, 240, 240)),
+            Color32::BLACK
         );
     }
 

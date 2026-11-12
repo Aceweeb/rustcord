@@ -3,8 +3,13 @@
 pub mod api;
 pub mod app;
 pub mod auth;
+pub mod diagnostics;
+pub mod logbuf;
 pub mod models;
+pub mod monitor;
 pub mod plugins;
 pub mod settings;
+pub mod shortcuts;
+pub mod sysinfo;
 pub mod ui;
 pub mod utils;

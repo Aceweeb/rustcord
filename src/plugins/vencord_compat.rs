@@ -6,7 +6,12 @@ use crate::utils::parse_css_color;
 
 /// A pragmatic subset of the Vencord/BetterDiscord theme format. We read CSS
 /// custom properties and translate them into the egui palette. Arbitrary CSS
-/// is never executed.
+/// is never executed, and nothing is injected into the official Discord client.
+///
+/// Composition order matters: the user's selected preset (plus accent override)
+/// is the base palette, and the `.theme` file may override individual slots on
+/// top of it. A theme file that sets only `--brand-experiment` therefore keeps
+/// the preset's backgrounds instead of snapping back to a hardcoded default.
 pub struct VencordCompatPlugin {
     enabled: bool,
     theme: AppTheme,
@@ -35,31 +40,29 @@ impl VencordCompatPlugin {
     }
 
     fn reload(&mut self, settings: &Settings) {
+        let base = settings.theme();
+
         if !settings.vencord_themes {
             self.enabled = false;
-            self.theme = AppTheme::default();
+            self.theme = base;
             return;
         }
 
         self.enabled = true;
-        let path = settings.theme_file.clone().or_else(|| {
-            let candidate = Settings::config_path().with_file_name("theme.theme");
-            candidate.exists().then_some(candidate)
-        });
 
-        let Some(path) = path else {
-            self.theme = AppTheme::default();
+        let Some(path) = settings.theme_path() else {
+            self.theme = base;
             return;
         };
 
         match std::fs::read_to_string(&path) {
             Ok(css) => {
-                self.theme = theme_from_css(&css);
+                self.theme = theme_from_css(&css, base);
                 log::info!("loaded theme '{}' from {}", self.theme.name, path.display());
             }
             Err(err) => {
                 log::warn!("could not read theme {}: {err}", path.display());
-                self.theme = AppTheme::default();
+                self.theme = base;
             }
         }
     }
@@ -86,9 +89,12 @@ impl Plugin for VencordCompatPlugin {
     fn on_activity_update(&mut self, _activity: &mut Activity) {}
 }
 
-fn theme_from_css(css: &str) -> AppTheme {
-    let mut theme = AppTheme::default();
-    theme.name = extract_css_var(css, "--rustcord-theme-name").unwrap_or(theme.name);
+/// Translate the supported CSS custom properties onto `base`.
+fn theme_from_css(css: &str, base: AppTheme) -> AppTheme {
+    let mut theme = base;
+    if let Some(name) = extract_css_var(css, "--rustcord-theme-name") {
+        theme.name = name.trim_matches('"').to_string();
+    }
 
     if let Some(color) = css_var_color(css, &["--background-primary", "--background-secondary"]) {
         theme.background = color;
@@ -128,20 +134,24 @@ fn theme_from_css(css: &str) -> AppTheme {
     theme
 }
 
+/// Read a CSS custom property value.
+///
+/// The property may appear anywhere on a line, so minified or single-line
+/// theme files (`:root { --brand-experiment: #fff; }`) parse correctly. The
+/// needle contains the colon, which prevents `--background-primary` from
+/// matching `--background-primary-alt`.
 fn extract_css_var(css: &str, name: &str) -> Option<String> {
     let needle = format!("{name}:");
     for line in css.lines() {
-        let line = line.trim();
-        if let Some(rest) = line.strip_prefix(&needle) {
-            let value = rest
-                .trim()
-                .trim_end_matches(';')
-                .trim()
-                .trim_end_matches("!important")
-                .trim();
-            if !value.is_empty() {
-                return Some(value.to_string());
-            }
+        let Some(index) = line.find(&needle) else {
+            continue;
+        };
+        let rest = &line[index + needle.len()..];
+        let value = rest.split(';').next().unwrap_or(rest);
+        let value = value.trim().trim_end_matches('}').trim();
+        let value = value.trim_end_matches("!important").trim();
+        if !value.is_empty() {
+            return Some(value.to_string());
         }
     }
     None
@@ -157,34 +167,54 @@ fn css_var_color(css: &str, names: &[&str]) -> Option<egui::Color32> {
 mod tests {
     use super::*;
 
+    const CSS: &str = r#"
+        :root {
+          --rustcord-theme-name: "Test Theme";
+          --background-primary: #1e1f22;
+          --background-secondary: #2b2d31;
+          --background-tertiary: #111214;
+          --brand-experiment: #5865f2;
+          --text-normal: #dbdee1;
+          --text-muted: #949ba4;
+          --status-online: #23a55a;
+          --status-danger: #f23f43;
+        }
+    "#;
+
     #[test]
     fn parses_discord_theme_variables() {
-        let css = r#"
-            :root {
-              --rustcord-theme-name: "Test Theme";
-              --background-primary: #1e1f22;
-              --background-secondary: #2b2d31;
-              --background-tertiary: #111214;
-              --brand-experiment: #5865f2;
-              --text-normal: #dbdee1;
-              --text-muted: #949ba4;
-              --status-online: #23a55a;
-              --status-danger: #f23f43;
-            }
-        "#;
-
-        let theme = theme_from_css(css);
-        assert_eq!(theme.name, "\"Test Theme\"");
+        let theme = theme_from_css(CSS, AppTheme::default());
+        assert_eq!(theme.name, "Test Theme");
         assert_eq!(theme.background, egui::Color32::from_rgb(0x1e, 0x1f, 0x22));
         assert_eq!(theme.accent, egui::Color32::from_rgb(0x58, 0x65, 0xf2));
         assert_eq!(theme.text, egui::Color32::from_rgb(0xdb, 0xde, 0xe1));
     }
 
     #[test]
-    fn missing_variables_keep_defaults() {
-        let theme = theme_from_css("body { color: red; }");
-        assert_eq!(theme.background, AppTheme::default().background);
-        assert_eq!(theme.accent, AppTheme::default().accent);
+    fn missing_variables_keep_the_base_palette() {
+        let base = AppTheme::preset("rosewater", None);
+        let theme = theme_from_css("body { color: red; }", base);
+        assert_eq!(
+            theme.background,
+            AppTheme::preset("rosewater", None).background
+        );
+        assert_eq!(theme.accent, AppTheme::preset("rosewater", None).accent);
+        assert!(theme.name.contains("Rosewater") || theme.name == "Rosewater");
+    }
+
+    #[test]
+    fn css_overrides_only_the_keys_it_defines() {
+        let base = AppTheme::preset("paper", None);
+        let base_text = base.text;
+        let theme = theme_from_css(":root { --brand-experiment: #ff0000; }", base);
+
+        assert_eq!(theme.accent, egui::Color32::from_rgb(255, 0, 0));
+        // Everything else still comes from the (light) preset.
+        assert_eq!(theme.text, base_text);
+        assert!(
+            !theme.is_dark,
+            "preset polarity must survive a CSS override"
+        );
     }
 
     #[test]

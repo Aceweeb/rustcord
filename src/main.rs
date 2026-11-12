@@ -3,9 +3,12 @@ use rustcord::app::RustcordApp;
 use rustcord::settings::Settings;
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // Capture logs both on stderr and in the in-memory ring used by the
+    // Diagnostics page.
+    rustcord::logbuf::install("info");
 
-    let settings = Settings::load_or_default();
+    let mut settings = Settings::load_or_default();
+    settings.normalize();
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
