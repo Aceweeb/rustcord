@@ -125,6 +125,13 @@ pub struct RustcordApp {
     pub(crate) rpc: crate::rpc::Rpc,
     /// When this process started, so the presence shows elapsed time.
     pub(crate) started_unix: i64,
+    /// A message to scroll to after a search result was clicked.
+    pub(crate) scroll_to_message: Option<String>,
+    /// Message to tint briefly after a jump, so the landing is obvious.
+    pub(crate) jump_highlight: Option<(String, std::time::Instant)>,
+    /// Frames spent converging on a jump target. Bounded so a target that is not
+    /// in the loaded list can never keep the list pinned.
+    pub(crate) jump_attempts: u8,
     /// When the bot last told the channel it is typing, so the REST call is not
     /// made per keystroke (D44).
     typing_notice: Option<(String, std::time::Instant)>,
@@ -456,6 +463,9 @@ impl RustcordApp {
             send_results,
             rpc: crate::rpc::Rpc::default(),
             started_unix: chrono::Utc::now().timestamp(),
+            scroll_to_message: None,
+            jump_highlight: None,
+            jump_attempts: 0,
             typing_notice: None,
             spotify_poll: None,
             spotify_connect: None,
@@ -1534,6 +1544,26 @@ impl RustcordApp {
 
     /// Open the channel a search result belongs to.
     pub(crate) fn jump_to_channel(&mut self, channel_id: &str) {
+        self.open_channel(channel_id);
+        self.close_search();
+    }
+
+    /// Open a search result's channel and scroll its list to that message. The
+    /// scroll is applied on the next frame, once the new channel's list is the
+    /// one being drawn.
+    pub(crate) fn jump_to_message(&mut self, channel_id: &str, message_id: &str) {
+        self.open_channel(channel_id);
+        self.scroll_to_message = Some(message_id.to_string());
+        self.jump_attempts = 0;
+        self.jump_highlight = Some((
+            message_id.to_string(),
+            std::time::Instant::now() + std::time::Duration::from_millis(2_500),
+        ));
+        self.status_line = Some("jumped to search result".to_string());
+        self.close_search();
+    }
+
+    fn open_channel(&mut self, channel_id: &str) {
         if let Some(channel) = self
             .channels
             .iter()
@@ -1543,10 +1573,8 @@ impl RustcordApp {
             self.selected_guild = Some(channel.guild_id);
             self.unread.mark_read(&channel.id);
             self.selected_channel = Some(channel.id);
-            self.status_line = Some(format!("opened #{}", channel.name));
             self.refresh_presence();
         }
-        self.close_search();
     }
 
     // -----------------------------------------------------------------------

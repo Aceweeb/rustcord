@@ -1503,3 +1503,39 @@ quietly returning everything.
 The overlay hint, footer and README name the new filters. No new state, index or
 network path: bounds are two `Option<DateTime<Utc>>` checked in `hit_for`, and one
 new test covers ranges, single bounds, time parsing and invalid input.
+
+## D50. Search results highlight their matches and jump to the message, not just the channel
+
+The overlay listed a snippet but clicking a row only opened the channel, leaving the
+user to scroll and guess which message matched. Rows now tint every matched term and
+open the exact message.
+
+**Highlighting is computed, not styled per widget.** `search::highlight_ranges`
+returns merged, sorted byte ranges for every occurrence of every free-text term,
+case-insensitively. The overlay builds one `LayoutJob` with a highlighted
+`TextFormat` per range, so a row stays a single `Label` and costs no extra widgets
+or hover targets. Lowercasing can change character count (`İ` becomes two chars),
+which would misplace byte offsets, so ranges are skipped for those strings rather
+than highlighting the wrong bytes; the snippet still renders normally.
+
+**Jumping lands on a row in a variable-height list.** The list virtualises with
+measured heights, so rows above a target may never have been drawn and their offsets
+are estimates. `jump_to_message` switches channel, stores the target id, and tints
+it for 2.5 s. The viewport then:
+
+1. estimates the offset with `RowMetrics::estimated_offset_of`, which charges
+   unmeasured rows the average of the rows that *have* been measured once there are
+   four samples;
+2. draws that window, measures the rows in it, and if the target was not among them
+   requests another frame — up to six, so a missing target cannot pin the list;
+3. clears the request as soon as the target row is drawn, and cancels immediately if
+   the user scrolls.
+
+The tint means a landing that is a row or two off is still unmistakable, and the
+convergence loop usually makes that unnecessary. This is a deliberate trade: exact
+offsets would require measuring every row above the target on every jump, which is
+the expense virtualisation exists to avoid.
+
+**Scope.** Pure range computation is unit-tested (case-insensitivity, repeated
+occurrences, overlap merging, empty inputs, the lowercase-length edge case) and the
+estimator has its own test; no network, index or new thread is involved.

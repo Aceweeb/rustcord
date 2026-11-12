@@ -7,7 +7,58 @@
 //! endpoint this client deliberately cannot call.
 
 use crate::app::RustcordApp;
-use egui::RichText;
+use crate::ui::theme::AppTheme;
+use egui::text::{LayoutJob, TextFormat};
+use egui::{FontId, RichText};
+
+/// A result row: a muted header line, then the snippet with every matched term
+/// tinted. Built as a `LayoutJob` so the highlight costs no extra widgets.
+fn result_job(header: &str, snippet: &str, terms: &[String], theme: &AppTheme) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    job.append(
+        header,
+        0.0,
+        TextFormat {
+            font_id: FontId::proportional(11.0),
+            color: theme.muted,
+            ..Default::default()
+        },
+    );
+    job.append(
+        "\n",
+        0.0,
+        TextFormat {
+            font_id: FontId::proportional(12.0),
+            color: theme.muted,
+            ..Default::default()
+        },
+    );
+
+    let base = TextFormat {
+        font_id: FontId::proportional(12.5),
+        color: theme.text,
+        ..Default::default()
+    };
+    let highlight = TextFormat {
+        font_id: FontId::proportional(12.5),
+        color: theme.text,
+        background: theme.accent.gamma_multiply(0.35),
+        ..Default::default()
+    };
+
+    let mut cursor = 0;
+    for (start, end) in crate::search::highlight_ranges(snippet, terms) {
+        if start > cursor {
+            job.append(&snippet[cursor..start], 0.0, base.clone());
+        }
+        job.append(&snippet[start..end], 0.0, highlight.clone());
+        cursor = end;
+    }
+    if cursor < snippet.len() {
+        job.append(&snippet[cursor..], 0.0, base);
+    }
+    job
+}
 
 pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
     if !app.search.open {
@@ -18,7 +69,7 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
     // default frame and only the text colours are set explicitly.
     let theme = app.plugins.theme().clone();
     let mut close = false;
-    let mut jump: Option<String> = None;
+    let mut jump: Option<(String, String)> = None;
     // Snapshots, so the message list can change under us without a borrow fight.
     let results = app.search.results.clone();
     let held = app.messages.len();
@@ -30,7 +81,10 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
         .len();
     let query_empty = app.search.query.trim().is_empty();
     // Snapshot of the parsed filters, so the overlay shows what the syntax did.
-    let described = crate::search::SearchQuery::parse(&app.search.query).describe();
+    let parsed = crate::search::SearchQuery::parse(&app.search.query);
+    let described = parsed.describe();
+    // Snapshot of the matching terms for the row highlights.
+    let terms = parsed.terms.clone();
 
     egui::Window::new("Search")
         .title_bar(false)
@@ -96,18 +150,21 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
                             .as_deref()
                             .map(|name| format!("#{name}  ·  "))
                             .unwrap_or_default();
-                        let label = format!(
-                            "{source}{}  ·  {}\n{}",
+                        let header = format!(
+                            "{source}{}  ·  {}",
                             hit.author,
-                            hit.timestamp.format("%d %b %H:%M"),
-                            hit.snippet
+                            hit.timestamp.format("%d %b %H:%M")
                         );
-                        let row = ui.add(
-                            egui::Label::new(RichText::new(label).small().color(theme.text))
-                                .sense(egui::Sense::click()),
-                        );
-                        if row.on_hover_text("Open that channel").clicked() {
-                            jump = hit.channel_id.clone();
+                        let job = result_job(&header, &hit.snippet, &terms, &theme);
+                        let row = ui.add(egui::Label::new(job).sense(egui::Sense::click()));
+                        if row
+                            .on_hover_text("Open that message in its channel")
+                            .clicked()
+                        {
+                            jump = hit
+                                .channel_id
+                                .clone()
+                                .map(|channel| (channel, hit.message_id.clone()));
                         }
                         ui.separator();
                     }
@@ -118,7 +175,8 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
                 RichText::new(
                     "Discord's server-side search needs a user token, so this searches only \
                      messages cached in Rustcord this session. Filters: from:name, in:#channel, \
-                     before:YYYY-MM-DD, after:YYYY-MM-DD (exclusive, UTC).",
+                     before:YYYY-MM-DD, after:YYYY-MM-DD (exclusive, UTC). Click a result to \
+                     open that message.",
                 )
                 .small()
                 .color(theme.muted),
@@ -129,8 +187,8 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
     if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
         close = true;
     }
-    if let Some(channel_id) = jump {
-        app.jump_to_channel(&channel_id);
+    if let Some((channel_id, message_id)) = jump {
+        app.jump_to_message(&channel_id, &message_id);
     }
     if close {
         app.close_search();

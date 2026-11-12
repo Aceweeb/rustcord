@@ -513,6 +513,12 @@ Priority order for the next session:
   literal terms; `describe()` and the overlay hint/footer name them. One new test;
   suite 302.
 
+- Search results now highlight matches and jump to the message (D50):
+  `search::highlight_ranges` (merged, case-insensitive, lowercase-length safe),
+  a single `LayoutJob` per row, `jump_to_message` plus a bounded convergence loop
+  over `RowMetrics::estimated_offset_of`, a 2.5 s tint, and cancellation on manual
+  scroll. Two new tests; suite 304.
+
 ---
 
 ## 7. Notes for the next agent

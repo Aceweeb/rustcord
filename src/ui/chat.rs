@@ -468,33 +468,115 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         let mut wanted: Vec<String> = Vec::new();
         let mut row_action: Option<RowAction> = None;
 
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .stick_to_bottom(true)
-            .show_viewport(ui, |ui, viewport| {
-                let range = metrics.range_for(viewport.min.y, viewport.max.y);
-                ui.allocate_space(egui::vec2(
-                    ui.available_width(),
-                    metrics.offset_of(range.start),
-                ));
-
-                for row in range.clone() {
-                    let index = visible[row];
-                    let message = &app.messages[index];
-                    wanted.extend(message.image_urls().map(str::to_string));
-
-                    let response = ui.scope(|ui| {
-                        message_row(app, ui, message, &mut row_action);
-                    });
-                    metrics.set_height(row, response.response.rect.height() + gap);
+        // A search result asked for a specific row. Heights below it may still be
+        // estimates, so this lands at the best known offset and the brief tint
+        // makes the message itself obvious. The request is consumed either way so
+        // it can never fight the user's scrolling on later frames.
+        let mut jump_offset = None;
+        let mut jump_target = None;
+        if let Some(target) = app.scroll_to_message.clone() {
+            if let Some(row) = visible
+                .iter()
+                .position(|index| app.messages[*index].id == target)
+            {
+                // Heights above the target are estimates on the first frame; the
+                // estimate improves as rows around the landing get measured, so
+                // keep asking until the row is actually drawn (bounded).
+                jump_offset = Some((metrics.estimated_offset_of(row) - 36.0).max(0.0));
+                app.jump_attempts = app.jump_attempts.saturating_add(1);
+                if app.jump_attempts <= 6 {
+                    jump_target = Some(target);
+                } else {
+                    app.scroll_to_message = None;
+                    app.jump_attempts = 0;
                 }
+            } else {
+                // The message is not in the loaded page; do not scroll at all.
+                app.scroll_to_message = None;
+                app.jump_attempts = 0;
+            }
+        }
+        // Any manual scroll wins immediately over a jump in progress.
+        let user_scrolled = ui.input(|input| input.smooth_scroll_delta != egui::Vec2::ZERO);
+        if user_scrolled {
+            app.scroll_to_message = None;
+            jump_target = None;
+            jump_offset = None;
+            app.jump_attempts = 0;
+        }
+        let highlight_active = app
+            .jump_highlight
+            .as_ref()
+            .is_some_and(|(_, until)| std::time::Instant::now() < *until);
+        if highlight_active {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(250));
+        }
+        let mut scroll = egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .stick_to_bottom(jump_offset.is_none());
+        if let Some(offset) = jump_offset {
+            scroll = scroll.vertical_scroll_offset(offset);
+        }
 
-                let consumed = metrics.offset_of(range.end);
-                let remaining = (metrics.total() - consumed).max(0.0);
-                ui.allocate_space(egui::vec2(ui.available_width(), remaining));
-            });
+        scroll.show_viewport(ui, |ui, viewport| {
+            let range = metrics.range_for(viewport.min.y, viewport.max.y);
+            let mut saw_target = false;
+            ui.allocate_space(egui::vec2(
+                ui.available_width(),
+                metrics.offset_of(range.start),
+            ));
+
+            for row in range.clone() {
+                let index = visible[row];
+                let message = &app.messages[index];
+                if jump_target.as_deref() == Some(message.id.as_str()) {
+                    saw_target = true;
+                }
+                wanted.extend(message.image_urls().map(str::to_string));
+
+                let focused = app.jump_highlight.as_ref().is_some_and(|(id, until)| {
+                    id == &message.id && std::time::Instant::now() < *until
+                });
+                let response = ui.scope(|ui| {
+                    if focused {
+                        egui::Frame::new()
+                            .fill(app.plugins.theme().accent.gamma_multiply(0.22))
+                            .corner_radius(6.0)
+                            .inner_margin(egui::Margin::symmetric(6, 3))
+                            .show(ui, |ui| {
+                                message_row(app, ui, message, &mut row_action);
+                            });
+                    } else {
+                        message_row(app, ui, message, &mut row_action);
+                    }
+                });
+                metrics.set_height(row, response.response.rect.height() + gap);
+            }
+
+            let consumed = metrics.offset_of(range.end);
+            let remaining = (metrics.total() - consumed).max(0.0);
+            ui.allocate_space(egui::vec2(ui.available_width(), remaining));
+
+            if jump_target.is_some() && !saw_target {
+                // Another frame measures the rows just drawn and lands closer,
+                // so keep going rather than waiting for an input event.
+                ui.ctx().request_repaint();
+            } else if saw_target {
+                app.scroll_to_message = None;
+                app.jump_attempts = 0;
+            }
+        });
 
         app.metrics = metrics;
+        // Drop the tint once it has served its purpose, so no wake-ups linger.
+        if app
+            .jump_highlight
+            .as_ref()
+            .is_some_and(|(_, until)| std::time::Instant::now() >= *until)
+        {
+            app.jump_highlight = None;
+        }
 
         match row_action {
             Some(RowAction::Copy(text)) => {

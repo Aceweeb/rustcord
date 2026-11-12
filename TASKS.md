@@ -4,6 +4,11 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [~] Search highlighting and jump-to-message (`DECISIONS.md` D50):
+  `highlight_ranges` + one `LayoutJob` per row; `jump_to_message` switches channel,
+  converges the scroll in ≤6 frames using measured-height averages, tints the row
+  for 2.5 s and cancels on manual scroll. 2 new tests; the scroll landing and tint
+  have not been seen on screen (D28).
 - [x] Date filters in search (`DECISIONS.md` D49): `before:`/`after:` with
   `YYYY-MM-DD` or `YYYY-MM-DDThh:mm[:ss]`, UTC, exclusive bounds, invalid values
   kept as text, echoed in the parsed-filter line. 1 new test.

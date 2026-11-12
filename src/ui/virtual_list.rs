@@ -60,6 +60,38 @@ impl RowMetrics {
         self.heights.iter().take(index).sum()
     }
 
+    /// Offset for a row far outside the viewport, where most rows above have
+    /// never been drawn. Rows still at the default estimate are charged the
+    /// average of rows that have actually been measured, once there are enough
+    /// samples to be meaningful.
+    ///
+    /// This is what makes a search jump converge: the first frame lands roughly,
+    /// the rows around it get measured, and the next frame's estimate is close.
+    pub fn estimated_offset_of(&self, index: usize) -> f32 {
+        let measured: Vec<f32> = self
+            .heights
+            .iter()
+            .copied()
+            .filter(|height| *height != self.default_height)
+            .collect();
+        let average = if measured.len() >= 4 {
+            measured.iter().sum::<f32>() / measured.len() as f32
+        } else {
+            self.default_height
+        };
+        self.heights
+            .iter()
+            .take(index)
+            .map(|height| {
+                if *height == self.default_height {
+                    average
+                } else {
+                    *height
+                }
+            })
+            .sum()
+    }
+
     pub fn total(&self) -> f32 {
         self.heights.iter().sum()
     }
@@ -146,6 +178,20 @@ mod tests {
         // Rows 0..=49; a 100px viewport covering rows 2..4.
         assert_eq!(metrics.range_for(100.0, 200.0), 2..4);
         assert_eq!(metrics.range_for(0.0, 50.0), 0..1);
+    }
+
+    #[test]
+    fn unmeasured_rows_borrow_the_average_measured_height() {
+        let mut metrics = RowMetrics::new();
+        metrics.ensure_len(20);
+        for index in 0..5 {
+            metrics.set_height(index, 100.0);
+        }
+        // Five measured rows at 100 px and five estimates become 100, not 52.
+        assert_eq!(metrics.estimated_offset_of(10), 1000.0);
+        // With too few samples the default stays in charge.
+        assert_eq!(metrics.estimated_offset_of(1), 100.0);
+        assert_eq!(metrics.estimated_offset_of(0), 0.0);
     }
 
     #[test]

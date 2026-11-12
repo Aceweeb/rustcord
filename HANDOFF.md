@@ -7,12 +7,25 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 297 lib + 5 bin tests passing (302)
+- `cargo test --all-targets`: 299 lib + 5 bin tests passing (304)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Search match highlighting and jump-to-message (`DECISIONS.md` D50):
+
+- `src/search.rs` — `highlight_ranges` (merged byte ranges, lowercase-length safe),
+  1 test.
+- `src/ui/virtual_list.rs` — `estimated_offset_of` with measured-height averaging,
+  1 test.
+- `src/app.rs` — `jump_to_message`, `scroll_to_message`, `jump_highlight`,
+  `jump_attempts`; `jump_to_channel` now shares `open_channel`.
+- `src/ui/chat.rs` — offset estimate, ≤6-frame convergence, 2.5 s tint, cancel on
+  manual scroll.
+- `src/ui/search.rs` — `result_job` `LayoutJob` with highlighted terms; click jumps
+  to the message.
 
 Search date bounds (`DECISIONS.md` D49):
 

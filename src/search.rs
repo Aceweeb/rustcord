@@ -244,6 +244,49 @@ fn hit_for(
     })
 }
 
+/// Byte ranges in `snippet` that match any of `terms`, merged and sorted.
+///
+/// Case-insensitive, like the search itself. Lowercasing can change a string's
+/// length (`İ` becomes two chars), which would make byte offsets from the lowered
+/// copy point into the wrong place; in that rare case the range is skipped rather
+/// than mis-highlighting, and the row still shows the snippet.
+pub fn highlight_ranges(snippet: &str, terms: &[String]) -> Vec<(usize, usize)> {
+    if snippet.is_empty() || terms.is_empty() {
+        return Vec::new();
+    }
+    let lowered = snippet.to_lowercase();
+    if lowered.chars().count() != snippet.chars().count() {
+        return Vec::new();
+    }
+
+    let mut ranges = Vec::new();
+    for term in terms {
+        if term.is_empty() {
+            continue;
+        }
+        let mut from = 0;
+        while let Some(offset) = lowered[from..].find(term.as_str()) {
+            let start = from + offset;
+            let end = start + term.len();
+            ranges.push((start, end));
+            from = end.max(start + 1);
+            if from >= lowered.len() {
+                break;
+            }
+        }
+    }
+
+    ranges.sort_unstable();
+    let mut merged: Vec<(usize, usize)> = Vec::new();
+    for (start, end) in ranges {
+        match merged.last_mut() {
+            Some(last) if start <= last.1 => last.1 = last.1.max(end),
+            _ => merged.push((start, end)),
+        }
+    }
+    merged
+}
+
 /// Parse an absolute date filter value. UTC is deliberate: message timestamps are
 /// UTC, so a filter cannot silently mean different instants on different machines.
 fn parse_date(raw: &str) -> Option<DateTime<Utc>> {
@@ -590,6 +633,30 @@ mod tests {
         // Either bound alone works, and both are exclusive.
         assert_eq!(hits(&messages, "ship after:2026-11-01").len(), 2);
         assert_eq!(hits(&messages, "ship before:2026-11-12").len(), 3);
+    }
+
+    #[test]
+    fn matched_terms_become_merged_highlight_ranges() {
+        assert_eq!(
+            highlight_ranges("hello world", &["world".into()]),
+            vec![(6, 11)]
+        );
+        // Case-insensitive, like the search.
+        assert_eq!(
+            highlight_ranges("Hello World", &["hello".into()]),
+            vec![(0, 5)]
+        );
+        // Every occurrence, with overlaps merged rather than double-painted.
+        assert_eq!(
+            highlight_ranges("ab ab", &["ab".into(), "b".into()]),
+            vec![(0, 2), (3, 5)]
+        );
+        assert!(highlight_ranges("hello", &["zebra".into()]).is_empty());
+        assert!(highlight_ranges("", &["x".into()]).is_empty());
+        assert!(highlight_ranges("hello", &[]).is_empty());
+        // A term that lowercases to a different character count cannot be mapped
+        // safely, so it is skipped instead of highlighting the wrong bytes.
+        assert!(highlight_ranges("İstanbul", &["stan".into()]).is_empty());
     }
 
     #[test]
