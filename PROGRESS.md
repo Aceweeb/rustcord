@@ -1,5 +1,11 @@
 # Rustcord — Progress / Handoff Notes
 
+> **Partly superseded.** The project now maintains `PROJECT.md`,
+> `ARCHITECTURE.md`, `TASKS.md`, `CURRENT_STATE.md`, `DECISIONS.md` and
+> `HANDOFF.md`. Read `CURRENT_STATE.md` for verified numbers and `HANDOFF.md`
+> for the next task; sections 1–3 below describe the earlier scaffold.
+> The project also moved to `/mnt/storage/Default Project/rustcord`.
+
 Last updated: 2026-11-12 (Europe/Berlin)
 
 Project path: `/home/jason/Documents/Default Project/rustcord`

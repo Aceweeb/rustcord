@@ -17,6 +17,11 @@ explicit next steps rather than half-implemented stubs that pretend to work.
 ## What works today
 
 - Native egui UI: guild rail, channel list, member list, message history, composer.
+- Nine-section settings window: Appearance, Themes, Performance, Memory,
+  Notifications, Shortcuts, Privacy, Diagnostics, About (`Ctrl+,`).
+- 12 built-in theme presets across Dark, Light, Purple and AMOLED, plus custom
+  accent colours, painted previews, instant switching and persisted selection.
+- Live memory and CPU figures sampled from `/proc`, with a budget alert.
 - Dark theme with live palette application.
 - Vencord/BetterDiscord-style `.theme` parsing for CSS custom properties:
   `--background-primary`, `--background-secondary`, `--background-tertiary`,
@@ -45,9 +50,14 @@ Measured on the development machine (Arch, Wayland, release build):
 | Metric | Result |
 | --- | --- |
 | Binary size | ~11 MB stripped |
-| Idle RSS (after 3 s) | ~134 MB |
-| Steady-state CPU (5 s sample after 10 s settle) | ~0.0% |
+| Idle RSS (after 8 s, release) | 195 MB (`VmRSS`) |
+| Peak RSS | 196 MB (`VmHWM`) |
+| Steady-state CPU (6 s sample while idle) | ~0.0% |
 | Threads (no gateway token) | 2 |
+
+Earlier builds documented ~134 MB. The current measurement is 195 MB; the cause
+is not yet confirmed and is the top item in `TASKS.md`. Reproduce with
+`scripts/measure-memory.sh 20`.
 
 ## What is deliberately not implemented
 

@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Rustcord
+GenericName=Discord Client
+Comment=Lightweight native Discord client for bot accounts
+Exec=rustcord
+Icon=rustcord
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+Keywords=discord;chat;voice;
+StartupNotify=true
+StartupWMClass=rustcord
