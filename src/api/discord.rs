@@ -27,7 +27,7 @@ pub struct DiscordClient {
 impl DiscordClient {
     pub fn new(token: impl Into<String>) -> Result<Self> {
         let http = reqwest::Client::builder()
-            .user_agent("Rustcord/0.1 (https://example.invalid)")
+            .user_agent("Rustcord/0.1")
             .build()
             .context("failed to build Discord HTTP client")?;
 
@@ -82,6 +82,12 @@ impl DiscordClient {
     ) -> Result<String> {
         let route = Route::new(method.as_str(), path);
         let url = format!("{API_BASE}{path}");
+
+        // Every REST call is Discord's or nothing: this is the one place a URL
+        // could drift off the allowlist, and the client is local-only by design.
+        if !crate::privacy::host_allowed(&url) {
+            anyhow::bail!("refusing a request to a host that is not Discord: {url}");
+        }
 
         for attempt in 0..2 {
             let wait = self.limits().wait_seconds(&route, self.now());

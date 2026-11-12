@@ -22,7 +22,7 @@ pub struct SpotifyTrack {
 impl SpotifyClient {
     pub fn new(access_token: impl Into<String>) -> Result<Self> {
         let http = reqwest::Client::builder()
-            .user_agent("Rustcord/0.1 (https://example.invalid)")
+            .user_agent("Rustcord/0.1")
             .build()
             .context("failed to build Spotify HTTP client")?;
         Ok(Self {

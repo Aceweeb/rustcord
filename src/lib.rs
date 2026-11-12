@@ -9,6 +9,7 @@ pub mod logbuf;
 pub mod models;
 pub mod monitor;
 pub mod plugins;
+pub mod privacy;
 pub mod search;
 pub mod settings;
 pub mod shortcuts;

@@ -1008,6 +1008,55 @@ impl RustcordApp {
 
         ui.add_space(10.0);
         ui.separator();
+        ui.label(RichText::new("Runs on this PC").strong());
+        ui.label(
+            RichText::new(
+                "No database, no telemetry, no account with anyone but Discord. Message history \
+                 lives in memory and is gone when the window closes; the only files are the \
+                 settings below and two keyring entries.",
+            )
+            .small()
+            .color(theme.muted),
+        );
+
+        egui::Grid::new("local_stores")
+            .num_columns(2)
+            .spacing([12.0, 4.0])
+            .show(ui, |ui| {
+                for store in crate::privacy::STORES {
+                    ui.label(RichText::new(store.name).small().color(theme.text));
+                    ui.label(
+                        RichText::new(format!("{} — {}", store.location, store.detail))
+                            .small()
+                            .color(theme.muted),
+                    );
+                    ui.end_row();
+                }
+            });
+
+        ui.add_space(4.0);
+        ui.label(
+            RichText::new(format!(
+                "Network: {} — every request is checked against this list, including the \
+                 gateway's resume URL.",
+                crate::privacy::ALLOWED_HOSTS.join(", ")
+            ))
+            .small()
+            .color(theme.muted),
+        );
+        ui.label(
+            RichText::new(format!(
+                "History cap: {} messages · image cache: {} MB · diagnostics stay in memory \
+                 until you export them.",
+                self.settings.resource_priority.history_cap(),
+                self.settings.image_cache_mb
+            ))
+            .small()
+            .color(theme.muted),
+        );
+
+        ui.add_space(10.0);
+        ui.separator();
         ui.label(RichText::new("Discord connection").strong());
         ui.label(
             RichText::new(

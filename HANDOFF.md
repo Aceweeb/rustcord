@@ -56,6 +56,15 @@ neither history paging nor image rendering has been seen working:
    cache figures in **Settings → Memory** as you scroll past it repeatedly.
 4. Expect `429` under rapid paging — that is the next task, not a bug.
 
+## Local-only invariants
+
+Do not add a database, a cache directory or a telemetry crate without changing
+`DECISIONS.md` D22 deliberately. `src/privacy.rs` is the allowlist every network
+path goes through, and its tests fail if the store list mentions a database or
+the CDN lists disagree. `scripts/check-local.sh` is the quick check before a
+release. `api::spotify` is unreachable on purpose — if it is ever wired up, its
+host and its setting have to be disclosed first.
+
 ## "Log in as me" requests
 
 Expect this again. `DECISIONS.md` D21 has the answer with sources: self-bots are

@@ -10,6 +10,11 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   loaded history of the open channel, `from:`/`@` author filter, 50 results,
   char-safe snippets, click-to-open. 12 tests. Server-side search is not
   available with a bot token and the UI says so.
+- [x] Local-only guarantees enforced (`DECISIONS.md` D22, `src/privacy.rs`): one
+  exact-match host allowlist behind every REST call, image fetch and the gateway
+  socket (including resume URLs); no database, no telemetry crate, no endpoint in
+  the binary. Settings → Privacy lists the local stores and hosts;
+  `scripts/check-local.sh` reproduces the static checks. 7 tests.
 - [x] Desktop integration: `assets/rustcord.svg` icon, `scripts/install-local.sh`
   (build → `~/.local/bin/rustcord`, launcher entry with an absolute `Exec`, icon
   into the hicolor theme, cache refresh), verified in the running session

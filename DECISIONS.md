@@ -394,6 +394,49 @@ the copy says so instead of implying a server-side search. A real index remains
 possible later, but it would have to stay inside the memory budget and be
 invalidated by the same events that mark the overlay stale today.
 
+## D22. Local-only: no database, no telemetry, one allowlist
+
+**Context.** The client is meant to run entirely on the user's machine and talk
+directly to Discord. That has always been true in practice — no server component,
+no bundled database, history in memory — but it was a property of the code rather
+than something enforced or checkable, and "it doesn't collect anything" is worth
+nothing without evidence.
+
+**Decision.**
+
+- `src/privacy.rs` holds the **single host allowlist**: `discord.com`,
+  `gateway.discord.gg`, `cdn.discordapp.com`, `media.discordapp.net`,
+  `images-ext-1/2.discordapp.net`. Exact match only, `https`/`wss` only, ports and
+  userinfo stripped before comparing, so `discord.com.evil.test`,
+  `evil.discord.com` and `https://discord.com@evil.test` are all refused.
+- It is **enforced**, not documented: every REST call in `api::discord` and the
+  gateway socket (including the `resume_gateway_url` from a payload, which is
+  attacker-influenced) pass through `host_allowed` and fail closed.
+- No database: message history, decoded textures and the diagnostics log live in
+  memory, bounded by the resource profile and the image budget. The only files are
+  `~/.config/rustcord/settings.json` (preferences only) and two keyring entries.
+- No telemetry: no analytics crate is linked, no endpoint appears in the binary,
+  and nothing is sent anywhere except Discord.
+- `api::spotify` is the one non-Discord client in the tree and **nothing
+  constructs it** (the Spotify status plugin builds its activity locally). If it is
+  ever wired up, its host must be added to the allowlist and disclosed in the
+  settings window first.
+
+**How it is checked.** `src/privacy.rs` tests (7): allowlist behaviour, look-alikes,
+cleartext schemes, that the OAuth endpoints are on the list, that the image CDN
+list agrees, that the store list names no database or telemetry, and that the
+summary states both guarantees. `scripts/check-local.sh` repeats the static half
+for a human: telemetry and database crates in `Cargo.lock`, hosts in the source,
+the local state list, and a scan of the release binary for analytics endpoints.
+
+**Evidence from a run.** With no token configured the app opens no sockets at all
+(`ss -tunp` shows none), and a six-second run creates neither the config nor the
+data directory — the settings file appears only when something is changed.
+
+**Consequences.** A future feature that wants a non-Discord host has to change
+this module deliberately, which is the point: a stray analytics dependency or a
+new service would fail the tests instead of shipping quietly.
+
 ## D21. "Log in as my Discord account" — what exists, what does not, and why
 
 **Context.** The request keeps coming back in the form "just make Discord login

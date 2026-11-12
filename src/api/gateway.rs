@@ -241,6 +241,12 @@ async fn gateway_cycle(
         .map(normalize_resume_url)
         .unwrap_or_else(|| GATEWAY_URL.to_string());
 
+    // The resume URL arrives in a gateway payload, so it is checked like any
+    // other untrusted input before a socket is opened to it.
+    if !crate::privacy::host_allowed(&url) {
+        return CycleOutcome::Reconnect(format!("refusing a non-Discord gateway: {url}"));
+    }
+
     let (ws, _) = match connect_async(&url).await {
         Ok(pair) => pair,
         Err(err) => return CycleOutcome::Reconnect(format!("could not connect: {err}")),

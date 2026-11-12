@@ -154,6 +154,36 @@ rather than appearing as a second, unnamed app.
 Overridable for packaging or a different layout: `BIN_DIR=… APPS_DIR=…
 ICON_DIR=… scripts/install-local.sh`.
 
+## Where your data lives
+
+Rustcord is a local program talking to Discord. There is no server of ours, no
+account to create, no database file and no analytics.
+
+| What | Where |
+| --- | --- |
+| Preferences | `~/.config/rustcord/settings.json` — no credentials, no messages |
+| Bot token | OS keyring, `rustcord` / `discord_bot_token` |
+| Identity session | OS keyring, `rustcord` / `discord_oauth_identity` |
+| Messages | memory only, capped, gone when the window closes |
+| Images | RAM texture cache, bounded by `image_cache_mb` |
+| Diagnostics | memory ring buffer, exported only when you ask |
+
+Network traffic goes to Discord and nowhere else, and that is enforced rather than
+promised: every REST call, the gateway socket (including a `resume_gateway_url`
+from a payload) and every image download pass an exact-match allowlist of
+`discord.com`, `gateway.discord.gg`, `cdn.discordapp.com`, `media.discordapp.net`
+and the two `images-ext-*.discordapp.net` hosts. Anything else is refused.
+
+Settings → Privacy shows this same list, with the live history cap and image
+budget. To verify it yourself:
+
+```bash
+scripts/check-local.sh      # crates, source hosts, binary scan
+```
+
+With no token configured the app opens no sockets at all, and a run that changes
+nothing writes nothing — the settings file only appears when you change a setting.
+
 ## Configuration
 
 Copy or edit `settings.json`:

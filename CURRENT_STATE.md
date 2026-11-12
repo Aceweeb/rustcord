@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **187 passed (182 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **194 passed (189 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -78,6 +78,24 @@ rebuild (driver and font warm-up), and later samples caught 5-second bursts of
 0.02% of a core and the frame counter showed 0.2 fps at idle, so the loader is
 innocent. See `DECISIONS.md` D14 — idle CPU is only meaningful next to a frame
 count.
+
+## Local-only guarantees
+
+`src/privacy.rs` (D22) holds the one exact-match allowlist and it is enforced at
+every network entry point: `api::discord`'s `request`, the gateway socket
+(including a `resume_gateway_url` taken from a payload), and image downloads
+(which keep their own CDN list, asserted to agree). Cleartext and look-alike
+hosts are refused.
+
+No database: messages, textures and the log ring are memory-only, bounded by the
+resource profile. Files: `settings.json` (preferences) and two keyring entries.
+No telemetry: no analytics crate in `Cargo.lock`, no analytics endpoint in the
+release binary.
+
+Observed evidence: with no token configured the process holds **no sockets**, and
+a six-second run creates **neither** the config nor the data directory. `Settings
+→ Privacy` lists every store and host; `scripts/check-local.sh` reproduces the
+static checks.
 
 ## Login page
 

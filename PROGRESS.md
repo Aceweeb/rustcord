@@ -384,6 +384,12 @@ Priority order for the next session:
   50 results, char-safe snippets, click to open the channel. No index, no
   per-frame scan, and the overlay states that Discord's server-side search needs
   a user token. 12 tests. Test suite: 180.
+- Made the local-only design enforceable and visible (D22, `src/privacy.rs`): a
+  single exact-match host allowlist now guards every REST call, image fetch and
+  the gateway socket, including resume URLs from payloads. Settings → Privacy
+  lists the local stores and hosts; `scripts/check-local.sh` repeats the checks.
+  Verified no configured-token run opens sockets or writes files. 7 tests. Test
+  suite: 194.
 - Added the bot install flow to the login page (D21): the invite URL is built
   from the configured client ID with only the permissions Rustcord uses, with
   open-in-browser and copy-link. 3 tests. Test suite: 187.
