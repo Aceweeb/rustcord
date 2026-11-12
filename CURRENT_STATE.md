@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **183 passed (178 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **185 passed (180 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -78,6 +78,18 @@ rebuild (driver and font warm-up), and later samples caught 5-second bursts of
 0.02% of a core and the frame counter showed 0.2 fps at idle, so the loader is
 innocent. See `DECISIONS.md` D14 — idle CPU is only meaningful next to a frame
 count.
+
+## Desktop install
+
+`scripts/install-local.sh` builds and installs for the current user:
+`~/.local/bin/rustcord`, `~/.local/share/applications/rustcord.desktop` (absolute
+`Exec`, `StartupWMClass=rustcord`) and `~/.local/share/icons/hicolor/scalable/apps/rustcord.svg`.
+Re-running it updates all three, which is the update path for a launcher install.
+
+Verified in this session: `desktop-file-validate` passes, the entry starts the
+binary from `$HOME` (where a launcher starts it), the window reports
+`class: Rustcord` / `title: Rustcord` in `hyprctl clients`, the process stays up,
+and the SVG renders (rsvg-convert, 64×64 RGBA).
 
 ## Message search (local)
 

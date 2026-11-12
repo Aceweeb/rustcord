@@ -384,6 +384,11 @@ Priority order for the next session:
   50 results, char-safe snippets, click to open the channel. No index, no
   per-frame scan, and the overlay states that Discord's server-side search needs
   a user token. 12 tests. Test suite: 180.
+- Added desktop integration: an SVG icon, `scripts/install-local.sh` and a
+  corrected launcher entry. Installed to `~/.local/bin` + the hicolor icon theme
+  and verified live (`hyprctl` shows `class: Rustcord`). Relative theme paths now
+  resolve against the config and binary directories, not just the cwd, which a
+  launcher does not share with the project. Test suite: 185.
 - Added refresh-token handling to the OAuth2 identity session (D18 amendment):
   `refresh_session`, `merge_refresh` and `refresh_token_for`, run on a worker
   thread at start-up when the stored session has expired, with the result written

@@ -200,10 +200,40 @@ impl Settings {
     }
 
     pub fn theme_path(&self) -> Option<PathBuf> {
-        self.theme_file.clone().or_else(|| {
-            let candidate = Self::config_dir().join("theme.theme");
-            candidate.exists().then_some(candidate)
-        })
+        if let Some(file) = &self.theme_file {
+            if file.is_absolute() {
+                return Some(file.clone());
+            }
+
+            // A relative path used to be taken from the working directory, which
+            // worked when launched from the project but not from a desktop
+            // launcher, where the cwd is the home directory. Try the config dir
+            // and the binary's directory before giving up on cwd.
+            let binary_dir = std::env::current_exe()
+                .ok()
+                .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf));
+
+            for base in [
+                Some(Self::config_dir()),
+                binary_dir,
+                Some(PathBuf::from(".")),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                let candidate = base.join(file);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+
+            // Nothing matched: report the configured path so the warning names
+            // what the user actually set.
+            return Some(file.clone());
+        }
+
+        let candidate = Self::config_dir().join("theme.theme");
+        candidate.exists().then_some(candidate)
     }
 
     // --- theme helpers ------------------------------------------------------
@@ -368,6 +398,32 @@ mod tests {
         assert_eq!(settings.accent(), None);
         // Identity login is opt-in and absent from older files.
         assert_eq!(settings.oauth_client_id, None);
+    }
+
+    #[test]
+    fn an_absolute_theme_path_is_used_as_given() {
+        let settings = Settings {
+            theme_file: Some(PathBuf::from("/tmp/definitely-not-a-theme.theme")),
+            ..Settings::default()
+        };
+        assert_eq!(
+            settings.theme_path(),
+            Some(PathBuf::from("/tmp/definitely-not-a-theme.theme"))
+        );
+    }
+
+    #[test]
+    fn an_unresolvable_relative_theme_path_is_still_reported() {
+        // The point is that it does not panic or silently become `None`: the
+        // caller logs the path it tried, which is how this was diagnosed.
+        let settings = Settings {
+            theme_file: Some(PathBuf::from("no-such-dir/no-such-theme.theme")),
+            ..Settings::default()
+        };
+        assert_eq!(
+            settings.theme_path(),
+            Some(PathBuf::from("no-such-dir/no-such-theme.theme"))
+        );
     }
 
     #[test]

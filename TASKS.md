@@ -10,6 +10,13 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   loaded history of the open channel, `from:`/`@` author filter, 50 results,
   char-safe snippets, click-to-open. 12 tests. Server-side search is not
   available with a bot token and the UI says so.
+- [x] Desktop integration: `assets/rustcord.svg` icon, `scripts/install-local.sh`
+  (build → `~/.local/bin/rustcord`, launcher entry with an absolute `Exec`, icon
+  into the hicolor theme, cache refresh), verified in the running session
+  (`hyprctl` reports `class: Rustcord`, matching `StartupWMClass`).
+- [x] Relative `theme_file` paths resolve against the config dir and the binary's
+  directory before the working directory, so a launcher start does not silently
+  lose the theme. 2 tests.
 - [ ] Multiple bot accounts (`DECISIONS.md`, proposal section): designed, not
   started; needs per-account keyring entries, per-account sessions and per-token
   identify budgets.

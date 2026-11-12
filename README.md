@@ -124,6 +124,36 @@ cargo run --release
 
 The `Makefile` also has `make deps` and `make profile` (Valgrind Massif).
 
+## Install it in the application launcher
+
+One command builds, installs and registers Rustcord as a desktop app:
+
+```bash
+scripts/install-local.sh
+```
+
+It installs, for the current user only (no root):
+
+| File | Purpose |
+| --- | --- |
+| `~/.local/bin/rustcord` | the release binary |
+| `~/.local/share/applications/rustcord.desktop` | launcher entry, with an absolute `Exec` |
+| `~/.local/share/icons/hicolor/scalable/apps/rustcord.svg` | the icon |
+
+Then search for **Rustcord** in the launcher (Super, or `hyprlauncher` / `rofi` /
+`wofi` depending on the session). **Re-run the script after pulling or building**
+to update the installed app: it replaces the binary, icon and entry in place, so
+the launcher always starts the current build.
+
+The entry uses an absolute path on purpose — a launcher started by the session
+does not necessarily have `~/.local/bin` on `PATH`, and a bare `rustcord` would
+fail silently. `StartupWMClass=rustcord` matches the window class (`hyprctl
+clients` shows `class: Rustcord`), so the running window groups with the icon
+rather than appearing as a second, unnamed app.
+
+Overridable for packaging or a different layout: `BIN_DIR=… APPS_DIR=…
+ICON_DIR=… scripts/install-local.sh`.
+
 ## Configuration
 
 Copy or edit `settings.json`:
@@ -171,7 +201,8 @@ by design. That is what keeps the parser safe and small.
 src/
 ├── main.rs              # eframe bootstrap
 ├── app.rs               # application state, settings window, mock data
-├── auth.rs              # bot token storage via the OS keyring
+├── auth.rs              # bot token + identity session in the OS keyring
+├── search.rs            # local message search over loaded history
 ├── models.rs            # User, Guild, Channel, Message, Activity, ...
 ├── settings.rs          # JSON config load/save (no credentials)
 ├── images.rs            # bounded LRU of decoded textures, CDN allowlist, worker

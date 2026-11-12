@@ -56,6 +56,15 @@ neither history paging nor image rendering has been seen working:
    cache figures in **Settings → Memory** as you scroll past it repeatedly.
 4. Expect `429` under rapid paging — that is the next task, not a bug.
 
+## Installed for this user
+
+`scripts/install-local.sh` put the release binary at `~/.local/bin/rustcord`, the
+launcher entry at `~/.local/share/applications/rustcord.desktop` (absolute `Exec`,
+`StartupWMClass=rustcord`) and the icon in the hicolor theme. **Re-run it after
+any change the user should see in the launcher**, and commit after the usual
+checks. The entry was verified with `desktop-file-validate`, a launch from
+`$HOME`, and `hyprctl clients` reporting `class: Rustcord`.
+
 ## Then, in order
 
 1. OAuth2 identity: verify the live exchange — sign-in **and** refresh — with a
