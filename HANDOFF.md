@@ -58,10 +58,10 @@ neither history paging nor image rendering has been seen working:
 
 ## Then, in order
 
-1. OAuth2 identity: verify the live exchange with a real application (client ID
-   + `http://127.0.0.1:53134/callback` redirect). Ports 53134 and the client-ID
-   normalisation are the two things to test first. Refresh-token support is the
-   obvious follow-up; today an expired session asks for a new sign-in.
+1. OAuth2 identity: verify the live exchange — sign-in **and** refresh — with a
+   real application (client ID + `http://127.0.0.1:53134/callback` redirect).
+   Ports 53134, the client-ID normalisation and a forced expiry are the things to
+   test first. Both paths are unit-tested but have never spoken to Discord.
 2. Local message search over loaded history (`YAPFAST_PARITY.md` §7). Discord's
    guild search endpoint needs a user token, so a server-side search is not an
    option: index what is in memory, keep it bounded, and say in the UI that it

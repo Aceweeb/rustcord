@@ -244,6 +244,26 @@ impl Tokens {
     }
 }
 
+/// Discord sends a new refresh token only sometimes. When it does not, the old
+/// one stays valid and must be kept, or the next refresh has nothing to use and
+/// the user is silently signed out.
+pub fn merge_refresh(previous: &Tokens, mut fresh: Tokens) -> Tokens {
+    if fresh.refresh_token.is_none() {
+        fresh.refresh_token = previous.refresh_token.clone();
+    }
+    fresh
+}
+
+/// The refresh token a session can refresh with, or the reason it cannot.
+pub fn refresh_token_for(session: &Session) -> Result<String> {
+    session
+        .tokens
+        .refresh_token
+        .clone()
+        .filter(|token| !token.is_empty())
+        .ok_or_else(|| anyhow!("this session has no refresh token; sign in again"))
+}
+
 pub fn parse_token_response(body: &str, now: u64) -> Result<Tokens> {
     #[derive(Deserialize)]
     struct Raw {
@@ -414,6 +434,15 @@ pub fn refresh_tokens(client_id: &str, refresh_token: &str) -> Result<Tokens> {
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh_token),
     ])
+}
+
+/// Trade the stored refresh token for a new access token, keeping the identity
+/// fresh and the old refresh token when Discord does not rotate it.
+pub fn refresh_session(client_id: &str, session: &Session) -> Result<Session> {
+    let refresh_token = refresh_token_for(session)?;
+    let tokens = merge_refresh(&session.tokens, refresh_tokens(client_id, &refresh_token)?);
+    let identity = fetch_identity(&tokens.access_token)?;
+    Ok(Session { tokens, identity })
 }
 
 pub fn fetch_identity(access_token: &str) -> Result<Identity> {
@@ -771,6 +800,52 @@ mod tests {
         assert_eq!(parsed.identity.id, "900");
         assert_eq!(parsed.tokens.scope, "identify");
         assert_eq!(parsed.tokens.expires_at, 1_700_000_000);
+    }
+
+    #[test]
+    fn a_refresh_that_omits_the_refresh_token_keeps_the_old_one() {
+        let previous = session(1_000).tokens;
+        let fresh = parse_token_response(
+            r#"{"access_token":"at2","expires_in":604800,"scope":"identify"}"#,
+            2_000,
+        )
+        .expect("tokens");
+        assert_eq!(fresh.refresh_token, None);
+
+        let merged = merge_refresh(&previous, fresh);
+        assert_eq!(merged.access_token, "at2");
+        assert_eq!(merged.refresh_token.as_deref(), Some("refresh"));
+        assert_eq!(merged.expires_at, 2_000 + 604_800);
+    }
+
+    #[test]
+    fn a_rotated_refresh_token_replaces_the_old_one() {
+        let previous = session(1_000).tokens;
+        let fresh = parse_token_response(
+            r#"{"access_token":"at2","refresh_token":"refresh2","expires_in":60}"#,
+            2_000,
+        )
+        .expect("tokens");
+
+        let merged = merge_refresh(&previous, fresh);
+        assert_eq!(merged.refresh_token.as_deref(), Some("refresh2"));
+    }
+
+    #[test]
+    fn a_session_without_a_refresh_token_says_so_instead_of_refreshing() {
+        let mut without = session(1_000);
+        without.tokens.refresh_token = None;
+        let error = refresh_token_for(&without).expect_err("no refresh token");
+        assert!(error.to_string().contains("sign in again"));
+
+        // An empty string is the same as absent, which Discord's JSON can produce.
+        without.tokens.refresh_token = Some(String::new());
+        assert!(refresh_token_for(&without).is_err());
+
+        assert_eq!(
+            refresh_token_for(&session(1_000)).expect("token"),
+            "refresh"
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **180 passed (175 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **183 passed (178 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -128,9 +128,13 @@ A second, optional login beside the bot token, for showing who you are
 - Session restoration is automatic at start-up; an expired session stays visible
   and is flagged. Sign out and switch account are both available on the sign-in
   page and in Settings → Privacy.
+- An expired session with a refresh token recovers on its own: one refresh
+  exchange on a worker thread, identity re-read from `/users/@me`, the result
+  written back to the keyring. A rotated refresh token is stored; a response
+  without one keeps the old token rather than signing the user out.
 - Works without a keyring? The bot token path already needed one; identity needs
   the same backend, and a keyring failure is reported rather than crashing.
-- 18 tests: PKCE RFC vector, base64url, authorise URL shape, state mismatch,
+- 21 tests: refresh merging and the no-refresh-token path, PKCE RFC vector, base64url, authorise URL shape, state mismatch,
   missing/empty code, denial, path mismatch, percent-decoding, token parsing,
   identity parsing, store round trip, expiry, restoration.
 

@@ -67,6 +67,8 @@ pub struct RustcordApp {
     pub(crate) oauth: OAuthFlow,
     /// Local search overlay over the loaded history of the open channel.
     pub(crate) search: crate::search::SearchState,
+    /// A refresh-token exchange in flight for the identity session.
+    identity_refresh: Option<IdentityRefresh>,
     pub(crate) monitor: MemoryMonitor,
     pub(crate) settings_ui: SettingsUiState,
     pub(crate) alert: Option<Alert>,
@@ -98,6 +100,10 @@ pub(crate) struct OAuthFlow {
     pub(crate) error: Option<String>,
     /// Typed into the login page when no client id is configured yet.
     pub(crate) client_id_draft: String,
+}
+
+struct IdentityRefresh {
+    rx: Receiver<Result<crate::api::oauth::Session, String>>,
 }
 
 pub(crate) struct PendingOAuth {
@@ -287,6 +293,7 @@ impl RustcordApp {
             identity_expired,
             oauth: OAuthFlow::default(),
             search: crate::search::SearchState::default(),
+            identity_refresh: None,
             monitor: MemoryMonitor::new(),
             settings_ui: SettingsUiState::default(),
             alert: None,
@@ -1020,6 +1027,64 @@ impl RustcordApp {
         });
     }
 
+    /// Ask for a new access token with the stored refresh token, off the UI
+    /// thread. A failed refresh flags the session so the UI offers a sign-in.
+    pub(crate) fn start_identity_refresh(&mut self) {
+        if self.identity_refresh.is_some() {
+            return;
+        }
+        let (Some(session), Some(client_id)) =
+            (self.identity.clone(), self.settings.oauth_client_id.clone())
+        else {
+            return;
+        };
+        if crate::api::oauth::refresh_token_for(&session).is_err() {
+            return;
+        }
+
+        let (tx, rx) = mpsc::channel();
+        let _ = std::thread::Builder::new()
+            .name("rustcord-oauth-refresh".to_string())
+            .spawn(move || {
+                let result = (|| -> Result<_, String> {
+                    let refreshed = crate::api::oauth::refresh_session(&client_id, &session)
+                        .map_err(|err| format!("{err:#}"))?;
+                    crate::api::oauth::KeyringStore
+                        .save(&refreshed)
+                        .map_err(|err| format!("could not store the refreshed session: {err:#}"))?;
+                    Ok(refreshed)
+                })();
+                let _ = tx.send(result);
+            });
+
+        self.identity_refresh = Some(IdentityRefresh { rx });
+    }
+
+    fn poll_identity_refresh(&mut self) {
+        let Some(refresh) = self.identity_refresh.take() else {
+            return;
+        };
+
+        match refresh.rx.try_recv() {
+            Ok(Ok(session)) => {
+                self.identity = Some(session);
+                self.identity_expired = false;
+                self.oauth.status = Some("identity session refreshed".to_string());
+                self.oauth.error = None;
+            }
+            Ok(Err(err)) => {
+                self.identity_expired = true;
+                self.oauth.error = Some(format!("could not refresh the identity: {err}"));
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                self.identity_refresh = Some(refresh);
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.oauth.error = Some("the refresh worker stopped".to_string());
+            }
+        }
+    }
+
     pub(crate) fn cancel_identity_sign_in(&mut self) {
         if let Some(pending) = self.oauth.pending.take() {
             pending.callback.cancel();
@@ -1286,6 +1351,16 @@ impl eframe::App for RustcordApp {
 
         if self.search.open && self.search.needs_refresh {
             self.refresh_search();
+        }
+
+        // An expired session with a refresh token recovers on its own; without
+        // one it stays flagged and the UI offers a sign-in.
+        if self.identity_expired && self.identity_refresh.is_none() {
+            self.start_identity_refresh();
+        }
+        self.poll_identity_refresh();
+        if self.identity_refresh.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(250));
         }
 
         self.poll_oauth();

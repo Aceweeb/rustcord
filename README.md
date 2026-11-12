@@ -59,7 +59,8 @@ explicit next steps rather than half-implemented stubs that pretend to work.
 - Optional **Discord identity** login (OAuth2 `identify`, PKCE + state, loopback
   redirect) showing your username, avatar initial and user id. It is a separate,
   read-only login stored under its own keyring entry: it grants no messaging, and
-  Rustcord still never asks for a password, a user token or a cookie.
+  Rustcord still never asks for a password, a user token or a cookie. An expired
+  identity session refreshes itself when it can, and is otherwise flagged.
 - Sign-in page on first run (`src/ui/login.rs`): token shape is checked before a
   request is spent, "Continue in demo mode" skips it, and Settings → Privacy →
   **Sign out** clears the keyring and returns to it.

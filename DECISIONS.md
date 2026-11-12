@@ -318,9 +318,20 @@ legitimate, documented use for OAuth2: showing *who* is signed in.
 **Consequences.** Messaging is still bot-only, and the UI says so next to the
 identity card. The flow needs the user's own Discord application client ID and a
 registered `http://127.0.0.1:53134/callback` redirect; without them the button is
-disabled and explains what is missing. Refresh is *not* implemented: an expired
-session is re-authorised by signing in again, which the flag in the UI prompts.
+disabled and explains what is missing.
+
 The end-to-end exchange cannot be verified here without a real application.
+
+**Amendment — refresh tokens.** An expired session now recovers by itself when it
+still has a refresh token and a client ID: one `grant_type=refresh_token` request
+carries no secret (PKCE public client), then `/users/@me` re-reads the identity so
+a renamed account or a new avatar is picked up. Discord rotates the refresh token
+only sometimes, so a response without one keeps the stored value — dropping it
+would sign the user out at the next expiry with no error to point at. The
+refreshed session is written back to the same keyring entry. A failed refresh
+leaves the old session visible and flagged rather than deleting it, because the
+cause is usually transient and the account should stay recognisable. Tokens are
+still never written to disk, so **no plaintext JSON token file exists by design**.
 
 ## D19. The gateway spends at most ten identifies an hour
 

@@ -28,9 +28,12 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   callback, keyring session, restoration, logout and account switching
   (`src/api/oauth.rs`, `src/ui/login.rs`, `DECISIONS.md` D18). Identity only:
   grants no messaging.
-- [~] OAuth2 live exchange: implemented and unit-tested, but not exercised against
-  Discord — that needs a real application client ID and the registered loopback
-  redirect.
+- [x] Identity refresh tokens: an expired session refreshes itself off the UI
+  thread and is written back to the keyring; a rotated token replaces the old one
+  and an omitted one is preserved.
+- [~] OAuth2 live exchange (including refresh): implemented and unit-tested, but
+  not exercised against Discord — that needs a real application client ID and the
+  registered loopback redirect.
 - [x] 12 theme presets across Dark/Light/Purple/AMOLED, accent override, live
   switching, contrast tests (`src/ui/theme.rs`).
 - [x] CSS custom-property theme files, single-line files included

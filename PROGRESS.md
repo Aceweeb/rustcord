@@ -384,6 +384,11 @@ Priority order for the next session:
   50 results, char-safe snippets, click to open the channel. No index, no
   per-frame scan, and the overlay states that Discord's server-side search needs
   a user token. 12 tests. Test suite: 180.
+- Added refresh-token handling to the OAuth2 identity session (D18 amendment):
+  `refresh_session`, `merge_refresh` and `refresh_token_for`, run on a worker
+  thread at start-up when the stored session has expired, with the result written
+  back to the keyring. 3 tests, including the case where Discord omits a rotated
+  refresh token. Test suite: 183.
 - Wrote a design proposal for multiple bot accounts (D20 appendix) and did not
   start it: it changes keyring layout, session ownership and identify budgeting.
 - Wrote `YAPFAST_PARITY.md`, an honest audit against Yapfast's public feature
