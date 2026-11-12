@@ -14,6 +14,15 @@ repository state before changing anything.
 
 ## What changed most recently
 
+Typing-notice renewal while a draft stays focused (`DECISIONS.md` D48):
+
+- `src/models.rs` — `typing_refresh_in` returns the time left in the eight-second
+  window (or `None`); assertions added to the existing typing test.
+- `src/app.rs` — `typing_refresh_wait` gates on live mode/gateway/draft and
+  exposes the remaining wait.
+- `src/ui/chat.rs` — focused composer with text calls `notify_typing` each frame
+  and schedules one `request_repaint_after` at the renewal mark.
+
 Animated typing indicator in the header and composer (`DECISIONS.md` D47):
 
 - `src/models.rs` — `typing_dots(now)` (400 ms `.`/`..`/`...`, `floor`-based

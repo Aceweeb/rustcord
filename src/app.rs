@@ -2375,6 +2375,22 @@ impl RustcordApp {
         self.typing_notice = Some((channel_id, now));
     }
 
+    /// While a draft stays focused, how long until the typing notice needs
+    /// renewing. `None` means there is nothing to schedule: no live gateway, an
+    /// empty draft, or no notice sent yet for this channel (the first keystroke
+    /// path handles that). `Some(0)` means it is due now.
+    pub(crate) fn typing_refresh_wait(&self) -> Option<std::time::Duration> {
+        if !self.live_data || self.draft.trim().is_empty() || self.gateway.is_none() {
+            return None;
+        }
+        let channel_id = self.selected_channel.as_deref()?;
+        let last = self
+            .typing_notice
+            .as_ref()
+            .map(|(id, sent)| (id.as_str(), *sent));
+        crate::models::typing_refresh_in(last, channel_id, std::time::Instant::now())
+    }
+
     pub(crate) fn send_current_draft(&mut self) {
         if let Some(message_id) = self.editing.clone() {
             self.submit_edit(message_id);

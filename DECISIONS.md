@@ -1439,3 +1439,35 @@ the header one carries a tooltip so the glyph is not a mystery.
 and nothing here makes a network call or adds a thread. `typing_dots` is covered
 for all three frames, the cycle boundary and a negative clock; the existing
 summary tests were updated for the removed ellipsis rather than loosened.
+
+## D48. A focused draft renews its typing notice; nothing polls
+
+D44 sent a notice on the first keystroke and then at most one per eight seconds,
+but only *on a keystroke*. A draft typed and then thought about for more than ten
+seconds let Discord's indicator lapse, even though the field still had focus and
+the user was plainly composing.
+
+**Renewal follows focus, not keystrokes.** The composer now calls `notify_typing`
+every frame while the text field has focus and the draft is non-empty. That call
+is already the throttle: it spends nothing when the eight-second window is open,
+and it is the single place that checks live mode, the gateway, the channel type
+and the selected channel. Pasting a draft and clicking into the field therefore
+starts the notice too, which the keystroke-only path missed.
+
+**One scheduled wake-up, not a poll.** `models::typing_refresh_in` returns the time
+remaining in the current window, or `None` when no notice was sent for this
+channel. The composer requests `request_repaint_after` for exactly that remainder,
+so an idle app sleeps: the renewal frame fires at the eight-second mark, sends, and
+the next wait is scheduled. `Some(0)` means it is due now, which is what the first
+frame after the window opens sees. egui's clock is used for display timing, but the
+throttle itself stays on `Instant`, so pausing or dragging the window cannot delay
+a renewal.
+
+**Failure stays quiet.** Renewals reuse D44's spawned request and debug-level
+logging; a refused call does not touch the draft, the status line or an alert, and
+the next window retries. Nothing is sent when the draft is blank or whitespace, so
+clearing the field stops the notice immediately (and expiry still needs no timer).
+
+**Tests.** The new pure helper is covered inside the existing typing test: five
+seconds remaining after three have elapsed, zero once overdue, and `None` for a
+different channel. Total remains 301 since no new test function was added.

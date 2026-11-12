@@ -503,6 +503,11 @@ Priority order for the next session:
   embeds an ellipsis, `ui/chat.rs` computes the label once and draws it in both
   places, and repaints every 120 ms only while somebody is typing. One new test.
 
+- Renew the typing notice while a draft keeps focus (D48): the composer calls the
+  throttled `notify_typing` every frame when focused with text, and
+  `typing_refresh_in` schedules exactly one repaint at the eight-second mark
+  instead of polling. Assertions added to the existing typing test; total 301.
+
 ---
 
 ## 7. Notes for the next agent

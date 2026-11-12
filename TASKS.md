@@ -13,6 +13,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   (`DECISIONS.md` D47): pure `typing_dots` 400 ms cycle, one shared label, 120 ms
   repaint only while visible, expiry still timer-free. 1 new test; rendering not
   seen in a signed-in window.
+- [x] Typing notice renewal while a draft keeps focus (`DECISIONS.md` D48): the
+  focused composer re-arms the eight-second notice, with one scheduled wake-up
+  from `typing_refresh_in` rather than polling; blank drafts send nothing.
+  Assertions in the existing typing test; live traffic still unverified (D28).
 - [~] Outgoing typing indicator (`DECISIONS.md` D44): `POST
   /channels/{id}/typing` on the first keystroke and then at most every eight
   seconds per channel, skipped for empty drafts, non-text channels and demo mode,

@@ -398,6 +398,18 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                         app.notify_typing();
                     }
 
+                    // A draft that stays focused must keep telling the channel you
+                    // are still there: Discord's notice lapses after ten seconds.
+                    // `notify_typing` is a no-op until the eight-second window is
+                    // up, and the wait schedules exactly one wake-up for the
+                    // renewal instead of polling every frame.
+                    if response.has_focus() && !app.draft.trim().is_empty() {
+                        app.notify_typing();
+                        if let Some(wait) = app.typing_refresh_wait() {
+                            ui.ctx().request_repaint_after(wait);
+                        }
+                    }
+
                     if response.lost_focus()
                         && ui.input(|input| input.key_pressed(egui::Key::Enter))
                     {

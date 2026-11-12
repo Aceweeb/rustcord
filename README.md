@@ -44,7 +44,8 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
 - Typing indicators both ways: `TYPING_START` events appear above the composer
   ("alice and bob are typing…") and in the channel header, with the trailing dots
   animating on a 400 ms cycle; writing a draft tells the channel you are typing,
-  throttled to one call per eight seconds per channel.
+  and a focused draft renews that notice every eight seconds for as long as you
+  keep it focused.
 - A native message log (`Ctrl+Shift+L`) of edits and deletions seen this session,
   filterable, capped at 500 entries and never written to disk. Vencord's plugins
   patch Discord's own client and cannot load here; this is the same feature built

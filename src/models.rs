@@ -658,6 +658,24 @@ pub fn typing_due(
     }
 }
 
+/// How long until the same channel's notice may be refreshed, or `None` when no
+/// notice was sent for this channel. `Some(0)` means it is due now.
+///
+/// Separated from `typing_due` so the composer can schedule a wake-up exactly when
+/// a long, still-focused draft needs its notice renewed, without polling.
+pub fn typing_refresh_in(
+    last: Option<(&str, std::time::Instant)>,
+    channel_id: &str,
+    now: std::time::Instant,
+) -> Option<std::time::Duration> {
+    match last {
+        Some((id, sent)) if id == channel_id => {
+            Some(TYPING_REFRESH.saturating_sub(now.saturating_duration_since(sent)))
+        }
+        _ => None,
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct TypingTracker {
     entries: Vec<TypingEntry>,
@@ -1157,6 +1175,25 @@ mod tests {
         ));
         // A switch of channel sends immediately, even inside the window.
         assert!(typing_due(Some(("c1", start)), "c2", start));
+
+        // The countdown drives a single scheduled wake-up, not a poll loop.
+        assert_eq!(
+            typing_refresh_in(
+                Some(("c1", start)),
+                "c1",
+                start + std::time::Duration::from_secs(3)
+            ),
+            Some(std::time::Duration::from_secs(5))
+        );
+        assert_eq!(
+            typing_refresh_in(
+                Some(("c1", start)),
+                "c1",
+                start + TYPING_REFRESH + std::time::Duration::from_secs(1)
+            ),
+            Some(std::time::Duration::ZERO)
+        );
+        assert_eq!(typing_refresh_in(Some(("c1", start)), "c2", start), None);
 
         let mut typing = TypingTracker::default();
         typing.record("c1", "u1", "alice", 0.0);
