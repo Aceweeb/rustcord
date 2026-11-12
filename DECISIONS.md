@@ -1471,3 +1471,35 @@ clearing the field stops the notice immediately (and expiry still needs no timer
 **Tests.** The new pure helper is covered inside the existing typing test: five
 seconds remaining after three have elapsed, zero once overdue, and `None` for a
 different channel. Total remains 301 since no new test function was added.
+
+## D49. Search takes `before:` and `after:` date bounds
+
+The overlay could narrow by author and channel but not by time, which is the other
+axis people reach for when a cached history spans days. Both filters are now part
+of the same query syntax, so one field still does everything.
+
+**Formats.** `before:2026-11-12` and `after:2026-11-01` accept `YYYY-MM-DD` and
+`YYYY-MM-DDThh:mm[:ss]`. Values are interpreted as **UTC**, because message
+timestamps are UTC: local-date interpretation would silently mean different
+instants on different machines and make the overlay's own result count
+irreproducible. A typed time makes same-day windows possible
+(`after:2026-11-01T12:30`).
+
+**Exclusive bounds.** `before:` matches messages strictly earlier than the instant,
+`after:` strictly later, matching Discord's own syntax. So `before:2026-11-12`
+excludes everything stamped on the 12th, and `after:2026-11-01` excludes the 1st at
+midnight — a range expressed as "the 1st through the 11th" needs no mental ±1
+adjustment. A test pins both edges: messages at `2026-11-01T00:00:00Z` and
+`2026-11-12T00:00:00Z` fall outside a range bounded by those dates.
+
+**Bad dates stay text.** An unparseable value (`before:soon`) does not become a
+silently ignored filter: the token is kept as a literal search term, following the
+same rule as unknown `word:value` tokens. That makes a typo visible — the parsed
+filter line will not show a date, and the search will match nothing rather than
+quietly returning everything.
+
+**Feedback and plumbing.** `describe()` appends `after 1 Nov 2026` / `before 12 Nov
+2026`, so the accent line under the field shows exactly what bounded the results.
+The overlay hint, footer and README name the new filters. No new state, index or
+network path: bounds are two `Option<DateTime<Utc>>` checked in `hit_for`, and one
+new test covers ranges, single bounds, time parsing and invalid input.

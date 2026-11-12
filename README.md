@@ -94,8 +94,8 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
 - Bot-token authentication stored in the OS keyring (`src/auth.rs`). Tokens are
   never written to `settings.json`.
 - Local full-text search (Ctrl+F) across every message cached this session, from
-  every channel opened so far, with `from:name` and `in:#channel` (or `#channel`)
-  filters. Results show the channel, author, time and a snippet, and clicking one
+  every channel opened so far, with `from:name`, `in:#channel` (or `#channel`) and
+  `before:` / `after:` date filters (exclusive, UTC). Results show the channel, author, time and a snippet, and clicking one
   opens that channel. Discord's server-side search needs a user token, so the
   overlay searches what is already in memory and says so.
 - Reconnects stay inside Discord's identify allowance (ten an hour, D19) with

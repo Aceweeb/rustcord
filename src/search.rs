@@ -6,7 +6,7 @@
 //! search what the client actually holds: every message cached this session,
 //! across all channels that were opened, bounded by
 //! `ResourcePriority::history_cap()`. Results can be narrowed by author
-//! (`from:name`) and by channel (`in:#name`).
+//! (`from:name`), channel (`in:#name`) and time (`before:`/`after:`).
 //!
 //! That limit is stated in the UI rather than papered over. It also keeps the
 //! whole feature cheap: no index, no extra memory, no network. A search is a
@@ -35,20 +35,40 @@ pub struct SearchQuery {
     pub author: Option<String>,
     /// Lowercased channel name fragment from `in:#general` (the `#` is optional).
     pub channel: Option<String>,
+    /// Exclusive upper bound from `before:YYYY-MM-DD` (UTC midnight).
+    pub before: Option<DateTime<Utc>>,
+    /// Exclusive lower bound from `after:YYYY-MM-DD` (UTC midnight).
+    pub after: Option<DateTime<Utc>>,
 }
 
 impl SearchQuery {
-    /// Parse `text`, `from:name`, `@name`, and channel filters written as
-    /// `in:#name`, `channel:#name` or a bare `#name`.
+    /// Parse `text`, `from:name`, `@name`, channel filters (`in:#name`,
+    /// `channel:#name`, `#name`) and date filters (`before:`, `after:`).
     ///
-    /// Unknown `word:value` tokens are treated as text, not as filters, so a
-    /// colon in a message never silently drops the search term.
+    /// Dates accept `YYYY-MM-DD` and `YYYY-MM-DDThh:mm[:ss]` as UTC, and both
+    /// bounds are exclusive, matching Discord's own search. Unknown
+    /// `word:value` tokens — including an unparseable date — are treated as
+    /// text, not filters, so a colon in a message never silently drops the term.
     pub fn parse(input: &str) -> Self {
         let mut terms = Vec::new();
         let mut author = None;
         let mut channel = None;
+        let mut before = None;
+        let mut after = None;
 
         for token in input.split_whitespace() {
+            if let Some(rest) = token.strip_prefix("before:") {
+                if let Some(date) = parse_date(rest) {
+                    before = Some(date);
+                    continue;
+                }
+            }
+            if let Some(rest) = token.strip_prefix("after:") {
+                if let Some(date) = parse_date(rest) {
+                    after = Some(date);
+                    continue;
+                }
+            }
             let channel_part = token
                 .strip_prefix("in:")
                 .or_else(|| token.strip_prefix("channel:"));
@@ -91,12 +111,18 @@ impl SearchQuery {
             terms,
             author,
             channel,
+            before,
+            after,
         }
     }
 
     /// True when there is nothing to search for.
     pub fn is_empty(&self) -> bool {
-        self.terms.is_empty() && self.author.is_none() && self.channel.is_none()
+        self.terms.is_empty()
+            && self.author.is_none()
+            && self.channel.is_none()
+            && self.before.is_none()
+            && self.after.is_none()
     }
 
     /// A short description of the filter, for the results header.
@@ -110,6 +136,12 @@ impl SearchQuery {
         }
         if let Some(channel) = &self.channel {
             parts.push(format!("in #{channel}"));
+        }
+        if let Some(after) = self.after {
+            parts.push(format!("after {}", after.format("%-d %b %Y")));
+        }
+        if let Some(before) = self.before {
+            parts.push(format!("before {}", before.format("%-d %b %Y")));
         }
         parts.join(" ")
     }
@@ -184,6 +216,19 @@ fn hit_for(
         }
     }
 
+    // Both bounds are exclusive, so `before:2026-11-12` means "before that day
+    // began" rather than including anything stamped on it.
+    if let Some(before) = query.before {
+        if message.timestamp >= before {
+            return None;
+        }
+    }
+    if let Some(after) = query.after {
+        if message.timestamp <= after {
+            return None;
+        }
+    }
+
     let content = message.content.to_lowercase();
     if !query.terms.iter().all(|term| content.contains(term)) {
         return None;
@@ -197,6 +242,21 @@ fn hit_for(
         timestamp: message.timestamp,
         snippet: snippet(&message.content, query.terms.first().map(String::as_str)),
     })
+}
+
+/// Parse an absolute date filter value. UTC is deliberate: message timestamps are
+/// UTC, so a filter cannot silently mean different instants on different machines.
+fn parse_date(raw: &str) -> Option<DateTime<Utc>> {
+    let raw = raw.trim();
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d") {
+        return date.and_hms_opt(0, 0, 0).map(|naive| naive.and_utc());
+    }
+    for format in ["%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"] {
+        if let Ok(naive) = chrono::NaiveDateTime::parse_from_str(raw, format) {
+            return Some(naive.and_utc());
+        }
+    }
+    None
 }
 
 /// A single-line window around the first matching term.
@@ -467,6 +527,72 @@ mod tests {
     }
 
     #[test]
+    fn date_filters_parse_and_bound_exclusively() {
+        let query = SearchQuery::parse("hi before:2026-11-12 after:2026-11-01");
+        assert_eq!(
+            query.before,
+            Some(
+                DateTime::parse_from_rfc3339("2026-11-12T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc)
+            )
+        );
+        assert_eq!(
+            query.after,
+            Some(
+                DateTime::parse_from_rfc3339("2026-11-01T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc)
+            )
+        );
+        assert!(!query.is_empty());
+
+        // Times are accepted too, which makes a same-day window possible.
+        let timed = SearchQuery::parse("after:2026-11-01T12:30");
+        assert_eq!(
+            timed.after,
+            Some(
+                DateTime::parse_from_rfc3339("2026-11-01T12:30:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc)
+            )
+        );
+        assert_eq!(timed.terms, Vec::<String>::new());
+
+        // An unparseable date stays a literal term instead of acting as a filter.
+        let bad = SearchQuery::parse("before:soon hi");
+        assert_eq!(bad.before, None);
+        assert_eq!(bad.terms, vec!["before:soon", "hi"]);
+
+        let mut early = message("alice", "ship it", 0);
+        early.timestamp = DateTime::parse_from_rfc3339("2026-10-31T23:59:59Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let mut start = message("alice", "ship it", 0);
+        start.timestamp = DateTime::parse_from_rfc3339("2026-11-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let mut middle = message("alice", "ship it", 0);
+        middle.timestamp = DateTime::parse_from_rfc3339("2026-11-05T09:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let mut late = message("alice", "ship it", 0);
+        late.timestamp = DateTime::parse_from_rfc3339("2026-11-12T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        let middle_ts = middle.timestamp;
+        let messages = vec![early, start, middle, late];
+        let found = hits(&messages, "ship before:2026-11-12 after:2026-11-01");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].timestamp, middle_ts);
+
+        // Either bound alone works, and both are exclusive.
+        assert_eq!(hits(&messages, "ship after:2026-11-01").len(), 2);
+        assert_eq!(hits(&messages, "ship before:2026-11-12").len(), 3);
+    }
+
+    #[test]
     fn the_description_names_the_filter() {
         assert_eq!(
             SearchQuery::parse("hi from:bob").describe(),
@@ -476,6 +602,10 @@ mod tests {
         assert_eq!(
             SearchQuery::parse("hi in:#general").describe(),
             "“hi” in #general"
+        );
+        assert_eq!(
+            SearchQuery::parse("hi after:2026-11-01 before:2026-11-12").describe(),
+            "“hi” after 1 Nov 2026 before 12 Nov 2026"
         );
     }
 }

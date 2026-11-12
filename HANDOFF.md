@@ -7,12 +7,19 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 296 lib + 5 bin tests passing (301)
+- `cargo test --all-targets`: 297 lib + 5 bin tests passing (302)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Search date bounds (`DECISIONS.md` D49):
+
+- `src/search.rs` — `SearchQuery::{before, after}` parsed from
+  `before:`/`after:` (`YYYY-MM-DD`, `YYYY-MM-DDThh:mm[:ss]`, UTC), exclusive
+  checks in `hit_for`, dates in `describe()`, 1 test.
+- `src/ui/search.rs` — hint and footer name the filters.
 
 Typing-notice renewal while a draft stays focused (`DECISIONS.md` D48):
 

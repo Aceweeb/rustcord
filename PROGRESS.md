@@ -508,6 +508,11 @@ Priority order for the next session:
   `typing_refresh_in` schedules exactly one repaint at the eight-second mark
   instead of polling. Assertions added to the existing typing test; total 301.
 
+- Added `before:`/`after:` search bounds (D49): `YYYY-MM-DD` or
+  `YYYY-MM-DDThh:mm[:ss]` interpreted as UTC, both exclusive; invalid dates stay
+  literal terms; `describe()` and the overlay hint/footer name them. One new test;
+  suite 302.
+
 ---
 
 ## 7. Notes for the next agent

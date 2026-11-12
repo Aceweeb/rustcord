@@ -43,7 +43,7 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
                 ui.label(RichText::new("Search").small().color(theme.muted));
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut app.search.query)
-                        .hint_text("cached messages — from:name · in:#channel")
+                        .hint_text("cached messages — from:name · in:#channel · before:/after:")
                         .desired_width(ui.available_width()),
                 );
 
@@ -117,7 +117,8 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
             ui.label(
                 RichText::new(
                     "Discord's server-side search needs a user token, so this searches only \
-                     messages cached in Rustcord this session. Filters: from:name, in:#channel.",
+                     messages cached in Rustcord this session. Filters: from:name, in:#channel, \
+                     before:YYYY-MM-DD, after:YYYY-MM-DD (exclusive, UTC).",
                 )
                 .small()
                 .color(theme.muted),

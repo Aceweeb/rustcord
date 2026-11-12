@@ -4,6 +4,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Date filters in search (`DECISIONS.md` D49): `before:`/`after:` with
+  `YYYY-MM-DD` or `YYYY-MM-DDThh:mm[:ss]`, UTC, exclusive bounds, invalid values
+  kept as text, echoed in the parsed-filter line. 1 new test.
 - [~] Session-wide search with channel filters (`DECISIONS.md` D45): every cached
   message across channels, newest first, with `from:name`, `in:#channel` /
   `channel:name` / `#name` filters, channel names on rows, cached-channel count and
