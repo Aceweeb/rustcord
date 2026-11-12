@@ -109,6 +109,12 @@ pub struct Settings {
     pub ui_scale: f32,
     #[serde(default)]
     pub reduce_motion: bool,
+    /// Paint a blurred copy of the desktop wallpaper behind translucent panels.
+    #[serde(default = "default_true")]
+    pub translucent: bool,
+    /// Explicit wallpaper path. Empty means "detect from the desktop".
+    #[serde(default)]
+    pub wallpaper: Option<String>,
 
     // --- memory / notifications -------------------------------------------
     #[serde(default = "default_memory_budget")]
@@ -176,6 +182,8 @@ impl Default for Settings {
             compact_mode: false,
             ui_scale: default_ui_scale(),
             reduce_motion: false,
+            translucent: true,
+            wallpaper: None,
             memory_budget_mb: default_memory_budget(),
             memory_alerts: true,
             remember_history: true,
@@ -363,6 +371,10 @@ impl Settings {
                     None
                 };
         }
+        if let Some(wallpaper) = self.wallpaper.take() {
+            let trimmed = wallpaper.trim();
+            self.wallpaper = (!trimmed.is_empty()).then(|| trimmed.to_string());
+        }
         if let Some(accent) = &self.accent_override {
             if parse_css_color(accent).is_none() {
                 self.accent_override = None;
@@ -542,6 +554,20 @@ mod tests {
             settings.chord_for(ShortcutAction::RefreshView),
             ShortcutAction::RefreshView.default_chord()
         );
+    }
+
+    #[test]
+    fn wallpaper_paths_are_trimmed_or_dropped() {
+        let mut settings = Settings::default();
+        assert!(settings.translucent, "glass is on by default");
+
+        settings.wallpaper = Some("  /home/a/wall.png  ".to_string());
+        settings.normalize();
+        assert_eq!(settings.wallpaper.as_deref(), Some("/home/a/wall.png"));
+
+        settings.wallpaper = Some("   ".to_string());
+        settings.normalize();
+        assert_eq!(settings.wallpaper, None);
     }
 
     #[test]

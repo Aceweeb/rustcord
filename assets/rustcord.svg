@@ -1,31 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="Rustcord">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2b2d31"/>
-      <stop offset="1" stop-color="#1a1b1e"/>
-    </linearGradient>
-    <linearGradient id="bubble" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8b9dff"/>
+    <linearGradient id="blurple" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8b93ff"/>
       <stop offset="1" stop-color="#5865f2"/>
     </linearGradient>
   </defs>
 
-  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
-  <rect x="4" y="4" width="120" height="120" rx="24" fill="none" stroke="#3f4147" stroke-width="1.5"/>
+  <rect width="128" height="128" rx="28" fill="url(#blurple)"/>
 
-  <!-- speech bubble -->
-  <path d="M28 42a12 12 0 0 1 12-12h48a12 12 0 0 1 12 12v32a12 12 0 0 1-12 12H62l-17 13a4 4 0 0 1-6.4-3.2V86H40a12 12 0 0 1-12-12z"
-        fill="url(#bubble)"/>
-
-  <!-- channel hash -->
-  <g fill="#14151a">
-    <rect x="51" y="42" width="6" height="30" rx="3"/>
-    <rect x="71" y="42" width="6" height="30" rx="3"/>
-    <rect x="45" y="51" width="38" height="6" rx="3"/>
-    <rect x="45" y="62" width="38" height="6" rx="3"/>
-  </g>
-
-  <!-- online dot -->
-  <circle cx="98" cy="94" r="12" fill="#1a1b1e"/>
-  <circle cx="98" cy="94" r="9" fill="#23a55a"/>
+  <!-- Stylised chat-controller mark: wide rounded face with tall rounded eyes
+       and a smile, on Discord's blurple. Original geometry. -->
+  <path d="M41 34h46c8 0 13 5 14 13l3 23c1 8-2 13-8 15-4 1-8 0-11-2l-8-6H56l-8 6c-3 2-7 3-11 2-6-2-9-7-8-15l3-23c1-8 6-13 14-13z"
+        fill="#ffffff"/>
+  <rect x="45" y="51" width="13" height="16" rx="6.5" fill="#5865f2"/>
+  <rect x="70" y="51" width="13" height="16" rx="6.5" fill="#5865f2"/>
+  <path d="M55 79c5 4 13 4 18 0" fill="none" stroke="#5865f2" stroke-width="4.5" stroke-linecap="round"/>
 </svg>

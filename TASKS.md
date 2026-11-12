@@ -4,6 +4,15 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [~] Translucent, wallpaper-aware UI (`DECISIONS.md` D39): transparent window,
+  alpha-205 themed surfaces, blurred detected wallpaper painted under all panels,
+  Hyprland/KDE/GNOME/XFCE detection incl. Lua Hyprland configs, Settings →
+  Appearance glass toggle and wallpaper path (`~`/`$HOME` expanded), graceful
+  desktop-through fallback when no image is found. 8 wallpaper tests + 1 settings
+  test; the rendered glass has not been seen (sign-in blocked, D28).
+- [x] Discord-style icon: blurple squircle plus a stylised white face, original
+  SVG with a rendered 256 px PNG embedded as the window icon and installed by the
+  launcher script.
 - [x] Folder colours (`DECISIONS.md` D38): eight-colour palette assigned to new
   folders in turn, `Folder colour` submenu with swatches plus `No colour`, stored
   normalised as `#rrggbb`, invalid values refused, white rings for expanded and

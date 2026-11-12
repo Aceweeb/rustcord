@@ -192,6 +192,27 @@ channel list with 34 px rows, a 48 px channel header, a 240 px member list and
 40 px message avatars. Twelve other presets and CSS theme files are still there
 in Settings → Appearance if you want something else.
 
+The window is translucent by default: themed surfaces carry alpha 205 over a
+transparent window, so the desktop wallpaper behind the app reads through the
+glass. Rustcord also looks up the wallpaper image itself — Hyprland (hyprpaper,
+swww, or any image path in the Hyprland config tree), KDE, GNOME and XFCE — blurs
+a 320 px copy and paints it beneath the panels, which keeps the frosted look on
+compositors that do not blur windows. If no image is found the window stays
+transparent, so the real desktop shows through. Settings → Appearance has the
+`Translucent glass` switch and a wallpaper path field (absolute, `~/…` or
+`$HOME/…`); leave the field empty to auto-detect.
+
+On Hyprland the desktop behind the window is only blurred by the compositor if you
+ask for it; one line in your Hyprland config does that:
+
+```
+windowrule = blur, class:^(rustcord)$
+```
+
+The icon is a blurple squircle with a stylised white face, drawn as original SVG
+(`assets/rustcord.svg`) with a 256 px PNG rendered from it and embedded as the
+window icon, so the launcher, taskbar and titlebar all show the same mark.
+
 ## Where your data lives
 
 Rustcord is a local program talking to Discord. There is no server of ours, no
@@ -233,9 +254,14 @@ Copy or edit `settings.json`:
   "streaming_notifications": true,
   "resource_priority": "balanced",
   "theme_file": "themes/vencord-example.theme",
-  "show_blyat_banner": true
+  "show_blyat_banner": true,
+  "translucent": true,
+  "wallpaper": null
 }
 ```
+
+`translucent` turns the glass on or off, and `wallpaper` pins the backdrop image
+for the blurred layer; `null` means "detect it" (Hyprland, KDE, GNOME, XFCE).
 
 `theme_file` can be absolute or relative to the working directory. If it is
 `null`, Rustcord looks for `~/.config/rustcord/theme.theme`.

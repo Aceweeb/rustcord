@@ -127,6 +127,12 @@ impl PluginManager {
         }
     }
 
+    /// Translucent-background alpha for the active theme; see
+    /// `VencordCompatPlugin::set_veil`.
+    pub fn set_veil(&mut self, settings: &Settings, alpha: Option<u8>) {
+        self.vencord.set_veil(settings, alpha);
+    }
+
     pub fn theme(&self) -> &AppTheme {
         self.vencord.theme()
     }

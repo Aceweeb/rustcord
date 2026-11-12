@@ -320,6 +320,18 @@ impl AppTheme {
         Self::from_preset(preset(id), accent)
     }
 
+    /// Same palette with translucent backgrounds, so a blurred backdrop shows
+    /// through while text, accent and status colours stay opaque.
+    pub fn veiled(mut self, alpha: u8) -> Self {
+        fn tint(color: Color32, alpha: u8) -> Color32 {
+            Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha)
+        }
+        self.background = tint(self.background, alpha);
+        self.surface = tint(self.surface, alpha);
+        self.surface_alt = tint(self.surface_alt, alpha);
+        self
+    }
+
     /// Darken/lighten a slot without leaving the palette's contrast budget.
     pub fn with_accent(mut self, accent: Option<Color32>) -> Self {
         if let Some(accent) = accent {

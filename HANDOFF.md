@@ -7,12 +7,28 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 251 lib + 5 bin tests passing
+- `cargo test --all-targets`: 262 lib + 5 bin tests passing (267)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Translucency and the icon (`DECISIONS.md` D39):
+
+- `src/wallpaper.rs` (new) — wallpaper detection (Hyprland hyprpaper/swww/config/
+  Lua-config scan, KDE, GNOME, XFCE), `expand` for `~`/`$HOME`, `blurred` +
+  `box_blur`, `cover_uv`; 8 tests.
+- `src/app.rs` — `Backdrop`, `GLASS_ALPHA = 205`, `load_backdrop`,
+  `refresh_backdrop` (on settings changes), `paint_backdrop` on the background
+  layer, transparent `clear_color`; re-detection only on focus loss from the path
+  field so typing does not spawn one process per keystroke.
+- `src/ui/theme.rs` — `AppTheme::veiled(alpha)`; `src/plugins/vencord_compat.rs` +
+  `src/plugins/mod.rs` — `set_veil`, applied last on theme reload.
+- `src/settings.rs` — `translucent` (default true) and `wallpaper: Option<String>`
+  with normalisation; `src/ui/settings.rs` — glass checkbox and wallpaper field.
+- `src/main.rs` — `.with_transparent(true)` and the embedded PNG window icon;
+  `assets/rustcord.svg` + `assets/rustcord.png` are the new icon artwork.
 
 Folder colours (`DECISIONS.md` D38):
 

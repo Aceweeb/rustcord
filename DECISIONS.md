@@ -1103,3 +1103,37 @@ palette entry, which is why the palette stops at mid-dark colours.
 input and the serde roundtrip are covered by tests (2 new), and the binary starts,
 but the swatches have not been seen in a signed-in window — same credential blocker
 as D34/D37.
+
+## D39. Translucency is real window alpha plus an in-app blurred wallpaper
+
+The window is created with `with_transparent(true)` and `clear_color` returns
+`[0, 0, 0, 0]` while glass is on, so whatever the compositor has behind the window
+shows through: on Wayland that is the actual desktop wallpaper, live, at no
+copying cost. Panels use the active theme's colours with alpha 205 (`GLASS_ALPHA`,
+`AppTheme::veiled`), which leaves text contrast intact while the wallpaper reads
+through. Turning `translucent` off restores opaque panels and an opaque clear
+colour, so the two modes are one switch rather than two code paths.
+
+Relying on the compositor alone would leave the app's own look unblurred on
+compositors that do not blur windows, so the app also paints a blurred copy of the
+detected wallpaper on the background layer (below every panel, above the clear
+colour). `src/wallpaper.rs` finds the image, downscales it to 320 px wide, applies
+three box-blur passes, and uploads one texture named `desktop-wallpaper`;
+`cover_uv` keeps its aspect ratio while covering the window. Detection order is
+the explicit `wallpaper` setting, then Hyprland (`hyprctl hyprpaper listactive`,
+`swww query`, `hyprpaper.conf`, `exec-*`/`output` lines in `hyprland.conf`, and a
+recursive scan of `~/.config/hypr`'s small text files for any token that looks
+like an image path), KDE, GNOME and XFCE. Every parser is pure and tested; a
+failure to find or decode an image is logged and simply leaves the compositor
+transparency in place instead of failing startup.
+
+No compositor-specific blur is requested: changing a Hyprland rule at runtime
+would mutate the user's session from inside a chat client, so the README instead
+documents the one-line `windowrule` a user can add if they want the desktop behind
+the window blurred as well.
+
+**Not verified visually.** The wallpaper parsers, `cover_uv`, blur and
+`Settings::normalize` are covered by tests (the suite is 262 lib + 5 bin) and the
+binary starts without a panic, but the translucent window, the painted backdrop and
+the new icon have not been seen in a signed-in window — D28 still blocks reaching
+one.

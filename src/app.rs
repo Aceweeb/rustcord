@@ -38,6 +38,18 @@ pub struct Alert {
     pub duration: f64,
 }
 
+/// A blurred copy of the desktop wallpaper, uploaded once.
+pub(crate) struct Backdrop {
+    pub texture: egui::TextureHandle,
+    /// Pixel size of the small blurred copy, used for cover-fitting.
+    pub size: egui::Vec2,
+    pub path: std::path::PathBuf,
+}
+
+/// Alpha applied to panel backgrounds while a backdrop is visible. High enough
+/// that text keeps its contrast, low enough that the wallpaper reads through.
+pub(crate) const GLASS_ALPHA: u8 = 205;
+
 pub struct RustcordApp {
     pub(crate) settings: Settings,
     pub(crate) guilds: Vec<Guild>,
@@ -97,6 +109,10 @@ pub struct RustcordApp {
     pub(crate) message_log: crate::message_log::MessageLog,
     pub(crate) message_log_open: bool,
     pub(crate) log_filter: String,
+    /// Blurred desktop wallpaper painted behind the translucent panels.
+    pub(crate) wallpaper: Option<Backdrop>,
+    /// Kept so settings changes can reload the backdrop without a frame context.
+    ctx: egui::Context,
     /// Server icon under the pointer, with its rect, so the rail can draw a
     /// channel peek beside it (the peek cannot live inside the 72 px panel).
     pub(crate) rail_hover: Option<(String, egui::Rect)>,
@@ -214,6 +230,11 @@ impl RustcordApp {
 
         let theme = plugins.theme().clone();
         theme.apply(&cc.egui_ctx);
+
+        let wallpaper = load_backdrop(&cc.egui_ctx, &settings);
+        // Glass stays on even without a detectable wallpaper: the window itself
+        // is transparent, so the desktop shows through the tint either way.
+        plugins.set_veil(&settings, settings.translucent.then_some(GLASS_ALPHA));
 
         let guilds = vec![
             Guild {
@@ -365,6 +386,8 @@ impl RustcordApp {
             rail_rename: None,
             rail_hover: None,
             rail_peek: None,
+            wallpaper,
+            ctx: cc.egui_ctx.clone(),
             message_log: crate::message_log::MessageLog::default(),
             message_log_open: false,
             log_filter: String::new(),
@@ -409,11 +432,54 @@ impl RustcordApp {
     pub(crate) fn settings_changed(&mut self) {
         self.settings.normalize();
         self.plugins.on_settings(&mut self.settings);
+        self.refresh_backdrop();
         self.settings_ui.hex_draft.clear();
         if let Err(err) = self.settings.save() {
             log::warn!("could not persist settings: {err:#}");
             self.status_line = Some(format!("could not save settings: {err:#}"));
         }
+    }
+
+    /// Re-detect the wallpaper and re-derive the veil. Only called on startup,
+    /// on a settings change and on an explicit theme reload — detection spawns
+    /// `gsettings` for GNOME, which must not happen per frame.
+    pub(crate) fn refresh_backdrop(&mut self) {
+        let detected = if self.settings.translucent {
+            crate::wallpaper::detect(self.settings.wallpaper.as_deref())
+        } else {
+            None
+        };
+        let reload = match (&self.wallpaper, &detected) {
+            (Some(backdrop), Some(path)) => &backdrop.path != path,
+            (None, None) => false,
+            _ => true,
+        };
+        if reload {
+            self.wallpaper = load_backdrop(&self.ctx, &self.settings);
+            match &self.wallpaper {
+                Some(backdrop) => log::info!("wallpaper backdrop: {}", backdrop.path.display()),
+                None => {
+                    log::info!("no wallpaper image found; showing the desktop through the glass")
+                }
+            }
+        }
+        let veil = self.settings.translucent.then_some(GLASS_ALPHA);
+        self.plugins.set_veil(&self.settings, veil);
+    }
+
+    /// Paint the blurred wallpaper on the background layer, under every panel.
+    fn paint_backdrop(&self, ctx: &egui::Context) {
+        let Some(backdrop) = &self.wallpaper else {
+            return;
+        };
+        let screen = ctx.content_rect();
+        let uv = crate::wallpaper::cover_uv(backdrop.size, screen.size());
+        ctx.layer_painter(egui::LayerId::background()).image(
+            backdrop.texture.id(),
+            screen,
+            uv,
+            egui::Color32::WHITE,
+        );
     }
 
     /// Install the current palette, but only when it actually changed.
@@ -2025,9 +2091,22 @@ impl RustcordApp {
 }
 
 impl eframe::App for RustcordApp {
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        // Transparent while the glass is on, so rounded corners and any uncovered
+        // pixel show the desktop (or the painted wallpaper texture) rather than a
+        // flat colour.
+        if self.settings.translucent {
+            [0.0, 0.0, 0.0, 0.0]
+        } else {
+            self.plugins.theme().background.to_normalized_gamma_f32()
+        }
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.frames = self.frames.wrapping_add(1);
+        // Background layer: the blurred wallpaper sits under every panel.
+        self.paint_backdrop(&ctx);
 
         // Both are change-gated: applying the palette unconditionally would
         // request a repaint every frame (see `apply_theme`).
@@ -2096,6 +2175,32 @@ impl eframe::App for RustcordApp {
 
 /// FNV-1a over the palette's colours and name. No allocation, so it is cheap
 /// enough to compute every frame.
+/// Detect, blur and upload the desktop wallpaper. `None` when the setting is
+/// off, no wallpaper can be found, or the image cannot be decoded.
+fn load_backdrop(ctx: &egui::Context, settings: &Settings) -> Option<Backdrop> {
+    if !settings.translucent {
+        return None;
+    }
+    let path = crate::wallpaper::detect(settings.wallpaper.as_deref())?;
+    log::info!("wallpaper backdrop from {}", path.display());
+    match crate::wallpaper::blurred(&path) {
+        Ok((width, height, pixels)) => {
+            let image = egui::ColorImage::from_rgba_unmultiplied([width, height], &pixels);
+            let texture =
+                ctx.load_texture("desktop-wallpaper", image, egui::TextureOptions::LINEAR);
+            Some(Backdrop {
+                texture,
+                size: egui::vec2(width as f32, height as f32),
+                path,
+            })
+        }
+        Err(err) => {
+            log::warn!("could not prepare wallpaper backdrop: {err}");
+            None
+        }
+    }
+}
+
 fn theme_signature(theme: &crate::ui::theme::AppTheme) -> u64 {
     let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
     let mut feed = |value: u8| {

@@ -15,6 +15,9 @@ use crate::utils::parse_css_color;
 pub struct VencordCompatPlugin {
     enabled: bool,
     theme: AppTheme,
+    /// Alpha applied to the theme's backgrounds when a blurred wallpaper is
+    /// behind the window (`DECISIONS.md` D39). `None` keeps them opaque.
+    veil: Option<u8>,
 }
 
 impl Default for VencordCompatPlugin {
@@ -22,6 +25,7 @@ impl Default for VencordCompatPlugin {
         Self {
             enabled: true,
             theme: AppTheme::default(),
+            veil: None,
         }
     }
 }
@@ -41,30 +45,43 @@ impl VencordCompatPlugin {
 
     fn reload(&mut self, settings: &Settings) {
         let base = settings.theme();
+        self.enabled = settings.vencord_themes;
 
-        if !settings.vencord_themes {
-            self.enabled = false;
-            self.theme = base;
-            return;
-        }
-
-        self.enabled = true;
-
-        let Some(path) = settings.theme_path() else {
-            self.theme = base;
-            return;
+        let theme = if !settings.vencord_themes {
+            base
+        } else {
+            match settings.theme_path() {
+                Some(path) => match std::fs::read_to_string(&path) {
+                    Ok(css) => {
+                        let theme = theme_from_css(&css, base);
+                        log::info!("loaded theme '{}' from {}", theme.name, path.display());
+                        theme
+                    }
+                    Err(err) => {
+                        log::warn!("could not read theme {}: {err}", path.display());
+                        base
+                    }
+                },
+                None => base,
+            }
         };
 
-        match std::fs::read_to_string(&path) {
-            Ok(css) => {
-                self.theme = theme_from_css(&css, base);
-                log::info!("loaded theme '{}' from {}", self.theme.name, path.display());
-            }
-            Err(err) => {
-                log::warn!("could not read theme {}: {err}", path.display());
-                self.theme = base;
-            }
+        // The veil is always applied last, so a CSS theme cannot accidentally
+        // paint opaque panels over the backdrop.
+        self.theme = match self.veil {
+            Some(alpha) => theme.veiled(alpha),
+            None => theme,
+        };
+    }
+
+    /// Set or clear the translucent-background alpha used while a blurred
+    /// wallpaper is active, re-deriving the palette so the change is immediate.
+    pub fn set_veil(&mut self, settings: &Settings, alpha: Option<u8>) {
+        if self.veil == alpha {
+            return;
         }
+        self.veil = alpha;
+        self.reload(settings);
     }
 }
 

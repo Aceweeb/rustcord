@@ -374,6 +374,33 @@ impl RustcordApp {
             )
             .changed();
 
+        dirty |= ui
+            .checkbox(
+                &mut self.settings.translucent,
+                "Translucent blurred wallpaper",
+            )
+            .changed();
+
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Wallpaper").color(theme.muted));
+            let mut path = self.settings.wallpaper.clone().unwrap_or_default();
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut path)
+                    .hint_text("auto-detected — paste a path to override")
+                    .desired_width(300.0),
+            );
+            // Commit on Enter or when focus leaves, not per keystroke: each
+            // change re-detects and re-blurs the image.
+            if response.lost_focus() {
+                let trimmed = path.trim();
+                let next = (!trimmed.is_empty()).then(|| trimmed.to_string());
+                if next != self.settings.wallpaper {
+                    self.settings.wallpaper = next;
+                    dirty = true;
+                }
+            }
+        });
+
         ui.add_space(10.0);
         ui.label(RichText::new("Preview").small().color(theme.muted));
         let (rect, _) = ui.allocate_exact_size(

@@ -431,6 +431,20 @@ Priority order for the next session:
   list: implemented, partial, missing-but-legitimate, refused-by-decision and
   needs-research, with the bot-token line drawn explicitly.
 
+- Made the UI translucent and wallpaper-aware (D39). `src/wallpaper.rs` detects the
+  desktop image on Hyprland (hyprpaper IPC, swww, config, or any image path in the
+  Hyprland config tree), KDE, GNOME and XFCE, then downscales to 320 px, box-blurs
+  it three times and uploads one texture; the app paints it under every panel on
+  the background layer. The window itself is transparent (`with_transparent`) and
+  themed surfaces use alpha 205 (`AppTheme::veiled`), so the real desktop shows
+  through even when no image can be found. Settings → Appearance gained a glass
+  toggle and a wallpaper path field (applied on focus loss, `~`/`$HOME` expanded).
+  8 wallpaper tests plus one settings test; suite now 267.
+- Replaced the icon with a blurple squircle and a stylised white face, drawn as
+  original SVG (`assets/rustcord.svg`, 256 px PNG rendered from it and embedded as
+  the window icon). `scripts/install-local.sh` installs the SVG into the hicolor
+  theme.
+
 ---
 
 ## 7. Notes for the next agent

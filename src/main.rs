@@ -45,6 +45,19 @@ fn maybe_pin_egl_vendor() {
     }
 }
 
+/// Window/taskbar icon. Embedded so the binary does not depend on an installed
+/// icon theme; the launcher's `.desktop` file uses the same artwork as an SVG.
+fn load_icon() -> Option<egui::IconData> {
+    let bytes = include_bytes!("../assets/rustcord.png");
+    let image = image::load_from_memory(bytes).ok()?.to_rgba8();
+    let (width, height) = image.dimensions();
+    Some(egui::IconData {
+        rgba: image.into_raw(),
+        width,
+        height,
+    })
+}
+
 fn main() -> Result<()> {
     // Capture logs both on stderr and in the in-memory ring used by the
     // Diagnostics page.
@@ -56,11 +69,19 @@ fn main() -> Result<()> {
     let mut settings = Settings::load_or_default();
     settings.normalize();
 
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_inner_size([1280.0, 800.0])
+        .with_min_inner_size([900.0, 600.0])
+        .with_title("Rustcord")
+        // Lets the compositor keep the window's transparent pixels, so the
+        // blurred backdrop and rounded corners are not flattened to black.
+        .with_transparent(true);
+    if let Some(icon) = load_icon() {
+        viewport = viewport.with_icon(icon);
+    }
+
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1280.0, 800.0])
-            .with_min_inner_size([900.0, 600.0])
-            .with_title("Rustcord"),
+        viewport,
         ..Default::default()
     };
 
