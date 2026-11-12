@@ -31,51 +31,57 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
         .frame(egui::Frame::new().fill(theme.surface_alt))
         .show(ui, |ui| {
             ui.add_space(12.0);
-            ui.vertical_centered(|ui| {
-                for guild in &app.guilds {
-                    let selected = app.selected_guild.as_deref() == Some(guild.id.as_str());
+            // A bot in 23 guilds does not fit an 800 px window; without this the
+            // icons past the bottom edge were unreachable.
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.vertical_centered(|ui| {
+                        for guild in &app.guilds {
+                            let selected = app.selected_guild.as_deref() == Some(guild.id.as_str());
 
-                    if selected {
-                        // Discord's white pill, hugging the left edge.
-                        let top = ui.cursor().top();
-                        let rail_left = ui.max_rect().left();
-                        ui.painter().rect_filled(
-                            egui::Rect::from_min_size(
-                                egui::pos2(rail_left, top + 10.0),
-                                egui::vec2(4.0, GUILD_ICON - 20.0),
-                            ),
-                            2.0,
-                            Color32::WHITE,
-                        );
-                    }
+                            if selected {
+                                // Discord's white pill, hugging the left edge.
+                                let top = ui.cursor().top();
+                                let rail_left = ui.max_rect().left();
+                                ui.painter().rect_filled(
+                                    egui::Rect::from_min_size(
+                                        egui::pos2(rail_left, top + 10.0),
+                                        egui::vec2(4.0, GUILD_ICON - 20.0),
+                                    ),
+                                    2.0,
+                                    Color32::WHITE,
+                                );
+                            }
 
-                    // Circle when idle, rounded square when active.
-                    let radius = if selected {
-                        16
-                    } else {
-                        (GUILD_ICON / 2.0) as u8
-                    };
-                    let fill = if selected {
-                        theme.accent
-                    } else {
-                        theme.surface
-                    };
-                    let response = ui.add(
-                        egui::Button::new(
-                            RichText::new(initial(&guild.name))
-                                .size(18.0)
-                                .color(Color32::WHITE),
-                        )
-                        .min_size(egui::vec2(GUILD_ICON, GUILD_ICON))
-                        .corner_radius(egui::CornerRadius::same(radius))
-                        .fill(fill),
-                    );
-                    if response.clicked() {
-                        selected_guild = Some(guild.id.clone());
-                    }
-                    ui.add_space(8.0);
-                }
-            });
+                            // Circle when idle, rounded square when active.
+                            let radius = if selected {
+                                16
+                            } else {
+                                (GUILD_ICON / 2.0) as u8
+                            };
+                            let fill = if selected {
+                                theme.accent
+                            } else {
+                                theme.surface
+                            };
+                            let response = ui.add(
+                                egui::Button::new(
+                                    RichText::new(initial(&guild.name))
+                                        .size(18.0)
+                                        .color(Color32::WHITE),
+                                )
+                                .min_size(egui::vec2(GUILD_ICON, GUILD_ICON))
+                                .corner_radius(egui::CornerRadius::same(radius))
+                                .fill(fill),
+                            );
+                            if response.clicked() {
+                                selected_guild = Some(guild.id.clone());
+                            }
+                            ui.add_space(8.0);
+                        }
+                    });
+                });
         });
 
     if let Some(id) = selected_guild {

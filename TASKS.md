@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Guild list populated from READY (`DECISIONS.md` D27). The live gateway
+  sends full guild objects in READY and no `GUILD_CREATE`; both are now parsed,
+  deduplicated by id, and the rail scrolls. Verified against the real token:
+  23 guilds, 2938 channels.
 - [x] Reaction chips toggle (`DECISIONS.md` D26): clicking your own chip sends
   `DELETE …/reactions/{emoji}/@me`, clicking anyone else's sends the matching
   `PUT`; both update optimistically and roll back the correct direction on

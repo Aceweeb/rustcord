@@ -487,13 +487,31 @@ fn handle_payload(payload: &Value, tx: &mpsc::UnboundedSender<GatewayEvent>) {
                 .as_str()
                 .unwrap_or_default()
                 .to_string();
-            let guild_count = payload["d"]["guilds"].as_array().map(Vec::len).unwrap_or(0);
+            // Borrowed, not cloned: READY can be tens of megabytes of guild
+            // objects and a copy of it is pure transient RSS.
+            let guilds = payload["d"]["guilds"].as_array().map(Vec::as_slice);
+            let guild_count = guilds.map(<[_]>::len).unwrap_or(0);
             tx.send(GatewayEvent::Ready {
                 username,
                 user_id,
                 guild_count,
             })
             .ok();
+
+            // Discord does not always follow READY with a GUILD_CREATE per
+            // guild: an identify that is handed available guilds puts the full
+            // objects in this array instead (verified against the live
+            // gateway: 23 guilds here, zero GUILD_CREATE events). Using it only
+            // as a count left the rail empty, so every complete entry is turned
+            // into the same event GUILD_CREATE produces.
+            for guild in guilds.unwrap_or_default() {
+                if guild["unavailable"].as_bool().unwrap_or(false) {
+                    continue;
+                }
+                if let Some((guild, channels)) = parse_guild(guild) {
+                    tx.send(GatewayEvent::GuildCreate { guild, channels }).ok();
+                }
+            }
         }
         "GUILD_CREATE" => {
             if let Some((guild, channels)) = parse_guild(&payload["d"]) {
@@ -721,6 +739,49 @@ fn parse_typing(value: &Value) -> Option<GatewayEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ready_carries_whole_guilds() {
+        // Shape observed from the live gateway: READY lists full guild objects
+        // (channels and all) and no GUILD_CREATE follows.
+        let payload = json!({
+            "op": 0,
+            "t": "READY",
+            "d": {
+                "user": { "id": "1", "username": "bot" },
+                "guilds": [
+                    {
+                        "id": "900",
+                        "name": "Available",
+                        "channels": [
+                            { "id": "901", "name": "general", "type": 0 },
+                            { "id": "902", "name": "voice", "type": 2 }
+                        ]
+                    },
+                    { "id": "903", "unavailable": true }
+                ]
+            }
+        });
+
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        handle_payload(&payload, &tx);
+
+        match rx.try_recv().expect("ready") {
+            GatewayEvent::Ready { guild_count, .. } => assert_eq!(guild_count, 2),
+            other => panic!("expected Ready, got {other:?}"),
+        }
+
+        match rx.try_recv().expect("guild from ready") {
+            GatewayEvent::GuildCreate { guild, channels } => {
+                assert_eq!(guild.name, "Available");
+                assert_eq!(channels.len(), 2);
+            }
+            other => panic!("expected GuildCreate, got {other:?}"),
+        }
+
+        // The unavailable stub is not a guild we can draw.
+        assert!(rx.try_recv().is_err());
+    }
 
     #[test]
     fn parses_a_reply_reference() {

@@ -660,3 +660,40 @@ this project.
 **Consequences.** A chip now means "click to toggle", as in Discord. The context
 menu's quick reactions remain the add path for messages with no chips yet
 (Discord hides the chip row until someone reacts, and so does this client).
+
+## D27. Guilds come from READY as well as from GUILD_CREATE
+
+**Symptom.** The status bar read "Ready as … · 23 guild(s)" while the guild rail
+was empty.
+
+**Investigation, on the wire rather than by reading code.** A probe connected to
+`wss://gateway.discord.gg/?v=10&encoding=json` with the same token and intents the
+client uses, identified, and printed event names for 12 seconds: `READY`,
+`CHANNEL_UPDATE`, `CHANNEL_UNREAD_UPDATE` — and **zero `GUILD_CREATE`**, with
+`1` (GUILDS) as the only intent as well as with the full default set. The READY
+payload itself contained 23 guild objects, `unavailable: 0`, each with its
+`channels` and `roles` arrays. So this gateway session delivers guild data
+*inside READY* and never sends the per-guild events the client waited for.
+
+The client had been reading `d.guilds` only to count it
+(`GuildEvent::Ready { guild_count }`) and discarding the payload, which is why the
+count was right and the rail was empty.
+
+**Fix.** READY now also feeds each complete entry through the same `parse_guild`
+that `GUILD_CREATE` uses and emits a `GuildCreate` per guild, so downstream code
+has one code path and one shape. Entries with `unavailable: true` are skipped,
+because they carry no name or channels. `GUILD_CREATE` handling stays, since a
+resume or a large-guild session really can deliver guilds that way; when both
+paths name the same guild, `RustcordApp` updates the existing entry instead of
+pushing a duplicate (and skips channels whose id it already has).
+
+**Second defect found on the way.** The rail had no scroll area. 23 icons at
+56 px do not fit an 800 px window, so even with data the bottom guilds were
+unreachable; `guild_rail` now wraps its column in a `ScrollArea`.
+
+**Verified** with the real token through the client's own `GatewayClient`: READY
+reports 23 guilds and 23 `GuildCreate` events follow, carrying 2938 channels in
+total. The first version cloned READY's `guilds` array before iterating it, which
+cost 110 MB of transient RSS for this account (270 MB against the 250 MB target);
+borrowing the array instead measured **156 MB** in the same 12-second run. The probe was deleted afterwards; the regression test is
+`ready_carries_whole_guilds`, built from the observed payload shape.

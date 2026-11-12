@@ -1081,8 +1081,29 @@ impl RustcordApp {
                         self.selected_channel = first_text;
                     }
 
-                    self.guilds.push(guild);
-                    self.channels.extend(channels);
+                    // A guild can arrive twice (READY's list plus a later event,
+                    // or after a resume), so update in place rather than
+                    // growing duplicate icons and channels.
+                    if let Some(existing) = self
+                        .guilds
+                        .iter_mut()
+                        .find(|existing| existing.id == guild.id)
+                    {
+                        existing.name = guild.name;
+                        existing.icon = guild.icon;
+                    } else {
+                        self.guilds.push(guild);
+                    }
+
+                    for channel in channels {
+                        if !self
+                            .channels
+                            .iter()
+                            .any(|existing| existing.id == channel.id)
+                        {
+                            self.channels.push(channel);
+                        }
+                    }
                 }
                 GatewayEvent::Message(message) => {
                     self.messages.push(*message);

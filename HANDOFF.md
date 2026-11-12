@@ -7,12 +7,22 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 208 lib + 5 bin tests passing
+- `cargo test --all-targets`: 209 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Guild list fixed (`DECISIONS.md` D27):
+
+- `src/api/gateway.rs` — READY's `d.guilds` entries are emitted as
+  `GuildCreate` through the same `parse_guild` as the real event; unavailable
+  stubs are skipped. Test `ready_carries_whole_guilds` pins the shape.
+- `src/app.rs` — a guild that arrives twice updates in place; channels are
+  merged by id instead of duplicated.
+- `src/ui/sidebar.rs` — the guild rail scrolls, so all 23 icons are reachable.
+
 
 Reaction chips toggle (`DECISIONS.md` D26):
 
