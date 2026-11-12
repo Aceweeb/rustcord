@@ -71,7 +71,8 @@ half-implemented stubs that pretend to work.
   `~/.config/rustcord/settings.json`. A local `settings.json` is used as a
   fallback for development.
 - Typed REST clients for Discord API v10 (`src/api/discord.rs`) and Spotify
-  (`src/api/spotify.rs`).
+  (`src/api/spotify.rs`), plus a live now-playing poller (`src/spotify_sync.rs`)
+  behind an opt-in Spotify PKCE connection.
 - Discord Gateway transport (`src/api/gateway.rs`): TLS WebSocket, Hello,
   Identify, heartbeat loop, READY / GUILD_CREATE / MESSAGE_CREATE parsing.
 - Live guild and channel sync from `GUILD_CREATE`; the composer switches from
@@ -138,7 +139,6 @@ application's own allocations are ~23 MB anonymous. Reproduce every figure with
   to OAuth2 flows that produce a user token for messaging: that is a self-bot by
   another name. Use a bot token (stored in the keyring) or an approved OAuth2 app
   instead.
-- Real Spotify polling loop; the plugin currently uses a demo track.
 - WASM plugin execution. `load_wasm_plugin` fails closed on purpose; see
   `src/plugins/mod.rs` for the intended permission model.
 
@@ -225,23 +225,27 @@ window icon, so the launcher, taskbar and titlebar all show the same mark.
 
 ## Where your data lives
 
-Rustcord is a local program talking to Discord. There is no server of ours, no
-account to create, no database file and no analytics.
+Rustcord is a local program talking to Discord, plus Spotify if you choose to
+connect it for now-playing. There is no server of ours, no account to create, no
+database file and no analytics.
 
 | What | Where |
 | --- | --- |
 | Preferences | `~/.config/rustcord/settings.json` — no credentials, no messages |
 | Bot token | OS keyring, `rustcord` / `discord_bot_token` |
 | Identity session | OS keyring, `rustcord` / `discord_oauth_identity` |
+| Spotify session | OS keyring, `rustcord` / `spotify_session` — only if connected |
 | Messages | memory only, capped, gone when the window closes |
 | Images | RAM texture cache, bounded by `image_cache_mb` |
 | Diagnostics | memory ring buffer, exported only when you ask |
 
-Network traffic goes to Discord and nowhere else, and that is enforced rather than
-promised: every REST call, the gateway socket (including a `resume_gateway_url`
-from a payload) and every image download pass an exact-match allowlist of
-`discord.com`, `gateway.discord.gg`, `cdn.discordapp.com`, `media.discordapp.net`
-and the two `images-ext-*.discordapp.net` hosts. Anything else is refused.
+Network traffic goes to Discord and nowhere else unless you connect Spotify, and
+that is enforced rather than promised: every REST call, the gateway socket
+(including a `resume_gateway_url` from a payload), every image download and both
+Spotify endpoints pass an exact-match allowlist of `discord.com`,
+`gateway.discord.gg`, `cdn.discordapp.com`, `media.discordapp.net`, the two
+`images-ext-*.discordapp.net` hosts, `accounts.spotify.com` and `api.spotify.com`.
+Anything else is refused.
 
 Settings → Privacy shows this same list, with the live history cap and image
 budget. To verify it yourself:
@@ -271,7 +275,8 @@ Copy or edit `settings.json`:
   "character_counter": true,
   "discord_rpc": false,
   "rpc_client_id": null,
-  "rpc_show_channel": true
+  "rpc_show_channel": true,
+  "spotify_client_id": null
 }
 ```
 
@@ -280,7 +285,19 @@ for the blurred layer; `null` means "detect it" (Hyprland, KDE, GNOME, XFCE).
 `message_timestamps` and `character_counter` are the Extras toggles, and
 `discord_rpc` publishes Rich Presence with `rpc_client_id` (falling back to
 `oauth_client_id`), optionally naming the open channel when `rpc_show_channel` is
-true.
+true. `spotify_client_id` is the public application id the now-playing connection
+was made with; the tokens themselves stay in the keyring.
+
+### Spotify now-playing
+
+The `spotify-status` plugin can follow what you are actually playing instead of the
+demo track: create an application at the Spotify developer dashboard, add
+`http://127.0.0.1:53135/callback` as a redirect URI, then paste the client id into
+Settings → Notifications → Spotify application id and press **Connect Spotify**. The
+PKCE flow asks only for `user-read-currently-playing`, keeps the tokens in the OS
+keyring, and polls every five seconds; pausing or closing Spotify clears the track,
+and **Disconnect Spotify** forgets the grant. No client secret exists in this
+program.
 
 ### Rich Presence
 

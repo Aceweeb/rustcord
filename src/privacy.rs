@@ -1,9 +1,10 @@
 //! What leaves this machine, and what stays on it.
 //!
 //! Rustcord is a native client: there is no server component, no account on
-//! anyone's backend, no database file and no analytics. The only network traffic
-//! is to Discord, using the credentials the user supplied, and the only local
-//! state is a settings file, the OS keyring and memory.
+//! anyone's backend, no database file and no analytics. Network traffic goes to
+//! Discord with the credentials the user supplied and — only if they connect it —
+//! to Spotify for now-playing; the only local state is a settings file, the OS
+//! keyring and memory.
 //!
 //! That is a design property, so it is checked rather than described:
 //!
@@ -14,10 +15,11 @@
 //!   payload, so it is checked too; a gateway that points somewhere else is
 //!   refused instead of dialled.
 //!
-//! `api::spotify` is the only non-Discord client in the tree and **nothing
-//! constructs it**: the Spotify status plugin builds its activity from local
-//! state. If it is ever wired to the network, its host has to be added here and
-//! the setting has to be disclosed in the settings window first.
+//! Spotify is the only non-Discord service Rustcord talks to, and only when the
+//! user connects it (D43): `accounts.spotify.com` for the PKCE token exchange and
+//! `api.spotify.com` for the now-playing poll. Both hosts are on the allowlist
+//! below, the scope is `user-read-currently-playing`, and the tokens live in the
+//! keyring. Nothing is fetched from Spotify unless that connection exists.
 //!
 //! Rich Presence (`src/rpc.rs`) is not network traffic: it writes `SET_ACTIVITY`
 //! frames to the Discord client's local unix socket, with a public application id
@@ -34,6 +36,8 @@ pub const ALLOWED_HOSTS: &[&str] = &[
     "media.discordapp.net",
     "images-ext-1.discordapp.net",
     "images-ext-2.discordapp.net",
+    "accounts.spotify.com",
+    "api.spotify.com",
 ];
 
 /// One piece of local state, and where it lives.
@@ -61,6 +65,11 @@ pub const STORES: &[Store] = &[
         name: "Identity session",
         location: "OS keyring: rustcord / discord_oauth_identity",
         detail: "OAuth2 identify tokens and your public profile",
+    },
+    Store {
+        name: "Spotify session",
+        location: "OS keyring: rustcord / spotify_session",
+        detail: "now-playing tokens, only if you connect Spotify",
     },
     Store {
         name: "Messages",
@@ -109,7 +118,7 @@ pub fn host_allowed(url: &str) -> bool {
 /// A one-line summary for the settings window.
 pub fn summary() -> String {
     format!(
-        "{} Discord host(s), no telemetry, no database: {} local store(s)",
+        "{} allowlisted host(s), no telemetry, no database: {} local store(s)",
         ALLOWED_HOSTS.len(),
         STORES.len()
     )
@@ -160,6 +169,18 @@ mod tests {
     }
 
     #[test]
+    fn spotify_endpoints_are_allowed_only_for_https() {
+        use crate::api::spotify_auth;
+        assert!(host_allowed(spotify_auth::AUTHORIZE_URL));
+        assert!(host_allowed(spotify_auth::TOKEN_URL));
+        assert!(host_allowed(
+            "https://api.spotify.com/v1/me/player/currently-playing"
+        ));
+        assert!(!host_allowed("http://api.spotify.com/v1/me"));
+        assert!(!host_allowed("https://api.spotify.com.evil.test/v1"));
+    }
+
+    #[test]
     fn the_client_and_image_hosts_agree_with_this_list() {
         use crate::api::discord::API_BASE;
         assert!(host_allowed(API_BASE));
@@ -179,7 +200,7 @@ mod tests {
 
     #[test]
     fn there_is_no_database_and_no_telemetry_in_the_store_list() {
-        assert_eq!(STORES.len(), 6);
+        assert_eq!(STORES.len(), 7);
         for store in STORES {
             let text = format!("{} {} {}", store.name, store.location, store.detail);
             let lowered = text.to_lowercase();

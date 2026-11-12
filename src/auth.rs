@@ -7,6 +7,10 @@ const ACCOUNT: &str = "discord_bot_token";
 /// token so neither can be mistaken for the other. Holds no messaging grant.
 const OAUTH_ACCOUNT: &str = "discord_oauth_identity";
 
+/// The Spotify session (access + refresh token) for the now-playing poller. A
+/// separate entry so it cannot be mistaken for a Discord credential.
+const SPOTIFY_ACCOUNT: &str = "spotify_session";
+
 /// Store the Discord bot token in the OS keyring (Secret Service on Arch).
 /// Tokens are never written to `settings.json`.
 pub fn store_discord_token(token: &str) -> Result<()> {
@@ -51,6 +55,32 @@ pub fn clear_oauth_session() -> Result<()> {
     match entry.delete_credential() {
         Ok(()) => Ok(()),
         // Deleting a missing credential is not an error for our purposes.
+        Err(_) => Ok(()),
+    }
+}
+
+pub fn store_spotify_session(json: &str) -> Result<()> {
+    let entry = keyring::Entry::new(SERVICE, SPOTIFY_ACCOUNT)
+        .context("could not open the keyring entry for Spotify")?;
+    entry
+        .set_password(json)
+        .context("could not store the Spotify session in the system keyring")?;
+    Ok(())
+}
+
+pub fn load_spotify_session() -> Option<String> {
+    keyring::Entry::new(SERVICE, SPOTIFY_ACCOUNT)
+        .ok()?
+        .get_password()
+        .ok()
+        .filter(|json| !json.trim().is_empty())
+}
+
+pub fn clear_spotify_session() -> Result<()> {
+    let entry = keyring::Entry::new(SERVICE, SPOTIFY_ACCOUNT)
+        .context("could not open the keyring entry for Spotify")?;
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
         Err(_) => Ok(()),
     }
 }

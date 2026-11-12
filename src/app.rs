@@ -50,6 +50,16 @@ pub(crate) struct Backdrop {
 /// that text keeps its contrast, low enough that the wallpaper reads through.
 pub(crate) const GLASS_ALPHA: u8 = 205;
 
+/// The Spotify authorisation round trip: listener, state and, once the code
+/// arrives, the token exchange running on a worker thread (D43).
+struct SpotifyConnect {
+    client_id: String,
+    verifier: String,
+    state: String,
+    callback: crate::api::spotify_auth::BrowserCallback,
+    exchange: Option<std::sync::mpsc::Receiver<anyhow::Result<crate::api::spotify_auth::Tokens>>>,
+}
+
 pub struct RustcordApp {
     pub(crate) settings: Settings,
     pub(crate) guilds: Vec<Guild>,
@@ -115,6 +125,15 @@ pub struct RustcordApp {
     pub(crate) rpc: crate::rpc::Rpc,
     /// When this process started, so the presence shows elapsed time.
     pub(crate) started_unix: i64,
+    /// Live Spotify polling, once a session is connected.
+    spotify_poll: Option<crate::spotify_sync::Poller>,
+    /// The browser round trip, while one is in flight.
+    spotify_connect: Option<SpotifyConnect>,
+    /// Last Spotify connection/poll status, shown under the controls.
+    pub(crate) spotify_status: String,
+    /// Session used by the poller, kept to notice a changed client id.
+    spotify_tokens: Option<crate::api::spotify_auth::Tokens>,
+    spotify_client_used: Option<String>,
     /// Kept so settings changes can reload the backdrop without a frame context.
     ctx: egui::Context,
     /// Server icon under the pointer, with its rect, so the rail can draw a
@@ -427,14 +446,262 @@ impl RustcordApp {
             send_results,
             rpc: crate::rpc::Rpc::default(),
             started_unix: chrono::Utc::now().timestamp(),
+            spotify_poll: None,
+            spotify_connect: None,
+            spotify_status: String::new(),
+            spotify_tokens: None,
+            spotify_client_used: None,
         };
         app.refresh_presence();
+        app.restore_spotify();
         app
     }
 
     // -----------------------------------------------------------------------
     // Settings integration
     // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // Spotify (live now-playing)
+    // -----------------------------------------------------------------------
+
+    pub(crate) fn spotify_connected(&self) -> bool {
+        self.spotify_tokens.is_some()
+    }
+
+    /// True while a browser round trip is in flight.
+    pub(crate) fn spotify_busy(&self) -> bool {
+        self.spotify_connect.is_some()
+    }
+
+    /// Start the PKCE flow if a client id is configured: open the browser, then
+    /// exchange the code on a worker thread when it comes back.
+    pub(crate) fn start_spotify_connect(&mut self) {
+        let Some(client_id) = self.settings.spotify_client_id.clone() else {
+            self.spotify_status = "add a Spotify application id first".to_string();
+            return;
+        };
+
+        let state = match crate::api::oauth::new_state() {
+            Ok(state) => state,
+            Err(err) => {
+                self.spotify_status = format!("could not start the sign-in: {err:#}");
+                return;
+            }
+        };
+        let verifier = match crate::api::oauth::new_verifier() {
+            Ok(verifier) => verifier,
+            Err(err) => {
+                self.spotify_status = format!("could not start the sign-in: {err:#}");
+                return;
+            }
+        };
+        let callback = match crate::api::spotify_auth::listen_for_callback(state.clone()) {
+            Ok(callback) => callback,
+            Err(err) => {
+                self.spotify_status = format!("{err:#}");
+                return;
+            }
+        };
+
+        let challenge = crate::api::oauth::pkce_challenge(&verifier);
+        let url = crate::api::spotify_auth::authorize_url(&client_id, &state, &challenge);
+        self.spotify_connect = Some(SpotifyConnect {
+            client_id,
+            verifier,
+            state,
+            callback,
+            exchange: None,
+        });
+        self.spotify_status = "waiting for the browser…".to_string();
+
+        if let Err(err) = open::that(&url) {
+            self.spotify_status = format!("could not open the browser: {err}");
+        }
+    }
+
+    /// Forget the session and stop polling. The keyring entry goes too, so the
+    /// next start is signed out.
+    pub(crate) fn disconnect_spotify(&mut self) {
+        if let Some(mut poller) = self.spotify_poll.take() {
+            poller.stop();
+        }
+        crate::api::spotify_auth::clear_session();
+        self.spotify_tokens = None;
+        self.spotify_client_used = None;
+        self.plugins.clear_spotify();
+        self.spotify_status = "disconnected".to_string();
+        log::info!("spotify: disconnected");
+    }
+
+    fn start_spotify_polling(
+        &mut self,
+        client_id: String,
+        tokens: crate::api::spotify_auth::Tokens,
+    ) {
+        if let Err(err) = crate::api::spotify_auth::save_session(&tokens) {
+            log::warn!("could not save the Spotify session: {err:#}");
+        }
+        if let Some(mut previous) = self.spotify_poll.take() {
+            previous.stop();
+        }
+        // Drop the demo track: a connected session's first poll fills this in.
+        self.plugins.clear_spotify();
+        self.spotify_tokens = Some(tokens.clone());
+        self.spotify_client_used = Some(client_id.clone());
+        self.spotify_poll = Some(crate::spotify_sync::Poller::start(client_id, tokens));
+        log::info!("spotify: polling now-playing");
+    }
+
+    /// Restore a stored session at start-up, but only when the feature is on.
+    fn restore_spotify(&mut self) {
+        if !self.settings.spotify_status_sync {
+            self.spotify_status = "sync is off".to_string();
+            return;
+        }
+        let Some(client_id) = self.settings.spotify_client_id.clone() else {
+            self.spotify_status = "not configured".to_string();
+            return;
+        };
+        match crate::api::spotify_auth::load_session() {
+            Some(tokens)
+                if tokens
+                    .client_id
+                    .as_deref()
+                    .is_none_or(|used| used == client_id) =>
+            {
+                self.start_spotify_polling(client_id, tokens);
+                self.spotify_status = "connected".to_string();
+            }
+            Some(_) => {
+                // The grant belongs to a different application.
+                crate::api::spotify_auth::clear_session();
+                self.spotify_status = "application id changed; connect again".to_string();
+            }
+            None => self.spotify_status = "not connected".to_string(),
+        }
+    }
+
+    /// Drive the connect flow and drain poller updates. Called once per frame.
+    pub(crate) fn poll_spotify(&mut self) {
+        let mut start_exchange: Option<(String, String, String)> = None;
+        let mut finished: Option<Result<crate::api::spotify_auth::Tokens, String>> = None;
+
+        if let Some(connect) = &mut self.spotify_connect {
+            if connect.exchange.is_none() {
+                match connect.callback.receiver.try_recv() {
+                    Ok(Ok(code)) => {
+                        start_exchange =
+                            Some((connect.client_id.clone(), code, connect.verifier.clone()));
+                    }
+                    Ok(Err(err)) => finished = Some(Err(format!("{err:#}"))),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        finished = Some(Err("the browser listener stopped".to_string()));
+                    }
+                }
+            }
+        }
+
+        if let Some((client_id, code, verifier)) = start_exchange {
+            let (sender, receiver) = std::sync::mpsc::channel();
+            let spawned = std::thread::Builder::new()
+                .name("spotify-token".to_string())
+                .spawn(move || {
+                    let _ = sender.send(crate::api::spotify_auth::exchange_code(
+                        &client_id, &code, &verifier,
+                    ));
+                });
+            if spawned.is_ok() {
+                if let Some(connect) = &mut self.spotify_connect {
+                    connect.exchange = Some(receiver);
+                }
+                self.spotify_status = "exchanging the code…".to_string();
+            } else {
+                finished = Some(Err("could not start the token exchange".to_string()));
+            }
+        }
+
+        if let Some(connect) = &self.spotify_connect {
+            if let Some(receiver) = &connect.exchange {
+                match receiver.try_recv() {
+                    Ok(Ok(tokens)) => finished = Some(Ok(tokens)),
+                    Ok(Err(err)) => finished = Some(Err(format!("{err:#}"))),
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        finished = Some(Err("the token exchange stopped".to_string()));
+                    }
+                }
+            }
+        }
+
+        match finished {
+            Some(Ok(tokens)) => {
+                let client_id = self.settings.spotify_client_id.clone().unwrap_or_default();
+                self.spotify_connect = None;
+                self.start_spotify_polling(client_id, tokens);
+                self.spotify_status = "connected".to_string();
+            }
+            Some(Err(message)) => {
+                self.spotify_connect = None;
+                self.spotify_status = message;
+            }
+            None => {}
+        }
+
+        let mut updates = Vec::new();
+        if let Some(poller) = &self.spotify_poll {
+            while let Some(update) = poller.try_recv() {
+                updates.push(update);
+            }
+        }
+        for update in updates {
+            match update {
+                crate::spotify_sync::Update::Track(track) => {
+                    self.plugins.set_spotify_track(&track);
+                    self.spotify_status = "connected".to_string();
+                }
+                crate::spotify_sync::Update::Idle => {
+                    self.plugins.clear_spotify();
+                    self.spotify_status = "connected — nothing playing".to_string();
+                }
+                crate::spotify_sync::Update::Error(message) => {
+                    self.spotify_status = message;
+                }
+            }
+        }
+    }
+
+    /// Reconcile the poller with a settings change.
+    fn sync_spotify_settings(&mut self) {
+        if !self.settings.spotify_status_sync {
+            if let Some(mut poller) = self.spotify_poll.take() {
+                poller.stop();
+            }
+            self.plugins.clear_spotify();
+            self.spotify_status = "sync is off".to_string();
+            return;
+        }
+
+        // A different application id invalidates the stored grant.
+        if self.spotify_tokens.is_some()
+            && self.spotify_client_used != self.settings.spotify_client_id
+        {
+            self.disconnect_spotify();
+            self.spotify_status = "application id changed; connect again".to_string();
+            return;
+        }
+
+        if self.spotify_poll.is_none() {
+            if let (Some(client_id), Some(tokens)) = (
+                self.settings.spotify_client_id.clone(),
+                self.spotify_tokens.clone(),
+            ) {
+                self.spotify_poll = Some(crate::spotify_sync::Poller::start(client_id, tokens));
+                self.spotify_status = "connected".to_string();
+            }
+        }
+    }
 
     /// Publish the current channel to Discord Rich Presence. A no-op when the
     /// feature is off: `Rpc::sync` drops the worker and returns.
@@ -474,6 +741,7 @@ impl RustcordApp {
         self.plugins.on_settings(&mut self.settings);
         self.refresh_backdrop();
         self.refresh_presence();
+        self.sync_spotify_settings();
         self.settings_ui.hex_draft.clear();
         if let Err(err) = self.settings.save() {
             log::warn!("could not persist settings: {err:#}");
@@ -2190,6 +2458,11 @@ impl eframe::App for RustcordApp {
         self.poll_identity_refresh();
         if self.identity_refresh.is_some() {
             ctx.request_repaint_after(Duration::from_millis(250));
+        }
+
+        self.poll_spotify();
+        if self.spotify_connect.is_some() || self.spotify_poll.is_some() {
+            ctx.request_repaint_after(Duration::from_millis(500));
         }
 
         self.poll_oauth();

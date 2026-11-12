@@ -137,6 +137,11 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub rpc_show_channel: bool,
 
+    /// Spotify application (client) id for the live now-playing poller. Public;
+    /// the tokens it yields live in the keyring.
+    #[serde(default)]
+    pub spotify_client_id: Option<String>,
+
     // --- memory / notifications -------------------------------------------
     #[serde(default = "default_memory_budget")]
     pub memory_budget_mb: u32,
@@ -218,6 +223,7 @@ impl Default for Settings {
             discord_rpc: false,
             rpc_client_id: None,
             rpc_show_channel: true,
+            spotify_client_id: None,
             memory_budget_mb: default_memory_budget(),
             memory_alerts: true,
             remember_history: true,
@@ -407,6 +413,15 @@ impl Settings {
         }
         if let Some(client_id) = self.rpc_client_id.take() {
             self.rpc_client_id = normalize_client_id(client_id);
+        }
+        if let Some(client_id) = self.spotify_client_id.take() {
+            // Spotify ids are 32 alphanumeric characters; anything else is a
+            // paste error and must not reach the authorise URL.
+            let trimmed = client_id.trim();
+            self.spotify_client_id = (trimmed.len() >= 8
+                && trimmed.len() <= 64
+                && trimmed.bytes().all(|byte| byte.is_ascii_alphanumeric()))
+            .then(|| trimmed.to_string());
         }
         if let Some(wallpaper) = self.wallpaper.take() {
             let trimmed = wallpaper.trim();

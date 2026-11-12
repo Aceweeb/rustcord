@@ -466,6 +466,16 @@ Priority order for the next session:
   blend their 2×2 preview cells too. Added `utils::mix` (alpha-preserving, clamped)
   with a test; suite now 277.
 
+- Completed roadmap item 5 (D43): Spotify now-playing is live. `api/spotify_auth.rs`
+  adds the PKCE public-client flow on its own loopback port with
+  `user-read-currently-playing`, keyring session storage that records the issuing
+  client id, and refresh; `spotify_sync.rs` polls every five seconds on a worker
+  thread, refreshes with a one-minute slack, dedupes errors and reports
+  Track/Idle/Error. Settings → Notifications gained the client-id field, Connect and
+  Disconnect with a status line; the plugin's demo track is replaced by live data
+  and cleared when nothing plays. Privacy allowlist, store list and README name the
+  two Spotify hosts. 5 new tests; suite now 283.
+
 ---
 
 ## 7. Notes for the next agent

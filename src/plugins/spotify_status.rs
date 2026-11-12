@@ -55,6 +55,28 @@ impl SpotifyStatusPlugin {
         self.duration_ms = duration_ms;
     }
 
+    /// Apply a track from the live poller, including its album art URL.
+    pub fn set_from_track(&mut self, track: &crate::api::spotify::SpotifyTrack) {
+        self.set_track(
+            track.name.clone(),
+            track.artists.join(", "),
+            track.album.clone(),
+            track.uri.clone(),
+            track.progress_ms,
+            track.duration_ms,
+        );
+        if let Some(current) = &mut self.current {
+            current.large_image = track.album_image.clone();
+        }
+    }
+
+    /// Nothing is playing: drop the state instead of keeping the last track.
+    pub fn clear(&mut self) {
+        self.current = None;
+        self.progress_ms = 0;
+        self.duration_ms = 0;
+    }
+
     pub fn current(&self) -> Option<&Activity> {
         self.current.as_ref()
     }

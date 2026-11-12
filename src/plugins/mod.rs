@@ -137,6 +137,14 @@ impl PluginManager {
         self.vencord.theme()
     }
 
+    pub fn set_spotify_track(&mut self, track: &crate::api::spotify::SpotifyTrack) {
+        self.spotify.set_from_track(track);
+    }
+
+    pub fn clear_spotify(&mut self) {
+        self.spotify.clear();
+    }
+
     pub fn spotify_activity(&self) -> Option<&Activity> {
         self.spotify.current()
     }

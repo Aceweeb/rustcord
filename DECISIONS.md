@@ -1243,3 +1243,53 @@ and out-of-range weights.
 **Not verified visually.** The tint maths is tested, the code compiles and the app
 starts, but the rendered rail has not been seen in a signed-in window — same
 credential blocker as D38/D39 (D28).
+
+## D43. Spotify now-playing is a PKCE connection the user starts, not a bundled secret
+
+Roadmap item 5 was "poll Spotify and drive the plugin". The plugin already had the
+presentation (track, artist, album, progress bar, and a Discord activity payload)
+and `api::spotify` had the typed client; what was missing was a legal way to get a
+token and a loop that keeps it fresh.
+
+**Public client, no secret.** Spotify documents the authorisation-code flow with
+PKCE for public clients, so `src/api/spotify_auth.rs` mirrors `api::oauth`: a state
+value and verifier are generated locally, only the S256 challenge leaves the
+process, the redirect comes back to `127.0.0.1:53135` (a second loopback port, so a
+Discord identity sign-in can be in flight at the same time), and the callback's
+`state` must match before the code is looked at — it reuses `api::oauth`'s
+`parse_callback` for exactly that reason. The only scope requested is
+`user-read-currently-playing`; nothing about playlists, library or profile is
+asked for. The tokens are a JSON blob in the keyring under `spotify_session`
+(never in `settings.json`), and the record says which client id issued it, so
+changing the id in settings invalidates the old grant instead of silently reusing
+it.
+
+**Polling lives on its own thread.** `src/spotify_sync.rs` owns the session and
+asks Spotify every five seconds (the interval the README promised), refreshing the
+access token when it is within a minute of expiry, keeping the old refresh token
+when Spotify does not rotate one, and saving a rotated one back to the keyring. The
+UI drains updates — `Track`, `Idle`, `Error` — once per frame, so a slow request can
+never stall a frame; the thread stops when the handle is dropped (toggling the
+feature off, disconnecting, or changing the client id). Repeated identical errors
+are reported once rather than every five seconds, and a failed request forces a
+refresh attempt next round, which is the usual cause.
+
+**Presentation stays in the plugin.** A track replaces the demo, `Idle` clears the
+state instead of leaving the last song frozen, and the progress bar keeps advancing
+locally between polls through the existing `tick`. The album-art URL from Spotify is
+carried into the activity's `large_image` so a future renderer can use it.
+
+**Disclosure, not a new exception.** This is the first non-Discord network traffic,
+so it is explicit: `accounts.spotify.com` and `api.spotify.com` join the exact-match
+allowlist in `privacy.rs`, the Settings → Privacy store list gains the Spotify
+session, the README table and allowlist paragraph name both hosts, and the controls
+sit next to the existing "Show Spotify now-playing activity" switch. Nothing
+contacts Spotify until the user presses Connect.
+
+**Verified as far as possible here.** Token parsing (with and without a refresh
+token), refresh merging, expiry slack, the authorise URL and the store list are
+unit-tested, and the loopback listener was exercised against a real TCP request to
+confirm a mismatched `state` yields no code (that test was temporary because it
+binds a fixed port). The end-to-end connection has not been made: there is no
+Spotify application id in this environment, so the browser round trip, the token
+exchange and the live poll are unverified. `TASKS.md` records that.

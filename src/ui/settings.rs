@@ -940,6 +940,58 @@ impl RustcordApp {
                 "Show Spotify now-playing activity",
             )
             .changed();
+
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Spotify application id").color(theme.muted));
+            let mut client_id = self.settings.spotify_client_id.clone().unwrap_or_default();
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut client_id)
+                    .hint_text("from the Spotify developer dashboard")
+                    .desired_width(260.0),
+            );
+            if response.lost_focus() {
+                let trimmed = client_id.trim();
+                let next = (!trimmed.is_empty()).then(|| trimmed.to_string());
+                if next != self.settings.spotify_client_id {
+                    self.settings.spotify_client_id = next;
+                    dirty = true;
+                }
+            }
+        });
+
+        ui.horizontal(|ui| {
+            if self.spotify_connected() {
+                if ui.button("Disconnect Spotify").clicked() {
+                    self.disconnect_spotify();
+                }
+            } else {
+                let busy = self.spotify_busy();
+                let label = if busy {
+                    "Waiting for the browser…"
+                } else {
+                    "Connect Spotify"
+                };
+                if ui
+                    .add_enabled(!busy, egui::Button::new(label))
+                    .on_disabled_hover_text("Finish or cancel the open browser tab first")
+                    .clicked()
+                {
+                    self.start_spotify_connect();
+                }
+            }
+            ui.label(
+                RichText::new(&self.spotify_status)
+                    .small()
+                    .color(theme.muted),
+            );
+        });
+        ui.label(
+            RichText::new(
+                "Connecting asks Spotify only for `user-read-currently-playing`. Tokens stay in the OS keyring and the poll runs every five seconds; the demo track is replaced by whatever is actually playing.",
+            )
+            .small()
+            .color(theme.muted),
+        );
         dirty |= ui
             .checkbox(&mut self.settings.show_blyat_banner, "Show Blyat banner")
             .changed();

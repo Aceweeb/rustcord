@@ -4,6 +4,13 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [~] Spotify live now-playing (`DECISIONS.md` D43, roadmap item 5): PKCE
+  public-client flow on `127.0.0.1:53135`, scope `user-read-currently-playing`,
+  keyring session tagged with its client id, five-second worker-thread poll with
+  refresh and error de-duplication, Connect/Disconnect and status in Settings →
+  Notifications, demo track replaced/cleared. Token parsing, refresh merging, URL
+  and the state check are tested; no Spotify app id was available here, so the
+  browser round trip and a real poll are unverified.
 - [~] Folder-coloured server tiles (`DECISIONS.md` D42): members of an expanded
   folder blend 55 % toward the folder colour and get a 1.5 px ring in it, selection
   keeps the accent fill and white pill, and a closed folder tints its 2×2 preview

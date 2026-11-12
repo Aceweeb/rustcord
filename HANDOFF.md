@@ -7,12 +7,28 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 272 lib + 5 bin tests passing (277)
+- `cargo test --all-targets`: 278 lib + 5 bin tests passing (283)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Spotify live now-playing (`DECISIONS.md` D43, roadmap item 5):
+
+- `src/api/spotify_auth.rs` (new) — PKCE flow, token parse/refresh, keyring
+  session carrying its client id, loopback listener on port 53135; 3 tests.
+- `src/spotify_sync.rs` (new) — worker-thread poller (5 s), refresh near expiry,
+  Track/Idle/Error updates, error de-duplication; 2 tests.
+- `src/app.rs` — `spotify_poll` / `spotify_connect` / `spotify_status`, restore on
+  start, `poll_spotify` per frame, `start_spotify_connect`, `disconnect_spotify`,
+  settings reconciliation (toggle off, changed client id).
+- `src/plugins/spotify_status.rs` + `plugins/mod.rs` — `set_from_track`, `clear`,
+  manager pass-throughs.
+- `src/ui/settings.rs` — client id field, Connect/Disconnect, status under the
+  existing Spotify switch.
+- `src/privacy.rs` — both Spotify hosts on the allowlist, a store row, updated
+  privacy text and tests.
 
 Folder-tinted server tiles (`DECISIONS.md` D42):
 

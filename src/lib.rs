@@ -17,6 +17,7 @@ pub mod rpc;
 pub mod search;
 pub mod settings;
 pub mod shortcuts;
+pub mod spotify_sync;
 pub mod switcher;
 pub mod sysinfo;
 pub mod ui;
