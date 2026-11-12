@@ -45,8 +45,11 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   unit-tested; the network path still needs a real bot token to confirm.
 - [ ] Verify the live paging path end-to-end with a bot token: first page,
   "Load older messages", duplicate-free prepend, and 429 behaviour.
-- [ ] Handle `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_REACTION_*`,
-  `TYPING_START`.
+- [x] Message lifecycle (`DECISIONS.md` D17): `MESSAGE_UPDATE`,
+  `MESSAGE_DELETE`, `MESSAGE_REACTION_ADD/REMOVE`, `MESSAGE_REACTION_REMOVE_ALL`,
+  `MESSAGE_REACTION_REMOVE_EMOJI`, `TYPING_START`. Partial payloads preserve
+  fields, replayed events cannot double-count, unknown ids are ignored, and the
+  typing tracker expires without a timer. 25 synthetic-payload tests.
 - [x] REST rate limiting (`src/api/ratelimit.rs`, `DECISIONS.md` D16): per-route
   buckets keyed by major id, `X-RateLimit-*` accounting, global 429 handling,
   `retry_after` from the body, one retry, and a 60 s ceiling that errors instead

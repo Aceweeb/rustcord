@@ -33,6 +33,9 @@ and embeds render through a bounded image cache:
   demo-mode skip, and a Sign out path in Settings → Privacy (D15).
 - `src/api/ratelimit.rs` — per-route/per-major-id buckets, `X-RateLimit-*`
   accounting, global 429s, one retry, 60 s ceiling (D16).
+- Message lifecycle events (`MESSAGE_UPDATE`, `MESSAGE_DELETE`,
+  `MESSAGE_REACTION_*`, `TYPING_START`) with pure list operations in
+  `models.rs` and a typing tracker; 25 tests, all synthetic (D17).
 
 ## Immediate next task
 
@@ -49,11 +52,12 @@ neither history paging nor image rendering has been seen working:
 
 ## Then, in order
 
-1. `MESSAGE_UPDATE` / `MESSAGE_DELETE` / `MESSAGE_REACTION_*` / `TYPING_START`,
-   each with a synthetic payload test before touching the socket loop. The
-   models already carry reactions and attachments; only the events are missing.
-2. Gateway identify cap and jittered backoff (Yapfast's account-safety pattern:
-   at most 10 IDENTIFYs an hour, random 50–100 % of each backoff step).
+1. Gateway identify cap and jittered backoff (Yapfast's account-safety pattern:
+   at most 10 IDENTIFYs an hour, random 50–100 % of each backoff step, reset the
+   backoff only after a session has stayed up a while). Current backoff is
+   `backoff_secs(attempt)` with no jitter and no identify cap.
+2. Per-message context menu (edit, delete, copy) so the lifecycle events above
+   are not only inbound.
 3. Packaging: icon asset + PKGBUILD.
 
 ## Rules for the next session
@@ -75,6 +79,11 @@ neither history paging nor image rendering has been seen working:
 - `egui` 0.37: `App::ui(&mut self, ui, frame)` and `egui::Panel::left/…`.
 - `ScrollArea::show_rows` assumes uniform heights — the message list uses
   `show_viewport` plus `RowMetrics`. Do not "simplify" it back.
+- Live events must never refetch history: they mutate `messages` and clear
+  `RowMetrics` so heights are re-measured. Pagination state lives in `history`
+  and is deliberately untouched.
+- `Reaction.users` is capped at 64 ids and is empty for REST history; do not
+  assume it lists everyone who reacted.
 - `app.metrics` is `std::mem::take`n inside `chat::show`; image URLs are
   collected in a local inside the same closure and requested afterwards,
   because `ImageLoader::prepare` needs `&mut app`.

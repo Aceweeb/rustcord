@@ -365,6 +365,11 @@ Priority order for the next session:
 - Added REST rate limiting (`src/api/ratelimit.rs`, 11 tests). The rules follow
   Discord's documented limits; the code is Rustcord's own, not Yapfast's
   (GPL-3.0 vs MIT/Apache). See `DECISIONS.md` D13–D16.
+- Added the message lifecycle: `MESSAGE_UPDATE`, `MESSAGE_DELETE`,
+  `MESSAGE_REACTION_ADD/REMOVE`, `MESSAGE_REACTION_REMOVE_ALL`,
+  `MESSAGE_REACTION_REMOVE_EMOJI`, `TYPING_START`, plus pure list operations and
+  a typing tracker in `models.rs`. 25 synthetic-payload tests, no token needed
+  (`DECISIONS.md` D17). Test suite: 142.
 
 ---
 

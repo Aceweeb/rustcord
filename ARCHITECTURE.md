@@ -48,9 +48,13 @@ main.rs                     installs log capture, loads Settings, starts eframe
    flight. The UI only uploads finished RGBA buffers; nothing blocks.
 4. **Gateway events** are plain values over an `mpsc` channel; the UI thread
    never awaits. `poll_gateway` is non-blocking (`try_recv`).
-5. **Sending**: in demo mode a message is appended locally; in live mode the
+5. **Live events**: `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_REACTION_*` and
+   `TYPING_START` mutate the same list the view renders. Edits and deletes never
+   refetch history, so pagination and measured row heights stay coherent; typing
+   lives in a small expiring tracker (`models::TypingTracker`) with no timer.
+6. **Sending**: in demo mode a message is appended locally; in live mode the
    REST call runs on the tokio runtime and returns via `mpsc`.
-6. **Persistence**: settings are saved on change; message history is memory-only
+7. **Persistence**: settings are saved on change; message history is memory-only
    and clamped to `ResourcePriority::history_cap()`.
 
 ## Threads

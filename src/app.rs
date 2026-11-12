@@ -56,6 +56,10 @@ pub struct RustcordApp {
     pub(crate) token_status: String,
     pub(crate) live_data: bool,
     pub(crate) login: crate::ui::login::LoginState,
+    /// Who is typing, per channel. Expires on its own; no timer or thread.
+    pub(crate) typing: crate::models::TypingTracker,
+    /// The bot's own user id from READY, so a reaction can be marked as ours.
+    pub(crate) bot_user_id: Option<String>,
     pub(crate) monitor: MemoryMonitor,
     pub(crate) settings_ui: SettingsUiState,
     pub(crate) alert: Option<Alert>,
@@ -240,6 +244,8 @@ impl RustcordApp {
             token_status,
             live_data: false,
             login,
+            typing: crate::models::TypingTracker::default(),
+            bot_user_id: None,
             monitor: MemoryMonitor::new(),
             settings_ui: SettingsUiState::default(),
             alert: None,
@@ -651,7 +657,14 @@ impl RustcordApp {
     // Discord plumbing
     // -----------------------------------------------------------------------
 
-    fn poll_gateway(&mut self) {
+    /// Find a message by id, and by channel when the event names one.
+    fn find_message_mut(&mut self, id: &str, channel_id: Option<&str>) -> Option<&mut Message> {
+        self.messages
+            .iter_mut()
+            .find(|message| message.matches_identity(id, channel_id))
+    }
+
+    fn poll_gateway(&mut self, now: f64) {
         let mut events = Vec::new();
         if let Some(gateway) = &mut self.gateway {
             while let Ok(event) = gateway.events.try_recv() {
@@ -668,17 +681,20 @@ impl RustcordApp {
                 }
                 GatewayEvent::Ready {
                     username,
+                    user_id,
                     guild_count,
                 } => {
                     self.gateway_status = format!("Ready as {username} · {guild_count} guild(s)");
                     self.current_user.username = username;
                     self.current_user.status = Presence::Online;
+                    self.bot_user_id = Some(user_id);
                 }
                 GatewayEvent::GuildCreate { guild, channels } => {
                     if !self.live_data {
                         self.guilds.clear();
                         self.channels.clear();
                         self.messages.clear();
+                        self.typing.clear();
                         self.selected_guild = None;
                         self.selected_channel = None;
                         self.live_data = true;
@@ -702,6 +718,80 @@ impl RustcordApp {
                 GatewayEvent::Message(message) => {
                     self.messages.push(message);
                     received_message = true;
+                }
+                GatewayEvent::MessageUpdate {
+                    id,
+                    channel_id,
+                    content,
+                    embeds,
+                } => {
+                    let changed = crate::models::apply_update(
+                        &mut self.messages,
+                        &id,
+                        channel_id.as_deref(),
+                        content.as_deref(),
+                        embeds,
+                    );
+                    if changed {
+                        // An edit can change the row's measured height.
+                        self.metrics.clear();
+                        self.status_line = Some("message edited".to_string());
+                    }
+                }
+                GatewayEvent::MessageDelete { id, channel_id } => {
+                    if crate::models::remove_message(&mut self.messages, &id, channel_id.as_deref())
+                    {
+                        // Rows below the gap shift up, so heights are stale.
+                        self.metrics.clear();
+                        self.status_line = Some("message deleted".to_string());
+                    }
+                }
+                GatewayEvent::Reaction {
+                    message_id,
+                    emoji,
+                    user_id,
+                    added,
+                    ..
+                } => {
+                    let by_me = matches!((&self.bot_user_id, &user_id), (Some(bot), Some(user)) if bot == user);
+                    let changed = self
+                        .find_message_mut(&message_id, None)
+                        .map(|message| {
+                            if added {
+                                message.add_reaction(&emoji, user_id.as_deref(), by_me)
+                            } else {
+                                message.remove_reaction(&emoji, user_id.as_deref(), by_me)
+                            }
+                        })
+                        .unwrap_or(false);
+                    if changed {
+                        // A chip row can appear or vanish.
+                        self.metrics.clear();
+                    }
+                }
+                GatewayEvent::ReactionsRemoved {
+                    message_id, emoji, ..
+                } => {
+                    let changed = self
+                        .find_message_mut(&message_id, None)
+                        .map(|message| match emoji.as_deref() {
+                            Some(emoji) => message.remove_reaction_emoji(emoji),
+                            None => message.clear_reactions(),
+                        })
+                        .unwrap_or(false);
+                    if changed {
+                        self.metrics.clear();
+                    }
+                }
+                GatewayEvent::Typing {
+                    channel_id,
+                    user_id,
+                    username,
+                } => {
+                    // The bot's own typing is not worth showing.
+                    if self.bot_user_id.as_deref() != Some(user_id.as_str()) {
+                        self.typing.record(&channel_id, &user_id, &username, now);
+                    }
                 }
                 GatewayEvent::Reconnecting {
                     attempt,
@@ -787,6 +877,8 @@ impl RustcordApp {
         self.metrics.clear();
         self.metrics_channel = None;
         self.images.clear();
+        self.typing.clear();
+        self.bot_user_id = None;
 
         let _ = auth::clear_discord_token();
         self.token_status = "Signed out; token removed from the keyring".to_string();
@@ -913,7 +1005,7 @@ impl eframe::App for RustcordApp {
 
         let now = ctx.input(|input| input.time) as f32;
         self.plugins.spotify.tick(now);
-        self.poll_gateway();
+        self.poll_gateway(f64::from(now));
         self.poll_send_results();
         self.poll_history();
         self.ensure_history();
@@ -1023,11 +1115,13 @@ fn demo_messages(current_user: &User) -> Vec<Message> {
         emoji: "🚀".to_string(),
         count: 7,
         me: true,
+        users: Vec::new(),
     });
     messages[3].reactions.push(Reaction {
         emoji: "🎨".to_string(),
         count: 3,
         me: false,
+        users: Vec::new(),
     });
 
     messages

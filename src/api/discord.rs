@@ -293,6 +293,8 @@ impl TryFrom<DiscordMessage> for Message {
                         .unwrap_or_else(|| "?".to_string()),
                     count: reaction.count,
                     me: reaction.me,
+                    // History does not list who reacted; gateway events do.
+                    users: Vec::new(),
                 })
                 .collect(),
             attachments: raw.attachments,

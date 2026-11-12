@@ -247,3 +247,37 @@ is still unverified.
 Yapfast code was read into this file. Its published documentation of Discord's
 documented limits was used as a checklist; the implementation and the tests are
 Rustcord's.
+
+## D17. Live events mutate the existing list; nothing reloads history
+
+**Context.** Edits, deletes, reactions and typing arrive over the gateway as
+partial payloads, can be replayed after a resume, and can refer to messages this
+client never loaded. Handling them by refetching a channel would throw away the
+virtual list's measured heights and the pagination cursor.
+
+**Decision.**
+
+- `MESSAGE_UPDATE` applies only the fields it carries. A missing `content` or an
+  empty `embeds` list leaves what the message holds, so an unreadable partial
+  payload cannot blank a message. Unknown ids are ignored: an edit must never
+  create a row, which is what out-of-order delivery would otherwise do.
+- `MESSAGE_DELETE` matches on id, and on channel when the event names one, then
+  removes the row. A replayed delete is a no-op rather than an error.
+- Reaction chips keep the count Discord reports plus a **capped list of user ids**
+  (64 per emoji). The list is what stops a replayed `MESSAGE_REACTION_ADD` from
+double-counting, and a duplicated remove from decrementing twice. Reactions
+  loaded from REST history carry no user list, so those count down from the count
+  alone. A chip disappears at zero.
+- `MESSAGE_REACTION_REMOVE_ALL` and `MESSAGE_REACTION_REMOVE_EMOJI` share one
+  event with an optional emoji, so there is one code path for "clear reactions".
+- Typing is a pure `TypingTracker`: per channel, 8 s lifetime refreshed by each
+  `TYPING_START`, capped at 32 typers. There is no timer and no thread — the
+  composer asks for a 500 ms repaint only *while* somebody is typing, and the
+  tracker expires entries when asked.
+- Any change that can alter a row's height (edit, delete, reaction chip) clears
+  `RowMetrics`, so the virtual list re-measures only the rows on screen. History
+  fetching and pagination state are untouched.
+
+**Consequences.** Live events cost O(rows held) at worst in a scan and never
+touch the network. 25 tests cover the parsing, the transitions, replay and
+out-of-order cases, and expiry — all without a token.

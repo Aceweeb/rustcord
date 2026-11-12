@@ -1,4 +1,4 @@
-use crate::models::{Channel, ChannelKind, Guild, Message, Presence, User};
+use crate::models::{Channel, ChannelKind, Embed, Guild, Message, Presence, User};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
@@ -19,6 +19,9 @@ pub enum GatewayEvent {
     Connected,
     Ready {
         username: String,
+        /// The bot's own user id, so reaction events can tell whether the bot
+        /// is the one reacting.
+        user_id: String,
         guild_count: usize,
     },
     GuildCreate {
@@ -26,6 +29,37 @@ pub enum GatewayEvent {
         channels: Vec<Channel>,
     },
     Message(Message),
+    /// `MESSAGE_UPDATE`. Absent fields were not sent and must be preserved.
+    MessageUpdate {
+        channel_id: Option<String>,
+        id: String,
+        content: Option<String>,
+        embeds: Option<Vec<Embed>>,
+    },
+    MessageDelete {
+        channel_id: Option<String>,
+        id: String,
+    },
+    /// `MESSAGE_REACTION_ADD` / `MESSAGE_REACTION_REMOVE`.
+    Reaction {
+        channel_id: Option<String>,
+        message_id: String,
+        emoji: String,
+        user_id: Option<String>,
+        added: bool,
+    },
+    /// `MESSAGE_REACTION_REMOVE_ALL` (`emoji` is `None`) and
+    /// `MESSAGE_REACTION_REMOVE_EMOJI` (one emoji).
+    ReactionsRemoved {
+        channel_id: Option<String>,
+        message_id: String,
+        emoji: Option<String>,
+    },
+    Typing {
+        channel_id: String,
+        user_id: String,
+        username: String,
+    },
     Reconnecting {
         attempt: u32,
         delay_secs: u64,
@@ -389,9 +423,14 @@ fn handle_payload(payload: &Value, tx: &mpsc::UnboundedSender<GatewayEvent>) {
                 .as_str()
                 .unwrap_or("unknown")
                 .to_string();
+            let user_id = payload["d"]["user"]["id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
             let guild_count = payload["d"]["guilds"].as_array().map(Vec::len).unwrap_or(0);
             tx.send(GatewayEvent::Ready {
                 username,
+                user_id,
                 guild_count,
             })
             .ok();
@@ -404,6 +443,41 @@ fn handle_payload(payload: &Value, tx: &mpsc::UnboundedSender<GatewayEvent>) {
         "MESSAGE_CREATE" => {
             if let Ok(message) = parse_message(&payload["d"]) {
                 tx.send(GatewayEvent::Message(message)).ok();
+            }
+        }
+        "MESSAGE_UPDATE" => {
+            if let Some(event) = parse_message_update(&payload["d"]) {
+                tx.send(event).ok();
+            }
+        }
+        "MESSAGE_DELETE" => {
+            if let Some(event) = parse_message_delete(&payload["d"]) {
+                tx.send(event).ok();
+            }
+        }
+        "MESSAGE_REACTION_ADD" => {
+            if let Some(event) = parse_reaction(&payload["d"], true) {
+                tx.send(event).ok();
+            }
+        }
+        "MESSAGE_REACTION_REMOVE" => {
+            if let Some(event) = parse_reaction(&payload["d"], false) {
+                tx.send(event).ok();
+            }
+        }
+        "MESSAGE_REACTION_REMOVE_ALL" => {
+            if let Some(event) = parse_reactions_removed(&payload["d"], false) {
+                tx.send(event).ok();
+            }
+        }
+        "MESSAGE_REACTION_REMOVE_EMOJI" => {
+            if let Some(event) = parse_reactions_removed(&payload["d"], true) {
+                tx.send(event).ok();
+            }
+        }
+        "TYPING_START" => {
+            if let Some(event) = parse_typing(&payload["d"]) {
+                tx.send(event).ok();
             }
         }
         _ => {}
@@ -474,6 +548,70 @@ fn parse_message(value: &Value) -> Result<Message> {
     })
 }
 
+fn parse_message_update(value: &Value) -> Option<GatewayEvent> {
+    Some(GatewayEvent::MessageUpdate {
+        channel_id: value["channel_id"].as_str().map(str::to_string),
+        id: value["id"].as_str()?.to_string(),
+        content: value["content"].as_str().map(str::to_string),
+        embeds: value
+            .get("embeds")
+            .and_then(|embeds| serde_json::from_value(embeds.clone()).ok()),
+    })
+}
+
+fn parse_message_delete(value: &Value) -> Option<GatewayEvent> {
+    Some(GatewayEvent::MessageDelete {
+        channel_id: value["channel_id"].as_str().map(str::to_string),
+        id: value["id"].as_str()?.to_string(),
+    })
+}
+
+/// Custom emoji carry an `id`; Unicode ones carry the glyph in `name`.
+fn emoji_label(value: &Value) -> Option<String> {
+    let emoji = value.get("emoji")?;
+    emoji["name"]
+        .as_str()
+        .or_else(|| emoji["id"].as_str())
+        .filter(|label| !label.is_empty())
+        .map(str::to_string)
+}
+
+fn parse_reaction(value: &Value, added: bool) -> Option<GatewayEvent> {
+    Some(GatewayEvent::Reaction {
+        channel_id: value["channel_id"].as_str().map(str::to_string),
+        message_id: value["message_id"].as_str()?.to_string(),
+        emoji: emoji_label(value)?,
+        user_id: value["user_id"].as_str().map(str::to_string),
+        added,
+    })
+}
+
+fn parse_reactions_removed(value: &Value, emoji_only: bool) -> Option<GatewayEvent> {
+    Some(GatewayEvent::ReactionsRemoved {
+        channel_id: value["channel_id"].as_str().map(str::to_string),
+        message_id: value["message_id"].as_str()?.to_string(),
+        emoji: if emoji_only {
+            Some(emoji_label(value)?)
+        } else {
+            None
+        },
+    })
+}
+
+fn parse_typing(value: &Value) -> Option<GatewayEvent> {
+    // Guild typing carries the member; DM typing carries the user directly.
+    let username = value["member"]["user"]["username"]
+        .as_str()
+        .or_else(|| value["user"]["username"].as_str())
+        .unwrap_or("someone");
+
+    Some(GatewayEvent::Typing {
+        channel_id: value["channel_id"].as_str()?.to_string(),
+        user_id: value["user_id"].as_str()?.to_string(),
+        username: username.to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -520,6 +658,211 @@ mod tests {
         }
     }
 
+    fn dispatch(payload: serde_json::Value) -> Option<GatewayEvent> {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        handle_payload(&payload, &tx);
+        rx.try_recv().ok()
+    }
+
+    #[test]
+    fn parses_message_update_with_content_and_embeds() {
+        let event = dispatch(json!({
+            "op": 0,
+            "t": "MESSAGE_UPDATE",
+            "d": {
+                "id": "100",
+                "channel_id": "300",
+                "content": "edited",
+                "embeds": [{ "title": "a link", "color": 5793266 }]
+            }
+        }))
+        .expect("event");
+
+        match event {
+            GatewayEvent::MessageUpdate {
+                id,
+                channel_id,
+                content,
+                embeds,
+            } => {
+                assert_eq!(id, "100");
+                assert_eq!(channel_id.as_deref(), Some("300"));
+                assert_eq!(content.as_deref(), Some("edited"));
+                let embeds = embeds.expect("embeds");
+                assert_eq!(embeds.len(), 1);
+                assert_eq!(embeds[0].title.as_deref(), Some("a link"));
+            }
+            other => panic!("expected MessageUpdate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_partial_message_update_is_still_parsed() {
+        let event =
+            dispatch(json!({ "t": "MESSAGE_UPDATE", "d": { "id": "100" } })).expect("event");
+
+        match event {
+            GatewayEvent::MessageUpdate {
+                id,
+                content,
+                embeds,
+                ..
+            } => {
+                assert_eq!(id, "100");
+                assert!(content.is_none());
+                assert!(embeds.is_none());
+            }
+            other => panic!("expected MessageUpdate, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_message_delete() {
+        let event = dispatch(json!({
+            "t": "MESSAGE_DELETE",
+            "d": { "id": "100", "channel_id": "300" }
+        }))
+        .expect("event");
+
+        match event {
+            GatewayEvent::MessageDelete { id, channel_id } => {
+                assert_eq!(id, "100");
+                assert_eq!(channel_id.as_deref(), Some("300"));
+            }
+            other => panic!("expected MessageDelete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_unicode_and_custom_reactions() {
+        let unicode = dispatch(json!({
+            "t": "MESSAGE_REACTION_ADD",
+            "d": {
+                "user_id": "1", "message_id": "100", "channel_id": "300",
+                "emoji": { "name": "🔥", "id": null }
+            }
+        }))
+        .expect("event");
+
+        match unicode {
+            GatewayEvent::Reaction {
+                emoji,
+                user_id,
+                added,
+                ..
+            } => {
+                assert_eq!(emoji, "🔥");
+                assert_eq!(user_id.as_deref(), Some("1"));
+                assert!(added);
+            }
+            other => panic!("expected Reaction, got {other:?}"),
+        }
+
+        let custom = dispatch(json!({
+            "t": "MESSAGE_REACTION_ADD",
+            "d": {
+                "user_id": "2", "message_id": "100", "channel_id": "300",
+                "emoji": { "name": "party", "id": "555" }
+            }
+        }))
+        .expect("event");
+
+        match custom {
+            GatewayEvent::Reaction { emoji, .. } => assert_eq!(emoji, "party"),
+            other => panic!("expected Reaction, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_removal_and_a_removal_of_everything_are_distinct() {
+        let removed = dispatch(json!({
+            "t": "MESSAGE_REACTION_REMOVE",
+            "d": {
+                "user_id": "1", "message_id": "100", "channel_id": "300",
+                "emoji": { "name": "🔥" }
+            }
+        }))
+        .expect("event");
+
+        match removed {
+            GatewayEvent::Reaction { added, .. } => assert!(!added),
+            other => panic!("expected Reaction, got {other:?}"),
+        }
+
+        let all = dispatch(json!({
+            "t": "MESSAGE_REACTION_REMOVE_ALL",
+            "d": { "message_id": "100", "channel_id": "300" }
+        }))
+        .expect("event");
+
+        match all {
+            GatewayEvent::ReactionsRemoved {
+                emoji, message_id, ..
+            } => {
+                assert!(emoji.is_none());
+                assert_eq!(message_id, "100");
+            }
+            other => panic!("expected ReactionsRemoved, got {other:?}"),
+        }
+
+        let one = dispatch(json!({
+            "t": "MESSAGE_REACTION_REMOVE_EMOJI",
+            "d": {
+                "message_id": "100", "channel_id": "300",
+                "emoji": { "name": "🎨", "id": "77" }
+            }
+        }))
+        .expect("event");
+
+        match one {
+            GatewayEvent::ReactionsRemoved { emoji, .. } => {
+                assert_eq!(emoji.as_deref(), Some("🎨"));
+            }
+            other => panic!("expected ReactionsRemoved, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_typing_from_a_guild_and_a_dm() {
+        let guild = dispatch(json!({
+            "t": "TYPING_START",
+            "d": {
+                "channel_id": "300", "user_id": "1",
+                "member": { "user": { "username": "alice" } }
+            }
+        }))
+        .expect("event");
+
+        match guild {
+            GatewayEvent::Typing { username, .. } => assert_eq!(username, "alice"),
+            other => panic!("expected Typing, got {other:?}"),
+        }
+
+        let dm = dispatch(json!({
+            "t": "TYPING_START",
+            "d": { "channel_id": "300", "user_id": "2", "user": { "username": "bob" } }
+        }))
+        .expect("event");
+
+        match dm {
+            GatewayEvent::Typing { username, .. } => assert_eq!(username, "bob"),
+            other => panic!("expected Typing, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn malformed_lifecycle_payloads_do_not_produce_events() {
+        assert!(dispatch(json!({ "t": "MESSAGE_UPDATE", "d": {} })).is_none());
+        assert!(dispatch(json!({ "t": "MESSAGE_DELETE", "d": {} })).is_none());
+        assert!(
+            dispatch(json!({ "t": "MESSAGE_REACTION_ADD", "d": { "message_id": "1" } })).is_none()
+        );
+        assert!(dispatch(json!({ "t": "MESSAGE_REACTION_REMOVE_ALL", "d": {} })).is_none());
+        assert!(dispatch(json!({ "t": "TYPING_START", "d": {} })).is_none());
+        // An event this client does not know is ignored, not an error.
+        assert!(dispatch(json!({ "t": "SOMETHING_NEW", "d": {} })).is_none());
+    }
+
     #[test]
     fn parses_guild_create_channels() {
         let payload = json!({
@@ -562,7 +905,7 @@ mod tests {
             "s": 1,
             "t": "READY",
             "d": {
-                "user": { "username": "rustcord-bot" },
+                "user": { "id": "900", "username": "rustcord-bot" },
                 "guilds": [{}, {}, {}]
             }
         });
@@ -573,9 +916,11 @@ mod tests {
         match rx.try_recv().expect("expected ready event") {
             GatewayEvent::Ready {
                 username,
+                user_id,
                 guild_count,
             } => {
                 assert_eq!(username, "rustcord-bot");
+                assert_eq!(user_id, "900");
                 assert_eq!(guild_count, 3);
             }
             other => panic!("expected Ready event, got {other:?}"),

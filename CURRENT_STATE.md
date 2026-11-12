@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **113 passed (108 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **142 passed (137 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -22,7 +22,7 @@ Release binary, 1280×800 window, default settings, theme file loaded.
 | Peak (`VmHWM`) | 196 MB | **160 MB** | kernel high-water mark |
 | Idle CPU | 3–8% after ~10 s (repaint loop) | **0.0% (0.2 fps)** | ticks/s; frames at debug |
 | Threads | 2 | 2 | `/proc/<pid>/status` |
-| Sign-in screen | — | **141 MB / 45 MB PSS** | same commands, no session yet |
+| Sign-in screen | — | **104–141 MB / 45–58 MB PSS** | varies with driver page residency |
 
 Reproduce with `scripts/measure-memory.sh 20`. The script prints RSS, PSS, peak,
 CPU ticks and thread count per second.
@@ -78,6 +78,25 @@ rebuild (driver and font warm-up), and later samples caught 5-second bursts of
 0.02% of a core and the frame counter showed 0.2 fps at idle, so the loader is
 innocent. See `DECISIONS.md` D14 — idle CPU is only meaningful next to a frame
 count.
+
+## Message lifecycle
+
+Edits, deletes, reactions and typing arrive over the gateway and mutate the same
+list the virtual view renders (`DECISIONS.md` D17):
+
+- `MESSAGE_UPDATE` — partial payloads never clear a field; unknown ids are
+  ignored, so an out-of-order edit cannot add a row.
+- `MESSAGE_DELETE` — matched by id and channel when given; replayed deletes are
+  no-ops.
+- `MESSAGE_REACTION_ADD/REMOVE` — chips track a capped user list so replays cannot
+double-count; `MESSAGE_REACTION_REMOVE_ALL` and `_REMOVE_EMOJI` clear reactions
+  through one path.
+- `TYPING_START` — per-channel tracker, 8 s expiry, 32-typer cap, shown above the
+  composer with a bounded 500 ms repaint while active. No timer, no thread.
+
+Covered by 25 tests, all with synthetic payloads; no token required. Verified:
+every event, unicode and custom emoji, missing fields, wrong channel, unknown id,
+replayed/malformed payloads, multiple typers and expiry.
 
 ## REST rate limits
 

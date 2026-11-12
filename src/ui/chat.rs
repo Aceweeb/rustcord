@@ -129,8 +129,29 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         );
     });
 
+    // Typing is tracked per channel and expires by itself, so this only reads
+    // state; while somebody types, a bounded repaint keeps the line honest.
+    let typing_now = ui.input(|input| input.time);
+    let typing = app
+        .selected_channel
+        .as_deref()
+        .and_then(|channel| app.typing.summary(channel, typing_now));
+    if typing.is_some() {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(500));
+    }
+
     egui::Panel::bottom("composer").show(ui, |ui| {
         ui.add_space(8.0);
+        if let Some(typing) = &typing {
+            ui.label(
+                RichText::new(typing)
+                    .small()
+                    .italics()
+                    .color(app.plugins.theme().muted),
+            );
+            ui.add_space(2.0);
+        }
         ui.horizontal(|ui| {
             let hint = app
                 .selected_channel_name()
