@@ -14,6 +14,16 @@ repository state before changing anything.
 
 ## What changed most recently
 
+Outgoing typing indicators (`DECISIONS.md` D44):
+
+- `src/api/discord.rs` — `trigger_typing(channel_id)` posting to
+  `/channels/{id}/typing` through the shared rate-limited `request`.
+- `src/models.rs` — `TYPING_REFRESH` (8 s) and pure `typing_due(last, channel, now)`
+  with boundary assertions inside the typing tests.
+- `src/app.rs` — `typing_notice` state and `notify_typing`, which guards on live
+  data, text channel, empty draft and gateway before spawning the request.
+- `src/ui/chat.rs` — composer calls `notify_typing` on `TextEdit::changed`.
+
 Spotify live now-playing (`DECISIONS.md` D43, roadmap item 5):
 
 - `src/api/spotify_auth.rs` (new) — PKCE flow, token parse/refresh, keyring

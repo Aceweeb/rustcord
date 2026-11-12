@@ -1293,3 +1293,37 @@ confirm a mismatched `state` yields no code (that test was temporary because it
 binds a fixed port). The end-to-end connection has not been made: there is no
 Spotify application id in this environment, so the browser round trip, the token
 exchange and the live poll are unverified. `TASKS.md` records that.
+
+## D44. Typing goes out at most once per eight seconds, and never blocks a frame
+
+Inbound typing already existed: `TYPING_START` from the gateway goes into
+`TypingTracker`, and the composer draws "alice is typing…" with its own 500 ms
+repaint while the entry is alive. What was missing was the other direction, so the
+person on the other side of a conversation had no sign that a reply was being
+written.
+
+**One REST call per eight seconds.** Discord rate-limits `POST
+/channels/{id}/typing` to once per ten seconds per channel, and clients keep the
+indicator alive by re-sending just under that. `models::typing_due` is the whole
+policy: the first keystroke in a channel sends immediately, switching channels
+sends immediately, and the same channel waits `TYPING_REFRESH` (8 s). It is a pure
+function over the last (channel, instant) and is tested at the boundary, so the
+rule cannot drift into a call per keystroke.
+
+**Cosmetic, therefore quiet.** The request is spawned on the existing runtime from
+`notify_typing`, which no-ops when there is no live gateway, no selected text
+channel, an empty draft, or no session. Failures are logged at `debug` and never
+touch the status line or a user-facing alert — a typing dot is not worth an error
+banner. The send path is untouched, so a refused typing call cannot delay or block
+a message.
+
+**Only while composing.** The composer hooks `TextEdit::changed`, which fires on
+text edits, paste and deletion; the empty-draft guard means clearing the field does
+not announce anything, and the eight-second window means holding a key down is one
+call every eight seconds rather than one per frame. The bot's own `TYPING_START`
+is already ignored when recording inbound typing, so the composer never says
+"Rustcord is typing…".
+
+**Unverified against a live channel.** The throttle is unit-tested and the code
+compiles, but no call has been made to Discord: this environment has no working bot
+session (D28). `TASKS.md` records it as `[~]`.

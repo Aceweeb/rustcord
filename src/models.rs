@@ -620,6 +620,24 @@ struct TypingEntry {
 ///
 /// Pure: callers pass the current time, so expiry is testable without sleeping
 /// and the app needs no extra timer or thread.
+/// Discord's typing endpoint is rate-limited to one call per ten seconds per
+/// channel. Refreshing at eight keeps the indicator alive through a long message
+/// without ever being the reason a call is refused.
+pub const TYPING_REFRESH: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// Whether a typing notice is due: the first keystroke always sends one, a
+/// different channel sends one, and the same channel waits out `TYPING_REFRESH`.
+pub fn typing_due(
+    last: Option<(&str, std::time::Instant)>,
+    channel_id: &str,
+    now: std::time::Instant,
+) -> bool {
+    match last {
+        None => true,
+        Some((id, sent)) => id != channel_id || now.duration_since(sent) >= TYPING_REFRESH,
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct TypingTracker {
     entries: Vec<TypingEntry>,
@@ -1106,6 +1124,17 @@ mod tests {
 
     #[test]
     fn typing_says_who_is_typing() {
+        let start = std::time::Instant::now();
+        assert!(typing_due(None, "c1", start));
+        assert!(!typing_due(Some(("c1", start)), "c1", start));
+        assert!(typing_due(
+            Some(("c1", start)),
+            "c1",
+            start + TYPING_REFRESH
+        ));
+        // A switch of channel sends immediately, even inside the window.
+        assert!(typing_due(Some(("c1", start)), "c2", start));
+
         let mut typing = TypingTracker::default();
         typing.record("c1", "u1", "alice", 0.0);
         assert_eq!(

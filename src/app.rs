@@ -125,6 +125,9 @@ pub struct RustcordApp {
     pub(crate) rpc: crate::rpc::Rpc,
     /// When this process started, so the presence shows elapsed time.
     pub(crate) started_unix: i64,
+    /// When the bot last told the channel it is typing, so the REST call is not
+    /// made per keystroke (D44).
+    typing_notice: Option<(String, std::time::Instant)>,
     /// Live Spotify polling, once a session is connected.
     spotify_poll: Option<crate::spotify_sync::Poller>,
     /// The browser round trip, while one is in flight.
@@ -446,6 +449,7 @@ impl RustcordApp {
             send_results,
             rpc: crate::rpc::Rpc::default(),
             started_unix: chrono::Utc::now().timestamp(),
+            typing_notice: None,
             spotify_poll: None,
             spotify_connect: None,
             spotify_status: String::new(),
@@ -2308,6 +2312,53 @@ impl RustcordApp {
             .as_ref()
             .and_then(|id| self.channels.iter().find(|channel| &channel.id == id))
             .map(|channel| channel.name.as_str())
+    }
+
+    /// Send Discord a typing notice while the user is composing, at most once per
+    /// eight seconds per channel. Cosmetic, so every failure is logged at debug
+    /// level rather than surfacing in the status line.
+    pub(crate) fn notify_typing(&mut self) {
+        if !self.live_data || self.draft.trim().is_empty() || self.gateway.is_none() {
+            return;
+        }
+        let Some(channel_id) = self.selected_channel.clone() else {
+            return;
+        };
+        let is_text = self
+            .channels
+            .iter()
+            .find(|channel| channel.id == channel_id)
+            .map(|channel| channel.kind == ChannelKind::Text)
+            .unwrap_or(false);
+        if !is_text {
+            return;
+        }
+
+        let now = std::time::Instant::now();
+        let last = self
+            .typing_notice
+            .as_ref()
+            .map(|(id, sent)| (id.as_str(), *sent));
+        if !crate::models::typing_due(last, &channel_id, now) {
+            return;
+        }
+        let Some(runtime) = &self.runtime else {
+            return;
+        };
+
+        let token = self.token_draft.clone();
+        let typing_channel = channel_id.clone();
+        runtime.spawn(async move {
+            match DiscordClient::new(token) {
+                Ok(client) => {
+                    if let Err(err) = client.trigger_typing(&typing_channel).await {
+                        log::debug!("typing indicator not sent: {err:#}");
+                    }
+                }
+                Err(err) => log::debug!("typing indicator skipped: {err:#}"),
+            }
+        });
+        self.typing_notice = Some((channel_id, now));
     }
 
     pub(crate) fn send_current_draft(&mut self) {

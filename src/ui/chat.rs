@@ -372,6 +372,12 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                         });
                     }
 
+                    if response.changed() {
+                        // Each keystroke can ask for a notice; `notify_typing`
+                        // throttles it to one REST call per eight seconds.
+                        app.notify_typing();
+                    }
+
                     if response.lost_focus()
                         && ui.input(|input| input.key_pressed(egui::Key::Enter))
                     {

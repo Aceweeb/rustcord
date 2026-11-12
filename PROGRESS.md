@@ -476,6 +476,14 @@ Priority order for the next session:
   and cleared when nothing plays. Privacy allowlist, store list and README name the
   two Spotify hosts. 5 new tests; suite now 283.
 
+- Sent typing indicators (D44). `DiscordClient::trigger_typing` posts to
+  `/channels/{id}/typing`; the composer calls `notify_typing` on every text change
+  and `models::typing_due` throttles to one call per eight seconds per channel
+  (immediately on a channel switch), with empty drafts and non-text channels
+  skipped and failures logged at debug. Inbound typing already surfaced above the
+  composer. The pure throttle is tested at the eight-second boundary; suite now
+  283.
+
 ---
 
 ## 7. Notes for the next agent

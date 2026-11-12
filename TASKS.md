@@ -4,6 +4,11 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [~] Outgoing typing indicator (`DECISIONS.md` D44): `POST
+  /channels/{id}/typing` on the first keystroke and then at most every eight
+  seconds per channel, skipped for empty drafts, non-text channels and demo mode,
+  failures at debug level; inbound typing still renders above the composer. Throttle
+  tested; no live call was made (no working bot session, D28).
 - [~] Spotify live now-playing (`DECISIONS.md` D43, roadmap item 5): PKCE
   public-client flow on `127.0.0.1:53135`, scope `user-read-currently-playing`,
   keyring session tagged with its client id, five-second worker-thread poll with

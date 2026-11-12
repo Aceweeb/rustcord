@@ -39,6 +39,9 @@ half-implemented stubs that pretend to work.
   channel list with an in-place focus ring, Enter opens, Escape leaves.
 - Hover a server icon for a peek at its text and voice channels, with unread and
   mention counts; clicking a channel in the peek opens it directly.
+- Typing indicators both ways: `TYPING_START` events appear above the composer
+  ("alice and bob are typing…"), and writing a draft tells the channel you are
+  typing, throttled to one call per eight seconds per channel.
 - A native message log (`Ctrl+Shift+L`) of edits and deletions seen this session,
   filterable, capped at 500 entries and never written to disk. Vencord's plugins
   patch Discord's own client and cannot load here; this is the same feature built

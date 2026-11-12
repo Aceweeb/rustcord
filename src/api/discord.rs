@@ -362,6 +362,19 @@ impl DiscordClient {
         Ok(())
     }
 
+    /// Tell a channel that the bot is typing. Discord allows this once per ten
+    /// seconds per channel; `App::notify_typing` throttles below that, and the
+    /// rate limiter still covers the case where another client shares the bot.
+    pub async fn trigger_typing(&self, channel_id: &str) -> Result<()> {
+        self.request(
+            reqwest::Method::POST,
+            &format!("/channels/{channel_id}/typing"),
+            Some(serde_json::json!({})),
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn send_message(&self, channel_id: &str, content: &str) -> Result<Message> {
         self.send_message_with_reference(channel_id, content, None)
             .await
