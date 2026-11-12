@@ -445,6 +445,13 @@ Priority order for the next session:
   the window icon). `scripts/install-local.sh` installs the SVG into the hicolor
   theme.
 
+- Started the Vencord-style extras (D40) with a new Settings → Extras section.
+  `message_timestamps` names the day on every row (Today / Yesterday / date, year
+  when needed) and keeps weekday, date and seconds in the tooltip; the formatting
+  is a pure tested function. `character_counter` draws `N/2000` at the composer's
+  right edge, accent near the limit and red past it, using the same constant the
+  send guard enforces. 2 new pure tests; suite now 269.
+
 ---
 
 ## 7. Notes for the next agent

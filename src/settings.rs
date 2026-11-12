@@ -116,6 +116,14 @@ pub struct Settings {
     #[serde(default)]
     pub wallpaper: Option<String>,
 
+    // --- extras (Vencord-style, native) -----------------------------------
+    /// Show the date on every message row instead of only the clock.
+    #[serde(default = "default_true")]
+    pub message_timestamps: bool,
+    /// Live character count beside the composer, against Discord's 2000 limit.
+    #[serde(default = "default_true")]
+    pub character_counter: bool,
+
     // --- memory / notifications -------------------------------------------
     #[serde(default = "default_memory_budget")]
     pub memory_budget_mb: u32,
@@ -184,6 +192,8 @@ impl Default for Settings {
             reduce_motion: false,
             translucent: true,
             wallpaper: None,
+            message_timestamps: true,
+            character_counter: true,
             memory_budget_mb: default_memory_budget(),
             memory_alerts: true,
             remember_history: true,

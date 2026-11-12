@@ -1,7 +1,41 @@
 use crate::app::RustcordApp;
 use crate::models::{Embed, Message};
 use crate::utils::initial;
+use chrono::{DateTime, Datelike, FixedOffset, Local, Utc};
 use egui::RichText;
+
+/// Discord's per-message character limit, mirrored from the REST guard so the
+/// composer counter and the send check cannot disagree.
+const MESSAGE_LIMIT: usize = crate::api::discord::DiscordClient::MAX_CONTENT_CHARS;
+
+/// The stamp drawn on a message row, plus the exact time for its tooltip.
+/// `long` adds Today/Yesterday/`d Mon` so every row carries its date; the clock
+/// alone is enough when the setting is off. Pure so day boundaries are testable.
+pub(crate) fn message_timestamp(
+    timestamp: DateTime<Utc>,
+    now: DateTime<FixedOffset>,
+    long: bool,
+) -> (String, String) {
+    let local = timestamp.with_timezone(now.offset());
+    let clock = local.format("%H:%M").to_string();
+    let detail = local.format("%A, %-d %B %Y at %H:%M:%S %Z").to_string();
+    if !long {
+        return (clock, detail);
+    }
+
+    let date = local.date_naive();
+    let today = now.date_naive();
+    let stamp = if date == today {
+        format!("Today at {clock}")
+    } else if Some(date) == today.pred_opt() {
+        format!("Yesterday at {clock}")
+    } else if date.year() == today.year() {
+        format!("{} at {clock}", local.format("%-d %b"))
+    } else {
+        format!("{} at {clock}", local.format("%-d %b %Y"))
+    };
+    (stamp, detail)
+}
 
 pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     // Discord's 48 px channel header: a muted #, the name, then the icons.
@@ -302,18 +336,49 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             .corner_radius(8.0)
             .inner_margin(egui::Margin::symmetric(12, 10))
             .show(ui, |ui| {
-                let response = ui.add_sized(
-                    egui::vec2(ui.available_width(), 22.0),
-                    egui::TextEdit::singleline(&mut app.draft)
-                        .hint_text(hint)
-                        .frame(egui::Frame::new())
-                        .text_color(theme.text),
-                );
+                let counter = app.settings.character_counter;
+                ui.horizontal(|ui| {
+                    // Leave room for the counter so it never sits under the text.
+                    let reserve = if counter { 62.0 } else { 0.0 };
+                    let width = (ui.available_width() - reserve).max(80.0);
+                    let response = ui.add_sized(
+                        egui::vec2(width, 22.0),
+                        egui::TextEdit::singleline(&mut app.draft)
+                            .hint_text(hint)
+                            .frame(egui::Frame::new())
+                            .text_color(theme.text),
+                    );
 
-                if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                    app.send_current_draft();
-                    response.request_focus();
-                }
+                    if counter {
+                        let count = app.draft.chars().count();
+                        let color = if count > MESSAGE_LIMIT {
+                            theme.danger
+                        } else if count + 200 >= MESSAGE_LIMIT {
+                            theme.accent
+                        } else {
+                            theme.muted
+                        };
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                RichText::new(format!("{count}/{MESSAGE_LIMIT}"))
+                                    .size(11.0)
+                                    .color(color),
+                            )
+                            .on_hover_text(if count > MESSAGE_LIMIT {
+                                "Over Discord's limit — shorten the message to send it"
+                            } else {
+                                "Discord allows 2000 characters per message"
+                            });
+                        });
+                    }
+
+                    if response.lost_focus()
+                        && ui.input(|input| input.key_pressed(egui::Key::Enter))
+                    {
+                        app.send_current_draft();
+                        response.request_focus();
+                    }
+                });
             });
         ui.add_space(8.0);
     });
@@ -571,11 +636,13 @@ fn message_row_body(
                         .strong()
                         .color(theme.text),
                 );
-                ui.label(
-                    RichText::new(message.timestamp.format("%H:%M").to_string())
-                        .size(11.0)
-                        .color(theme.muted),
+                let (stamp, detail) = message_timestamp(
+                    message.timestamp,
+                    Local::now().fixed_offset(),
+                    app.settings.message_timestamps,
                 );
+                ui.label(RichText::new(stamp).size(11.0).color(theme.muted))
+                    .on_hover_text(detail);
 
                 if app.can_modify(message) {
                     ui.menu_button(RichText::new("⋯").color(theme.muted), |ui| {
@@ -802,6 +869,46 @@ mod tests {
         let size = fitted_size(360.0, egui::vec2(64.0, 32.0));
         assert!((size.x - 64.0).abs() < 0.01);
         assert!((size.y - 32.0).abs() < 0.01);
+    }
+
+    fn utc(text: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(text)
+            .expect("fixed timestamp")
+            .with_timezone(&Utc)
+    }
+
+    #[test]
+    fn long_timestamps_name_the_day() {
+        let now = DateTime::parse_from_rfc3339("2026-11-12T21:04:00Z")
+            .expect("now")
+            .fixed_offset();
+
+        let (stamp, detail) = message_timestamp(utc("2026-11-12T09:05:00Z"), now, true);
+        assert_eq!(stamp, "Today at 09:05");
+        assert!(
+            detail.contains("Thursday, 12 November 2026 at 09:05:00"),
+            "{detail}"
+        );
+
+        let (stamp, _) = message_timestamp(utc("2026-11-11T23:59:00Z"), now, true);
+        assert_eq!(stamp, "Yesterday at 23:59");
+
+        let (stamp, _) = message_timestamp(utc("2026-01-03T07:00:00Z"), now, true);
+        assert_eq!(stamp, "3 Jan at 07:00");
+
+        let (stamp, _) = message_timestamp(utc("2025-12-31T23:00:00Z"), now, true);
+        assert_eq!(stamp, "31 Dec 2025 at 23:00");
+    }
+
+    #[test]
+    fn short_timestamps_keep_only_the_clock() {
+        let now = DateTime::parse_from_rfc3339("2026-11-12T21:04:00Z")
+            .expect("now")
+            .fixed_offset();
+        let (stamp, detail) = message_timestamp(utc("2026-11-12T09:05:00Z"), now, false);
+        assert_eq!(stamp, "09:05");
+        // The tooltip stays exact even when the row is terse.
+        assert!(detail.contains("09:05:00"), "{detail}");
     }
 
     #[test]

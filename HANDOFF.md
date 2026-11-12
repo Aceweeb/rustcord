@@ -7,12 +7,22 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 262 lib + 5 bin tests passing (267)
+- `cargo test --all-targets`: 264 lib + 5 bin tests passing (269)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Vencord-style extras (`DECISIONS.md` D40):
+
+- `src/settings.rs` — `message_timestamps` and `character_counter`, both default
+  true and `#[serde(default)]`-guarded for older settings files.
+- `src/ui/settings.rs` — new `SettingsSection::Extras` (label "Extras", ✨) with
+  both switches and explanations; `SettingsSection::ALL` is now ten sections.
+- `src/ui/chat.rs` — pure `message_timestamp(timestamp, now, long)` returning the
+  row stamp and tooltip (Today / Yesterday / `d Mon` / `d Mon yyyy`), and the
+  composer counter reading `DiscordClient::MAX_CONTENT_CHARS`; 2 tests.
 
 Translucency and the icon (`DECISIONS.md` D39):
 

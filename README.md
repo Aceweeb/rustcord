@@ -42,7 +42,12 @@ half-implemented stubs that pretend to work.
   filterable, capped at 500 entries and never written to disk. Vencord's plugins
   patch Discord's own client and cannot load here; this is the same feature built
   natively.
-- Nine-section settings window: Appearance, Themes, Performance, Memory,
+- Vencord-style extras, built natively instead of loaded as plugins
+  (Settings → Extras): timestamps on every message (`Today at 21:04`,
+  `Yesterday at …`, then `3 Jan at …`, with the exact seconds in the tooltip) and
+  a live character counter in the composer that turns accent-coloured near
+  Discord's 2000-character limit and red once the message is too long to send.
+- Ten-section settings window: Appearance, Extras, Themes, Performance, Memory,
   Notifications, Shortcuts, Privacy, Diagnostics, About (`Ctrl+,`).
 - 12 built-in theme presets across Dark, Light, Purple and AMOLED, plus custom
   accent colours, painted previews, instant switching and persisted selection.

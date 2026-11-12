@@ -1137,3 +1137,34 @@ the window blurred as well.
 binary starts without a panic, but the translucent window, the painted backdrop and
 the new icon have not been seen in a signed-in window — D28 still blocks reaching
 one.
+
+## D40. Vencord's conveniences are reimplemented, starting with timestamps and a counter
+
+Vencord and BetterDiscord work by patching Discord's own bundle, which Rustcord
+never loads (D36). Their small conveniences are therefore not "supported" here;
+the ones worth having are rebuilt against this client's own state, and the ones
+that need Discord's user-account API are left out. The first two live in a new
+Settings → Extras section so the next ones have an obvious home.
+
+**Timestamps on every message.** Discord itself prints a time only on the first
+message of a group, and Rustcord has no grouping — every row already carried
+`HH:MM`. The useful addition is the date, so `message_timestamps` (default on)
+switches rows to `Today at 21:04`, `Yesterday at 21:04`, `3 Jan at 21:04` and
+`31 Dec 2025 at 21:04`, and every stamp carries the full weekday, date and seconds
+in its hover tooltip. The formatting is a pure function over the message time and a
+supplied "now" in the local offset, so the Today/Yesterday/year boundaries are
+tested without waiting for midnight or depending on the machine's timezone. Turning
+the setting off returns the terse clock.
+
+**Character counter.** `character_counter` (default on) draws `N/2000` at the
+composer's right edge, reserving 62 px so long drafts cannot slide under it. The
+limit is read from `DiscordClient::MAX_CONTENT_CHARS`, the same constant
+`valid_content` enforces, so the counter and the send refusal cannot disagree.
+Muted below 1800, accent-coloured from 1800, danger red above 2000, with a tooltip
+that explains the limit; the send path still refuses over-long content rather than
+truncating it.
+
+**Not verified visually.** Both format branches and the day boundaries are covered
+by tests, and the app builds and starts, but the row stamp and the counter have not
+been seen in a signed-in window — the only credential here is a user token Discord
+rejects (D28).

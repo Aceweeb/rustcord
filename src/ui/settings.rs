@@ -1,4 +1,4 @@
-//! The nine-section settings interface.
+//! The ten-section settings interface.
 //!
 //! Layout: a fixed navigation column on the left, a scrollable content pane on
 //! the right, hosted in a single resizeable `egui::Window`. Every control is
@@ -26,6 +26,7 @@ const CHECK_REFRESH: Duration = Duration::from_secs(10);
 pub enum SettingsSection {
     #[default]
     Appearance,
+    Extras,
     Themes,
     Performance,
     Memory,
@@ -37,8 +38,9 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [SettingsSection; 9] = [
+    pub const ALL: [SettingsSection; 10] = [
         SettingsSection::Appearance,
+        SettingsSection::Extras,
         SettingsSection::Themes,
         SettingsSection::Performance,
         SettingsSection::Memory,
@@ -52,6 +54,7 @@ impl SettingsSection {
     pub fn label(self) -> &'static str {
         match self {
             Self::Appearance => "Appearance",
+            Self::Extras => "Extras",
             Self::Themes => "Themes",
             Self::Performance => "Performance",
             Self::Memory => "Memory",
@@ -66,6 +69,7 @@ impl SettingsSection {
     pub fn glyph(self) -> &'static str {
         match self {
             Self::Appearance => "◐",
+            Self::Extras => "✨",
             Self::Themes => "🎨",
             Self::Performance => "⚡",
             Self::Memory => "▤",
@@ -143,6 +147,7 @@ pub fn show(app: &mut RustcordApp, ctx: &egui::Context) {
                             ui.set_min_width(width - 12.0);
                             let dirty = match app.settings_ui.section {
                                 SettingsSection::Appearance => app.section_appearance(ui, &theme),
+                                SettingsSection::Extras => app.section_extras(ui, &theme),
                                 SettingsSection::Themes => app.section_themes(ui, &theme),
                                 SettingsSection::Performance => app.section_performance(ui, &theme),
                                 SettingsSection::Memory => app.section_memory(ui, &theme),
@@ -421,6 +426,47 @@ impl RustcordApp {
                 danger: preview_theme.danger,
                 success: preview_theme.success,
             },
+        );
+
+        dirty
+    }
+
+    fn section_extras(&mut self, ui: &mut egui::Ui, theme: &AppTheme) -> bool {
+        section_heading(
+            ui,
+            theme,
+            "Extras",
+            "Vencord-style conveniences implemented natively. No Discord plugin or bundle patch is involved.",
+        );
+        let mut dirty = false;
+
+        dirty |= ui
+            .checkbox(
+                &mut self.settings.message_timestamps,
+                "Timestamps on every message",
+            )
+            .changed();
+        ui.label(
+            RichText::new(
+                "Adds the day to each message row — Today, Yesterday, then the date — and keeps the exact time in the hover tooltip. With this off, rows show only the clock.",
+            )
+            .small()
+            .color(theme.muted),
+        );
+
+        ui.add_space(8.0);
+        dirty |= ui
+            .checkbox(
+                &mut self.settings.character_counter,
+                "Character counter in the composer",
+            )
+            .changed();
+        ui.label(
+            RichText::new(
+                "Counts the draft against Discord's 2000-character limit. The count turns accent-coloured near the limit and red once the message is too long to send.",
+            )
+            .small()
+            .color(theme.muted),
         );
 
         dirty

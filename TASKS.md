@@ -4,6 +4,11 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [~] Vencord-style extras (`DECISIONS.md` D40), Settings → Extras: per-message
+  timestamps with Today/Yesterday/date (exact weekday, date and seconds in the
+  tooltip) and a live `N/2000` composer counter that warns at 1800 and turns red
+  past the limit. 2 pure tests; neither control has been seen in a signed-in
+  window (D28).
 - [~] Translucent, wallpaper-aware UI (`DECISIONS.md` D39): transparent window,
   alpha-205 themed surfaces, blurred detected wallpaper painted under all panels,
   Hyprland/KDE/GNOME/XFCE detection incl. Lua Hyprland configs, Settings →
