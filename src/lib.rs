@@ -6,6 +6,7 @@ pub mod auth;
 pub mod diagnostics;
 pub mod images;
 pub mod logbuf;
+pub mod message_log;
 pub mod models;
 pub mod monitor;
 pub mod nav;

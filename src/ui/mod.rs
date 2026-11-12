@@ -1,4 +1,5 @@
 pub mod chat;
+pub mod log;
 pub mod login;
 pub mod search;
 pub mod settings;

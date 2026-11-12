@@ -93,6 +93,10 @@ pub struct RustcordApp {
     pub(crate) images: crate::images::ImageLoader,
     /// Pagination state per channel id, so switching back does not refetch.
     pub(crate) history: HashMap<String, ChannelHistory>,
+    /// Session log of edits and deletions the gateway told us about.
+    pub(crate) message_log: crate::message_log::MessageLog,
+    pub(crate) message_log_open: bool,
+    pub(crate) log_filter: String,
     /// Server icon under the pointer, with its rect, so the rail can draw a
     /// channel peek beside it (the peek cannot live inside the 72 px panel).
     pub(crate) rail_hover: Option<(String, egui::Rect)>,
@@ -357,6 +361,9 @@ impl RustcordApp {
             navigator: crate::nav::Navigator::default(),
             rail_rename: None,
             rail_hover: None,
+            message_log: crate::message_log::MessageLog::default(),
+            message_log_open: false,
+            log_filter: String::new(),
             voice: crate::models::VoiceTracker::default(),
             editing: None,
             replying_to: None,
@@ -1014,6 +1021,7 @@ impl RustcordApp {
             || self.switcher.open
             || self.show_settings
             || self.rail_rename.is_some()
+            || self.message_log_open
         {
             return;
         }
@@ -1208,6 +1216,12 @@ impl RustcordApp {
                     self.end_navigation();
                 } else {
                     self.begin_navigation();
+                }
+            }
+            ShortcutAction::MessageLog => {
+                self.message_log_open = !self.message_log_open;
+                if !self.message_log_open {
+                    self.log_filter.clear();
                 }
             }
             ShortcutAction::ToggleSettings => self.show_settings = !self.show_settings,
@@ -1467,6 +1481,13 @@ impl RustcordApp {
                     content,
                     embeds,
                 } => {
+                    // Snapshot first: once applied, the old text is gone and the
+                    // log would have nothing to show.
+                    let previous = self
+                        .messages
+                        .iter()
+                        .find(|message| message.id == id)
+                        .cloned();
                     let changed = crate::models::apply_update(
                         &mut self.messages,
                         &id,
@@ -1475,6 +1496,9 @@ impl RustcordApp {
                         embeds,
                     );
                     if changed {
+                        if let (Some(previous), Some(after)) = (&previous, content.as_deref()) {
+                            self.message_log.record_edit(previous, after, Utc::now());
+                        }
                         // An edit can change the row's measured height.
                         self.metrics.clear();
                         self.status_line = Some("message edited".to_string());
@@ -1482,8 +1506,16 @@ impl RustcordApp {
                     }
                 }
                 GatewayEvent::MessageDelete { id, channel_id } => {
+                    let previous = self
+                        .messages
+                        .iter()
+                        .find(|message| message.id == id)
+                        .cloned();
                     if crate::models::remove_message(&mut self.messages, &id, channel_id.as_deref())
                     {
+                        if let Some(previous) = &previous {
+                            self.message_log.record_delete(previous, Utc::now());
+                        }
                         // Rows below the gap shift up, so heights are stale.
                         self.metrics.clear();
                         self.status_line = Some("message deleted".to_string());
@@ -1847,6 +1879,9 @@ impl RustcordApp {
         self.typing.clear();
         self.voice.clear();
         self.unread.clear();
+        self.message_log.clear();
+        self.message_log_open = false;
+        self.log_filter.clear();
         self.members.clear();
         self.members_loading.clear();
         self.member_intent_missing = false;
@@ -2051,6 +2086,7 @@ impl eframe::App for RustcordApp {
         ui::switcher::show(self, &ctx);
         ui::sidebar::rename_dialog(self, &ctx);
         ui::sidebar::hover_peek(self, &ctx);
+        ui::log::show(self, &ctx);
     }
 }
 

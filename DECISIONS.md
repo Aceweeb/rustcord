@@ -996,3 +996,45 @@ so a channel created or renamed elsewhere is current the next time you hover.
 release binary starts, but the peek's placement and legibility have not been seen in
 a signed-in window — the same credential blocker as D31/D33/D34. It is only drawn
 when a server icon is hovered, which requires a live session.
+
+## D36. Vencord plugins cannot load here; the message log is native
+
+Vencord is a client mod for Discord's *own* client: its plugins are TypeScript
+modules that patch Discord's web bundle at runtime (and it is GPL-3.0). Rustcord is
+a from-scratch Rust client that talks to the API with a bot token, so there is no
+bundle to patch and no plugin ABI to satisfy. Running a Vencord plugin would mean
+embedding a JavaScript runtime and Discord's client code, which is neither possible
+nor appropriate here; copying Vencord plugin source would also pull GPL code into
+this project. So no Vencord plugin is loaded or vendored — what is implemented is
+the *feature* those plugins provide, written natively.
+
+**What MessageLogger does and what this does.** Vencord's MessageLogger keeps the
+content of messages that are edited or deleted, because the client already received
+it. Rustcord already receives `MESSAGE_UPDATE` and `MESSAGE_DELETE` on the gateway
+and already holds the previous message, so `message_log.rs` snapshots the old
+content before applying the update or removing the deleted message and appends an
+entry: kind, message id, channel, author, old text, new text (edits only), time.
+
+**Session only, deliberately.** Entries live in memory, newest first, capped at
+`MAX_ENTRIES` (500) with the oldest evicted. Nothing is written to disk: persisting
+other people's deleted messages is a privacy decision this client does not make on
+the user's behalf, and it would add a new file to defend. That means the log is
+empty again after a restart, and it only ever contains messages this session
+actually saw — a message deleted before launch, or in a channel never opened,
+leaves nothing to record and the UI says so rather than implying it was never
+deleted.
+
+**Surface.** `Ctrl+Shift+L` (`MessageLog`, rebindable) opens the panel; it lists
+newest first with the channel name resolved from the loaded channel list, an author
+and timestamp line, the old text, and the replacement text after an arrow for
+edits. A filter box matches author, channel id and both contents; Clear empties the
+log; Escape or Close hides it. Signing out clears it. The mode yields the keyboard
+to search, the switcher, settings, the rail rename dialog and keyboard navigation,
+exactly like the other panels.
+
+**Verified.** Model tests cover edits keeping both versions, unchanged updates
+being ignored, deletions keeping content, newest-first order, the cap evicting the
+oldest, filtering and clearing, and the log is cleared on sign-out in code. The
+panel itself has not been looked at in a signed-in window, and no live edit or
+delete has been observed because Discord rejects this environment's credential
+(D28); the wiring is compile-, clippy- and test-verified only.

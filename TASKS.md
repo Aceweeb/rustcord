@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Native message log (`DECISIONS.md` D36): edits keep old and new text,
+  deletions keep the vanished text, newest first, 500-entry cap, filter and clear,
+  `Ctrl+Shift+L` panel, cleared on sign-out, session-only by design. 6 model tests;
+  no live edit/delete observed and the panel not seen in a signed-in window.
 - [~] Server channel peek on rail hover (`DECISIONS.md` D35): non-interactable
   tooltip area with text/voice lists, unread brightening, mention counts and caps,
   positioned from the hovered icon and clamped on screen. Compiles and tests pass;

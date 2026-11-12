@@ -12,6 +12,7 @@ pub enum ShortcutAction {
     Search,
     QuickSwitcher,
     KeyboardNavigation,
+    MessageLog,
     ToggleSettings,
     NextChannel,
     PrevChannel,
@@ -23,7 +24,7 @@ pub enum ShortcutAction {
 }
 
 impl ShortcutAction {
-    pub const ALL: [ShortcutAction; 11] = [
+    pub const ALL: [ShortcutAction; 12] = [
         ShortcutAction::Search,
         ShortcutAction::QuickSwitcher,
         ShortcutAction::ToggleSettings,
@@ -35,6 +36,7 @@ impl ShortcutAction {
         ShortcutAction::ToggleCompact,
         ShortcutAction::ExportDiagnostics,
         ShortcutAction::KeyboardNavigation,
+        ShortcutAction::MessageLog,
     ];
 
     pub fn id(self) -> &'static str {
@@ -42,6 +44,7 @@ impl ShortcutAction {
             Self::Search => "search",
             Self::QuickSwitcher => "quick_switcher",
             Self::KeyboardNavigation => "keyboard_navigation",
+            Self::MessageLog => "message_log",
             Self::ToggleSettings => "toggle_settings",
             Self::NextChannel => "next_channel",
             Self::PrevChannel => "prev_channel",
@@ -58,6 +61,7 @@ impl ShortcutAction {
             Self::Search => "Search loaded messages",
             Self::QuickSwitcher => "Quick switcher (servers and channels)",
             Self::KeyboardNavigation => "Keyboard navigation (arrows over rail and channels)",
+            Self::MessageLog => "Message log (edited and deleted messages)",
             Self::ToggleSettings => "Open / close settings",
             Self::NextChannel => "Next channel",
             Self::PrevChannel => "Previous channel",
@@ -78,6 +82,7 @@ impl ShortcutAction {
             Self::Search => KeyChord::new(true, false, false, "F"),
             Self::QuickSwitcher => KeyChord::new(true, false, false, "K"),
             Self::KeyboardNavigation => KeyChord::new(true, true, false, "K"),
+            Self::MessageLog => KeyChord::new(true, true, false, "L"),
             Self::ToggleSettings => KeyChord::new(true, false, false, "Comma"),
             Self::NextChannel => KeyChord::new(true, false, false, "ArrowDown"),
             Self::PrevChannel => KeyChord::new(true, false, false, "ArrowUp"),

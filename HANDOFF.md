@@ -7,12 +7,24 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 240 lib + 5 bin tests passing
+- `cargo test --all-targets`: 246 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Native message log (`DECISIONS.md` D36):
+
+- `src/message_log.rs` — `LogEntry`/`LogKind`/`MessageLog` with edit and delete
+  recording, newest-first iteration, a 500-entry cap, filtering and clearing; 6
+  tests. Vencord plugins are not loaded: they patch Discord's own bundle.
+- `src/app.rs` — snapshots the previous message before `apply_update` and before
+  `remove_message`, records into the log, clears it on sign-out, `MessageLog`
+  shortcut toggle, navigation stands down while the panel is open.
+- `src/ui/log.rs` — filterable panel, channel names resolved, old text plus the
+  replacement after an arrow, Clear/Close/Escape.
+
 
 Server channel peek (`DECISIONS.md` D35):
 

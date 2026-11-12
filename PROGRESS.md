@@ -8,7 +8,9 @@
 
 Last updated: 2026-11-12 (Europe/Berlin)
 
-Latest increment: a hover peek of a server's channels beside the rail (D35);
+Latest increment: a native message log of edits and deletions, the Vencord
+MessageLogger equivalent built without Vencord (D36); a hover peek of a server's
+channels beside the rail (D35);
 folder renaming from the folder menu (D34); keyboard-only navigation with an
 in-place focus ring (D33);
 guild folders and drag-free rail ordering persisted locally (D32);
