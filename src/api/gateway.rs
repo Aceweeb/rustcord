@@ -64,6 +64,12 @@ pub enum GatewayEvent {
         user_id: String,
         username: String,
     },
+    /// `VOICE_STATE_UPDATE`. `channel_id` is `None` when the user left voice.
+    VoiceState {
+        channel_id: Option<String>,
+        user_id: String,
+        username: String,
+    },
     Reconnecting {
         attempt: u32,
         delay_secs: u64,
@@ -527,6 +533,11 @@ fn handle_payload(payload: &Value, tx: &mpsc::UnboundedSender<GatewayEvent>) {
                 tx.send(event).ok();
             }
         }
+        "VOICE_STATE_UPDATE" => {
+            if let Some(event) = parse_voice_state(&payload["d"]) {
+                tx.send(event).ok();
+            }
+        }
         "TYPING_START" => {
             if let Some(event) = parse_typing(&payload["d"]) {
                 tx.send(event).ok();
@@ -618,6 +629,29 @@ fn parse_message_delete(value: &Value) -> Option<GatewayEvent> {
     })
 }
 
+/// `VOICE_STATE_UPDATE` carries the user either as `member.user` (a guild) or as
+/// `user` (a DM call), and leaves `channel_id` null when they disconnected.
+fn parse_voice_state(data: &Value) -> Option<GatewayEvent> {
+    let user_id = data["user_id"].as_str()?.to_string();
+    if user_id.is_empty() {
+        return None;
+    }
+
+    let username = data["member"]["user"]["username"]
+        .as_str()
+        .or_else(|| data["user"]["username"].as_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let channel_id = data["channel_id"].as_str().map(str::to_string);
+
+    Some(GatewayEvent::VoiceState {
+        channel_id,
+        user_id,
+        username,
+    })
+}
+
 /// Custom emoji carry an `id`; Unicode ones carry the glyph in `name`.
 fn emoji_label(value: &Value) -> Option<String> {
     let emoji = value.get("emoji")?;
@@ -667,6 +701,51 @@ fn parse_typing(value: &Value) -> Option<GatewayEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_a_voice_join_and_a_leave() {
+        let joined = json!({
+            "op": 0,
+            "t": "VOICE_STATE_UPDATE",
+            "d": {
+                "guild_id": "1",
+                "channel_id": "50",
+                "user_id": "7",
+                "member": { "user": { "username": "alice" } }
+            }
+        });
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        handle_payload(&joined, &tx);
+
+        match rx.try_recv().expect("voice state") {
+            GatewayEvent::VoiceState {
+                channel_id,
+                user_id,
+                username,
+            } => {
+                assert_eq!(channel_id.as_deref(), Some("50"));
+                assert_eq!(user_id, "7");
+                assert_eq!(username, "alice");
+            }
+            other => panic!("expected VoiceState, got {other:?}"),
+        }
+
+        // Leaving sends a null channel; a DM call carries `user` instead of `member`.
+        let left = json!({
+            "op": 0,
+            "t": "VOICE_STATE_UPDATE",
+            "d": { "channel_id": null, "user_id": "7", "user": { "username": "alice" } }
+        });
+        handle_payload(&left, &tx);
+        match rx.try_recv().expect("voice state") {
+            GatewayEvent::VoiceState { channel_id, .. } => assert!(channel_id.is_none()),
+            other => panic!("expected VoiceState, got {other:?}"),
+        }
+
+        // A payload without a user id is not an event.
+        handle_payload(&json!({ "op": 0, "t": "VOICE_STATE_UPDATE", "d": {} }), &tx);
+        assert!(rx.try_recv().is_err());
+    }
 
     #[test]
     fn normalizes_bot_token_prefix() {

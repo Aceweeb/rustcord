@@ -67,6 +67,14 @@ pub struct RustcordApp {
     pub(crate) oauth: OAuthFlow,
     /// Local search overlay over the loaded history of the open channel.
     pub(crate) search: crate::search::SearchState,
+    /// Who is in which voice channel, from `VOICE_STATE_UPDATE`.
+    pub(crate) voice: crate::models::VoiceTracker,
+    /// The message being edited, if the composer is in edit mode.
+    pub(crate) editing: Option<String>,
+    /// A delete waiting for confirmation.
+    pub(crate) pending_delete: Option<String>,
+    action_tx: Sender<MessageAction>,
+    action_results: Receiver<MessageAction>,
     /// A refresh-token exchange in flight for the identity session.
     identity_refresh: Option<IdentityRefresh>,
     pub(crate) monitor: MemoryMonitor,
@@ -113,6 +121,13 @@ pub(crate) struct PendingOAuth {
     /// Set once the browser handed back a code and the exchange thread started.
     session_rx: Option<Receiver<Result<crate::api::oauth::Session, String>>>,
     started: std::time::Instant,
+}
+
+/// Result of an outbound edit or delete, applied on the UI thread.
+enum MessageAction {
+    Edited(Box<Message>),
+    Deleted(String),
+    Failed(String),
 }
 
 enum SendResult {
@@ -267,6 +282,7 @@ impl RustcordApp {
 
         let (send_tx, send_results) = mpsc::channel();
         let (history_tx, history_rx) = mpsc::channel();
+        let (action_tx, action_results) = mpsc::channel();
 
         Self {
             settings,
@@ -293,6 +309,11 @@ impl RustcordApp {
             identity_expired,
             oauth: OAuthFlow::default(),
             search: crate::search::SearchState::default(),
+            voice: crate::models::VoiceTracker::default(),
+            editing: None,
+            pending_delete: None,
+            action_tx,
+            action_results,
             identity_refresh: None,
             monitor: MemoryMonitor::new(),
             settings_ui: SettingsUiState::default(),
@@ -520,6 +541,150 @@ impl RustcordApp {
 
     pub(crate) fn channel_history(&self, channel_id: &str) -> Option<&ChannelHistory> {
         self.history.get(channel_id)
+    }
+
+    // -----------------------------------------------------------------------
+    // Message actions
+    // -----------------------------------------------------------------------
+
+    /// Only our own messages are editable or deletable: the invite requests no
+    /// Manage Messages permission, so Discord would refuse anything else.
+    pub(crate) fn can_modify(&self, message: &Message) -> bool {
+        if !self.live_data {
+            return message.author.username == self.current_user.username;
+        }
+        message.author.username == self.current_user.username
+            || self.bot_user_id.as_deref() == Some(message.author.id.as_str())
+    }
+
+    pub(crate) fn begin_edit(&mut self, message: &Message) {
+        self.editing = Some(message.id.clone());
+        self.draft = message.content.clone();
+        self.status_line = Some("editing message — Enter saves, Esc cancels".to_string());
+    }
+
+    pub(crate) fn cancel_edit(&mut self) {
+        if self.editing.take().is_some() {
+            self.draft.clear();
+            self.status_line = Some("edit cancelled".to_string());
+        }
+    }
+
+    pub(crate) fn request_delete(&mut self, message_id: String) {
+        self.pending_delete = Some(message_id);
+    }
+
+    /// Send the PATCH for the message being edited. Demo mode edits locally.
+    fn submit_edit(&mut self, message_id: String) {
+        let Some(content) = crate::api::discord::valid_content(&self.draft) else {
+            self.status_line = Some("a message needs 1–2000 characters".to_string());
+            return;
+        };
+        let content = content.to_string();
+
+        if !self.live_data {
+            if let Some(message) = self.messages.iter_mut().find(|m| m.id == message_id) {
+                message.content = content;
+            }
+            self.metrics.clear();
+            self.editing = None;
+            self.draft.clear();
+            self.status_line = Some("message edited (demo)".to_string());
+            self.mark_search_stale();
+            return;
+        }
+
+        let (Some(runtime), Some(channel_id)) = (&self.runtime, self.selected_channel.clone())
+        else {
+            return;
+        };
+
+        let token = self.token_draft.clone();
+        let tx = self.action_tx.clone();
+        runtime.spawn(async move {
+            let result = match DiscordClient::new(token) {
+                Ok(client) => client
+                    .edit_message(&channel_id, &message_id, &content)
+                    .await
+                    .map_err(|err| format!("{err:#}")),
+                Err(err) => Err(format!("{err:#}")),
+            };
+
+            let _ = tx.send(match result {
+                Ok(message) => MessageAction::Edited(Box::new(message)),
+                Err(err) => MessageAction::Failed(err),
+            });
+        });
+
+        self.editing = None;
+        self.draft.clear();
+        self.status_line = Some("saving edit…".to_string());
+    }
+
+    /// Delete after confirmation.
+    pub(crate) fn delete_message(&mut self, message_id: String) {
+        self.pending_delete = None;
+
+        if !self.live_data {
+            crate::models::remove_message(&mut self.messages, &message_id, None);
+            self.metrics.clear();
+            self.status_line = Some("message deleted (demo)".to_string());
+            self.mark_search_stale();
+            return;
+        }
+
+        let (Some(runtime), Some(channel_id)) = (&self.runtime, self.selected_channel.clone())
+        else {
+            return;
+        };
+
+        let token = self.token_draft.clone();
+        let tx = self.action_tx.clone();
+        let id = message_id.clone();
+        runtime.spawn(async move {
+            let result = match DiscordClient::new(token) {
+                Ok(client) => client
+                    .delete_message(&channel_id, &id)
+                    .await
+                    .map_err(|err| format!("{err:#}")),
+                Err(err) => Err(format!("{err:#}")),
+            };
+
+            let _ = tx.send(match result {
+                Ok(()) => MessageAction::Deleted(id),
+                Err(err) => MessageAction::Failed(err),
+            });
+        });
+
+        self.status_line = Some("deleting message…".to_string());
+    }
+
+    fn poll_action_results(&mut self) {
+        while let Ok(action) = self.action_results.try_recv() {
+            match action {
+                MessageAction::Edited(message) => {
+                    if let Some(existing) = self
+                        .messages
+                        .iter_mut()
+                        .find(|existing| existing.id == message.id)
+                    {
+                        *existing = *message;
+                    }
+                    self.metrics.clear();
+                    self.status_line = Some("message edited".to_string());
+                    self.mark_search_stale();
+                }
+                MessageAction::Deleted(id) => {
+                    crate::models::remove_message(&mut self.messages, &id, None);
+                    self.metrics.clear();
+                    self.status_line = Some("message deleted".to_string());
+                    self.mark_search_stale();
+                }
+                MessageAction::Failed(err) => {
+                    self.status_line = Some(format!("message action failed: {err}"));
+                }
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -795,6 +960,7 @@ impl RustcordApp {
                         self.channels.clear();
                         self.messages.clear();
                         self.typing.clear();
+                        self.voice.clear();
                         self.selected_guild = None;
                         self.selected_channel = None;
                         self.live_data = true;
@@ -819,6 +985,14 @@ impl RustcordApp {
                     self.messages.push(message);
                     received_message = true;
                     self.mark_search_stale();
+                }
+                GatewayEvent::VoiceState {
+                    channel_id,
+                    user_id,
+                    username,
+                } => {
+                    self.voice
+                        .update(channel_id.as_deref(), &user_id, &username);
                 }
                 GatewayEvent::MessageUpdate {
                     id,
@@ -1204,6 +1378,9 @@ impl RustcordApp {
         self.metrics_channel = None;
         self.images.clear();
         self.typing.clear();
+        self.voice.clear();
+        self.cancel_edit();
+        self.pending_delete = None;
         self.bot_user_id = None;
 
         let _ = auth::clear_discord_token();
@@ -1246,6 +1423,11 @@ impl RustcordApp {
     }
 
     pub(crate) fn send_current_draft(&mut self) {
+        if let Some(message_id) = self.editing.clone() {
+            self.submit_edit(message_id);
+            return;
+        }
+
         let content = self.draft.trim().to_string();
         if content.is_empty() {
             return;
@@ -1335,6 +1517,7 @@ impl eframe::App for RustcordApp {
         self.plugins.spotify.tick(now);
         self.poll_gateway(f64::from(now));
         self.poll_send_results();
+        self.poll_action_results();
         self.poll_history();
         self.ensure_history();
         self.sync_image_budget();

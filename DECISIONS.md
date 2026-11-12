@@ -538,3 +538,47 @@ none, so it is proposed rather than started:
 D15 is not contradicted by this (no user tokens appear anywhere); D19's budget
 shape is what needs care. Until then, switching bots means sign out and sign in,
 which is honest and works.
+
+## D24. Message edit/delete are real; voice is presence only
+
+"Add message and VC support" splits into two very different problems, and only
+one of them can be done honestly with a bot token.
+
+**Messaging.** Sending and reading already worked, and inbound
+`MESSAGE_UPDATE`/`MESSAGE_DELETE` were already applied. The two gaps were
+outbound **edit** (`PATCH /channels/{id}/messages/{id}`) and **delete**
+(`DELETE …`, answered 204). Both are bot-token endpoints, so both are
+implemented:
+
+1. The message menu (`⋯`) appears only on the bot's own messages, because the
+   invite requests no Manage Messages permission and Discord would refuse the
+   rest. `RustcordApp::can_modify` is the single place that decides.
+2. Editing reuses the composer in edit mode, so shortcuts, spellcheck and the
+   theme all apply unchanged; Enter saves, Esc cancels, and the returned message
+   replaces the row (so the `(edited)` marker is Discord's, not invented).
+3. Deleting asks first. A menu click is one pixel away from a scroll gesture and
+   there is no undo.
+4. Content is validated client-side with the same rule Discord enforces: 1–2000
+   **characters** after trimming, not bytes. `valid_content` is pure and tested.
+5. Failures (403 on someone else's message, 404 after a race) land on the status
+   line verbatim instead of vanishing.
+
+**Voice.** Discord's voice *channel state* is ordinary gateway data:
+`VOICE_STATE_UPDATE` says who joined or moved (a `channel_id`), and who left
+(`null`). That is parsed into `GatewayEvent::VoiceState` and folded into a pure
+`VoiceTracker` (one channel per user, 50-per-channel cap, leave on `null`), so the
+sidebar lists the people in each voice channel exactly as Discord does. Demo mode
+shows no one, because there is no demo gateway.
+
+What is **not** implemented is voice **audio**: a WebSocket handshake to a voice
+server, UDP/RTP, the Opus codec, jitter buffering, and DAVE/E2EE for the
+end-to-end encryption Discord now requires. That is a codec and realtime-audio
+project on the scale of the rest of this client, and half of it (mute buttons
+that mute nothing, a "Join" that joins nothing) would be exactly the pretending
+this project refuses. There are therefore no join/mute/deafen controls; the
+sidebar shows presence, and the README says audio is absent.
+
+**Consequences.** Editing and deleting work with the same permission set as
+sending. Voice **presence** needs no extra intent (`GUILDS` is already
+requested). Voice audio stays on the "not implemented" list until there is a
+worker for Opus and DAVE, and `TASKS.md` records the parts.

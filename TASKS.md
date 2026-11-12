@@ -4,6 +4,13 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Message actions (`DECISIONS.md` D24): `⋯` menu on the bot's own messages,
+  edit-in-composer (Enter saves, Esc cancels) via PATCH, delete with a
+  confirmation via DELETE, client-side 1–2000-character rule, and results applied
+  through `poll_action_results`. 4 tests for `valid_content`.
+- [x] Voice-channel presence (`DECISIONS.md` D24): `VOICE_STATE_UPDATE` parsing,
+  pure `VoiceTracker`, and members listed under each voice channel in the
+  sidebar. 7 tests. Voice **audio** is not part of this entry.
 - [x] Native egui window, guild rail, channel list, member list, message list,
   composer (`src/ui/sidebar.rs`, `src/ui/chat.rs`).
 - [x] Local message search (`DECISIONS.md` D20, `src/search.rs`): Ctrl+F overlay,
@@ -31,6 +38,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [x] Bot install flow on the login page (`DECISIONS.md` D21): builds the invite
   URL from the configured client ID with only the six permissions the client
   uses, plus copy-link and open-in-browser. 3 tests pin the permission bits.
+- [ ] Voice **audio**: voice-server WebSocket handshake, UDP/RTP, Opus encode and
+  decode, jitter buffer, and DAVE/E2EE. Presence is done; audio is a separate
+  project and has no UI controls until it works.
 - [ ] Research: Discord Social SDK (`sdk.social_layer`) — the only sanctioned
   route to user-level DMs/friends, and it needs Discord approval, separate terms
   and a game SDK (C++/C#/Unity). Also `rpc`/`messages.read`, which only work

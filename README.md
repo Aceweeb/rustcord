@@ -11,8 +11,10 @@ runnable app, a clean module layout, a typed plugin system, a Vencord-style
 theme parser, Spotify "now playing" presentation state, streaming indicators,
 and typed Discord/Spotify REST clients. A real Discord Gateway transport is
 included (connect, Hello, Identify, heartbeat, READY/MESSAGE_CREATE parsing).
-Voice, screen capture, OAuth, and the WASM loader are intentionally left as
-explicit next steps rather than half-implemented stubs that pretend to work.
+Message editing and deletion are implemented, and voice-channel **presence** (who
+is in which channel) comes from the gateway. Voice **audio**, screen capture and
+the WASM loader are intentionally left as explicit next steps rather than
+half-implemented stubs that pretend to work.
 
 ## What works today
 
@@ -90,9 +92,13 @@ application's own allocations are ~23 MB anonymous. Reproduce every figure with
 ## What is deliberately not implemented
 
 - Gateway resume/reconnect/backoff, sharding, and a rate-limit queue.
-- Voice/video transport, Opus codec, screen capture/streaming.
-- Attachment upload, sending reactions, typing indicators, and message editing.
-  (Incoming attachments and embeds *are* rendered; only uploading is missing.)
+- Voice **audio** (joining a call): voice-server WebSocket handshake, UDP/RTP,
+  Opus, jitter buffering and DAVE/E2EE. The sidebar does list who is in each
+  voice channel (`DECISIONS.md` D24); there are deliberately no mute/join
+  buttons, because they would control nothing.
+- Video/screen capture/streaming.
+- Attachment upload and sending reactions. (Incoming attachments and embeds
+  *are* rendered, and editing/deleting your own messages works.)
 - OAuth2 login. Email/password login is intentionally not implemented: it is
   not part of Discord's supported third-party API model, it exposes account
   credentials to this process, and it violates Discord's terms. The same applies

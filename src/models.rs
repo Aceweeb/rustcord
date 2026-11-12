@@ -355,6 +355,83 @@ pub fn remove_message(messages: &mut Vec<Message>, id: &str, channel_id: Option<
     messages.len() != before
 }
 
+/// Someone sitting in a voice channel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VoiceMember {
+    pub user_id: String,
+    pub username: String,
+}
+
+/// How many people are listed per voice channel. Discord's own limit is 99;
+/// a bot in a busy stage channel should not grow this without bound.
+pub const VOICE_CHANNEL_CAP: usize = 50;
+
+/// Who is in which voice channel, kept from `VOICE_STATE_UPDATE`.
+///
+/// This is state only: it is what the sidebar shows. Audio is a different
+/// protocol (UDP, Opus, DAVE/E2EE) and is not implemented — see `DECISIONS.md`
+/// D24 rather than a mute button that does nothing.
+#[derive(Debug, Default, Clone)]
+pub struct VoiceTracker {
+    channels: std::collections::BTreeMap<String, Vec<VoiceMember>>,
+}
+
+impl VoiceTracker {
+    /// Apply one voice-state update: leave every channel, then join `channel_id`
+    /// when one is given. Returns whether anything changed.
+    pub fn update(&mut self, channel_id: Option<&str>, user_id: &str, username: &str) -> bool {
+        if user_id.is_empty() {
+            return false;
+        }
+
+        let before: Vec<(String, Vec<VoiceMember>)> = self
+            .channels
+            .iter()
+            .map(|(id, members)| (id.clone(), members.clone()))
+            .collect();
+
+        for members in self.channels.values_mut() {
+            members.retain(|member| member.user_id != user_id);
+        }
+
+        if let Some(channel_id) = channel_id.filter(|id| !id.is_empty()) {
+            let members = self.channels.entry(channel_id.to_string()).or_default();
+            if members.len() < VOICE_CHANNEL_CAP {
+                members.push(VoiceMember {
+                    user_id: user_id.to_string(),
+                    username: username.to_string(),
+                });
+            }
+        }
+
+        self.channels.retain(|_, members| !members.is_empty());
+
+        let after: Vec<(String, Vec<VoiceMember>)> = self
+            .channels
+            .iter()
+            .map(|(id, members)| (id.clone(), members.clone()))
+            .collect();
+
+        before != after
+    }
+
+    pub fn members(&self, channel_id: &str) -> &[VoiceMember] {
+        self.channels
+            .get(channel_id)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Total people across every channel, for the status line.
+    pub fn total(&self) -> usize {
+        self.channels.values().map(Vec::len).sum()
+    }
+
+    pub fn clear(&mut self) {
+        self.channels.clear();
+    }
+}
+
 /// How long a typing indicator lives after the last `TYPING_START`, in seconds.
 /// Discord resends the event every ~10 s while someone keeps typing, so a
 /// shorter lifetime makes the line vanish promptly when they stop.
@@ -674,6 +751,62 @@ mod tests {
 
         assert!(!remove_message(&mut messages, "100", Some("301")));
         assert_eq!(messages.len(), 1);
+    }
+
+    #[test]
+    fn a_voice_join_lists_the_member() {
+        let mut voice = VoiceTracker::default();
+        assert!(voice.update(Some("50"), "7", "alice"));
+        assert_eq!(voice.members("50").len(), 1);
+        assert_eq!(voice.members("50")[0].username, "alice");
+        assert_eq!(voice.total(), 1);
+        assert!(voice.members("51").is_empty());
+    }
+
+    #[test]
+    fn moving_between_channels_removes_the_old_entry() {
+        let mut voice = VoiceTracker::default();
+        voice.update(Some("50"), "7", "alice");
+        assert!(voice.update(Some("51"), "7", "alice"));
+
+        assert!(voice.members("50").is_empty());
+        assert_eq!(voice.members("51").len(), 1);
+        assert_eq!(voice.total(), 1);
+    }
+
+    #[test]
+    fn disconnecting_removes_the_member() {
+        let mut voice = VoiceTracker::default();
+        voice.update(Some("50"), "7", "alice");
+        assert!(voice.update(None, "7", "alice"));
+        assert_eq!(voice.total(), 0);
+        // A second leave is not a change.
+        assert!(!voice.update(None, "7", "alice"));
+    }
+
+    #[test]
+    fn a_repeated_update_changes_nothing() {
+        let mut voice = VoiceTracker::default();
+        voice.update(Some("50"), "7", "alice");
+        assert!(!voice.update(Some("50"), "7", "alice"));
+        assert_eq!(voice.members("50").len(), 1);
+    }
+
+    #[test]
+    fn an_empty_user_id_is_ignored() {
+        let mut voice = VoiceTracker::default();
+        assert!(!voice.update(Some("50"), "", "ghost"));
+        assert_eq!(voice.total(), 0);
+    }
+
+    #[test]
+    fn a_channel_is_capped() {
+        let mut voice = VoiceTracker::default();
+        for index in 0..(VOICE_CHANNEL_CAP + 5) {
+            voice.update(Some("50"), &format!("u{index}"), "someone");
+        }
+        assert_eq!(voice.members("50").len(), VOICE_CHANNEL_CAP);
+        assert_eq!(voice.total(), VOICE_CHANNEL_CAP);
     }
 
     #[test]

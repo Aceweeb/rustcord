@@ -7,12 +7,34 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 164 lib + 5 bin tests passing
+- `cargo test --all-targets`: 200 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Messaging actions and voice presence (`DECISIONS.md` D24):
+
+- `src/api/discord.rs` — `edit_message` (PATCH) and `delete_message` (DELETE, 204),
+  plus the pure `valid_content` rule (1–2000 **characters** after trimming) and
+  four tests, including a 2000-emoji case that proves the limit is not bytes.
+- `src/app.rs` — `editing: Option<String>` reuses the composer for edit mode;
+  `pending_delete` asks before deleting; `MessageAction` results come back over
+  the existing `mpsc` pattern and are applied by `poll_action_results`
+  (edited message replaces the row, deleted one is removed, failures go to the
+  status line). `can_modify` limits the menu to the bot's own messages.
+- `src/api/gateway.rs` — `VOICE_STATE_UPDATE` → `GatewayEvent::VoiceState`,
+  with `member.user.username` (guild) or `user.username` (DM) and `null`
+  `channel_id` meaning left; JSON test covers join, leave and a malformed payload.
+- `src/models.rs` — pure `VoiceTracker` (one channel per user, 50-per-channel cap,
+  leave on `null`) with six tests.
+- `src/ui/sidebar.rs` — `voice_member_row` lists members under each voice channel.
+- `src/ui/chat.rs` — row `⋯` menu (Edit/Delete), `RowAction` returned through the
+  viewport closure, delete confirmation banner, "Editing message · Esc cancels".
+- Voice **audio** is still absent on purpose (voice server, UDP/RTP, Opus,
+  DAVE/E2EE); there are no mute/join buttons that would do nothing.
+
 
 Channel history is real and paginated, the list is virtualised, and attachments
 and embeds render through a bounded image cache:

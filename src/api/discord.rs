@@ -12,6 +12,18 @@ use std::time::{Duration, Instant};
 
 pub const API_BASE: &str = "https://discord.com/api/v10";
 
+/// The content to send, or `None` when Discord would reject it anyway: empty
+/// after trimming, or over the 2000-character limit. Pure so the rule is tested
+/// without a request.
+pub fn valid_content(input: &str) -> Option<&str> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() || trimmed.chars().count() > 2000 {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
 /// Thin Discord REST wrapper. The token should include its auth scheme, e.g.
 /// `Bot <token>` for bot accounts. Third-party user clients are not endorsed;
 /// check Discord's terms before using a user token.
@@ -185,6 +197,44 @@ impl DiscordClient {
         parse_history(&body, channel_id)
     }
 
+    /// Discord's message limit. Longer content is refused by the API, so it is
+    /// refused here first instead of after a round trip.
+    pub const MAX_CONTENT_CHARS: usize = 2000;
+
+    pub async fn edit_message(
+        &self,
+        channel_id: &str,
+        message_id: &str,
+        content: &str,
+    ) -> Result<Message> {
+        let content = valid_content(content).ok_or_else(|| {
+            anyhow::anyhow!("a message needs 1–{} characters", Self::MAX_CONTENT_CHARS)
+        })?;
+
+        let body = self
+            .request(
+                reqwest::Method::PATCH,
+                &format!("/channels/{channel_id}/messages/{message_id}"),
+                Some(serde_json::json!({ "content": content })),
+            )
+            .await?;
+
+        let raw: DiscordMessage =
+            serde_json::from_str(&body).context("could not decode Discord message")?;
+        Message::try_from(raw)
+    }
+
+    /// Delete a message. Discord answers 204 with no body.
+    pub async fn delete_message(&self, channel_id: &str, message_id: &str) -> Result<()> {
+        self.request(
+            reqwest::Method::DELETE,
+            &format!("/channels/{channel_id}/messages/{message_id}"),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn send_message(&self, channel_id: &str, content: &str) -> Result<Message> {
         let body = self
             .request(
@@ -312,6 +362,34 @@ impl TryFrom<DiscordMessage> for Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn content_is_trimmed_for_sending() {
+        assert_eq!(valid_content("  hello \n"), Some("hello"));
+    }
+
+    #[test]
+    fn empty_content_is_refused() {
+        assert_eq!(valid_content(""), None);
+        assert_eq!(valid_content("   \n\t "), None);
+    }
+
+    #[test]
+    fn the_two_thousand_character_limit_is_exact() {
+        let at_limit = "a".repeat(2000);
+        assert_eq!(valid_content(&at_limit).map(str::len), Some(2000));
+
+        let over = "a".repeat(2001);
+        assert_eq!(valid_content(&over), None);
+    }
+
+    #[test]
+    fn the_limit_counts_characters_not_bytes() {
+        // 2000 emoji are 8000 bytes; Discord counts characters.
+        let emoji = "\u{1f525}".repeat(2000);
+        assert!(valid_content(&emoji).is_some());
+        assert_eq!(valid_content(&format!("{emoji}x")), None);
+    }
 
     // Newest-first, exactly as Discord returns it. The second message has no
     // reaction array at all, which is a common real-world shape.

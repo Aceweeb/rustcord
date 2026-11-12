@@ -8,6 +8,10 @@
 
 Last updated: 2026-11-12 (Europe/Berlin)
 
+Latest increment: message edit/delete and voice-channel presence (`DECISIONS.md`
+D24). `HANDOFF.md` has the file-by-file detail; voice **audio** remains
+deliberately unimplemented.
+
 Project path: `/home/jason/Documents/Default Project/rustcord`
 
 This file is the checkpoint for the next chat/session. Read this first, then

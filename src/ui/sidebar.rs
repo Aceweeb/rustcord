@@ -166,6 +166,12 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                         if channel_row(ui, &theme, selected, "🔊", &channel.name) {
                             clicked = Some(channel.id.clone());
                         }
+
+                        // Who is in the channel, as Discord lists them under it.
+                        // Live gateway data only: there is no audio here (D24).
+                        for member in app.voice.members(&channel.id) {
+                            voice_member_row(ui, &theme, &member.username);
+                        }
                     }
                     ui.add_space(8.0);
                 });
@@ -251,6 +257,24 @@ fn bottom_panels(app: &mut RustcordApp, ui: &mut egui::Ui, theme: &AppTheme) {
             }
         }
     });
+}
+
+/// A person sitting in a voice channel: a small circle and their name, indented
+/// under the channel like Discord's.
+fn voice_member_row(ui: &mut egui::Ui, theme: &AppTheme, username: &str) {
+    let (rect, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 26.0), egui::Sense::hover());
+    let indent = ROW_INSET + 30.0;
+
+    let centre = rect.left_center() + egui::vec2(indent + 6.0, 0.0);
+    ui.painter().circle_filled(centre, 4.0, theme.success);
+    ui.painter().text(
+        centre + egui::vec2(14.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        username,
+        egui::FontId::proportional(13.0),
+        theme.muted,
+    );
 }
 
 fn category_label(ui: &mut egui::Ui, theme: &AppTheme, label: &str) {

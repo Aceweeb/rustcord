@@ -181,9 +181,48 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             .request_repaint_after(std::time::Duration::from_millis(500));
     }
 
+    // A delete is confirmed rather than done on the click that asked for it.
+    if let Some(id) = app.pending_delete.clone() {
+        egui::Panel::top("delete_confirm").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new("Delete this message?")
+                        .size(13.0)
+                        .color(app.plugins.theme().text),
+                );
+                if ui.button("Delete").clicked() {
+                    app.delete_message(id.clone());
+                }
+                if ui.button("Cancel").clicked() {
+                    app.pending_delete = None;
+                }
+            });
+        });
+    }
+
     // Discord's composer: a lifted, rounded field spanning the channel area.
     egui::Panel::bottom("composer").show(ui, |ui| {
         ui.add_space(6.0);
+
+        if app.editing.is_some() {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new("Editing message")
+                        .size(12.0)
+                        .strong()
+                        .color(app.plugins.theme().accent),
+                );
+                ui.label(
+                    RichText::new("Enter saves · Esc cancels")
+                        .size(11.0)
+                        .color(app.plugins.theme().muted),
+                );
+            });
+            if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                app.cancel_edit();
+            }
+        }
+
         if let Some(typing) = &typing {
             ui.label(
                 RichText::new(typing)
@@ -295,6 +334,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         // Image URLs seen while drawing. Filled inside the viewport closure and
         // acted on afterwards, because requesting a download needs `&mut app`.
         let mut wanted: Vec<String> = Vec::new();
+        let mut row_action: Option<RowAction> = None;
 
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
@@ -312,7 +352,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     wanted.extend(message.image_urls().map(str::to_string));
 
                     let response = ui.scope(|ui| {
-                        message_row(app, ui, message);
+                        message_row(app, ui, message, &mut row_action);
                     });
                     metrics.set_height(row, response.response.rect.height() + gap);
                 }
@@ -324,6 +364,16 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
 
         app.metrics = metrics;
 
+        match row_action {
+            Some(RowAction::Edit(id)) => {
+                if let Some(message) = app.messages.iter().find(|m| m.id == id).cloned() {
+                    app.begin_edit(&message);
+                }
+            }
+            Some(RowAction::Delete(id)) => app.request_delete(id),
+            None => {}
+        }
+
         // Only rows that were actually drawn pull their images down; scrolling
         // past a 9 MB screenshot never touches the network.
         if app.images.prepare(&wanted) > 0 {
@@ -333,8 +383,21 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     });
 }
 
+/// What a row's menu asked for. Rows are drawn from `&RustcordApp`, so the
+/// action is recorded and applied once the borrow ends.
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) enum RowAction {
+    Edit(String),
+    Delete(String),
+}
+
 /// A single message row, separated so the virtualised list can measure it.
-fn message_row(app: &RustcordApp, ui: &mut egui::Ui, message: &Message) {
+fn message_row(
+    app: &RustcordApp,
+    ui: &mut egui::Ui,
+    message: &Message,
+    action: &mut Option<RowAction>,
+) {
     let theme = app.plugins.theme();
 
     ui.horizontal_top(|ui| {
@@ -366,6 +429,19 @@ fn message_row(app: &RustcordApp, ui: &mut egui::Ui, message: &Message) {
                         .size(11.0)
                         .color(theme.muted),
                 );
+
+                if app.can_modify(message) {
+                    ui.menu_button(RichText::new("⋯").color(theme.muted), |ui| {
+                        if ui.button("Edit message").clicked() {
+                            *action = Some(RowAction::Edit(message.id.clone()));
+                            ui.close();
+                        }
+                        if ui.button("Delete message").clicked() {
+                            *action = Some(RowAction::Delete(message.id.clone()));
+                            ui.close();
+                        }
+                    });
+                }
             });
             ui.label(RichText::new(&message.content).size(15.0).color(theme.text));
 
