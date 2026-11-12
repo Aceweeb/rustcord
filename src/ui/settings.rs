@@ -1056,6 +1056,107 @@ impl RustcordApp {
 
         ui.add_space(10.0);
         ui.separator();
+        ui.label(RichText::new("Discord identity (OAuth2, identify only)").strong());
+        ui.label(
+            RichText::new(
+                "Separate from the bot token above. Signing in with Discord shows your \
+                 username, avatar and user id; it grants no messaging, and the tokens live in \
+                 the system keyring, never in settings.json.",
+            )
+            .small()
+            .color(theme.muted),
+        );
+
+        let mut client_id = self.settings.oauth_client_id.clone().unwrap_or_default();
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Client ID").small().color(theme.muted));
+            if ui
+                .add(
+                    egui::TextEdit::singleline(&mut client_id)
+                        .hint_text("digits only")
+                        .desired_width(180.0),
+                )
+                .changed()
+            {
+                let trimmed = client_id.trim().to_string();
+                self.settings.oauth_client_id = if trimmed.is_empty() {
+                    None
+                } else {
+                    Some(trimmed)
+                };
+                dirty = true;
+            }
+        });
+        ui.label(
+            RichText::new(format!(
+                "Redirect URI to register: {}",
+                crate::api::oauth::redirect_uri()
+            ))
+            .small()
+            .color(theme.muted),
+        );
+
+        match self.identity.clone() {
+            Some(session) => {
+                ui.label(
+                    RichText::new(format!(
+                        "Signed in as {} (@{}) · id {}",
+                        session.identity.display_name(),
+                        session.identity.username,
+                        session.identity.id
+                    ))
+                    .small()
+                    .color(theme.text),
+                );
+                if self.identity_expired {
+                    ui.label(
+                        RichText::new("Session expired; sign in again to refresh it.")
+                            .small()
+                            .color(theme.danger),
+                    );
+                }
+            }
+            None => {
+                ui.label(RichText::new("Not signed in.").small().color(theme.muted));
+            }
+        }
+
+        ui.horizontal(|ui| {
+            if self.oauth.pending.is_some() {
+                ui.spinner();
+                if ui.button("Cancel sign-in").clicked() {
+                    self.cancel_identity_sign_in();
+                }
+            } else {
+                let label = if self.identity.is_some() {
+                    "Switch account"
+                } else {
+                    "Sign in with Discord"
+                };
+                if ui
+                    .add_enabled(
+                        self.settings.oauth_client_id.is_some(),
+                        egui::Button::new(label),
+                    )
+                    .clicked()
+                {
+                    self.start_identity_sign_in();
+                }
+            }
+            if self.identity.is_some() && ui.button("Sign out of identity").clicked() {
+                self.sign_out_identity();
+            }
+        });
+
+        if let Some(status) = self.oauth.status.clone() {
+            ui.label(RichText::new(status).small().color(theme.muted));
+        }
+        if let Some(error) = self.oauth.error.clone() {
+            ui.label(RichText::new(error).small().color(theme.danger));
+        }
+
+        ui.add_space(10.0);
+        ui.separator();
         ui.label(RichText::new("Reset").strong());
         ui.checkbox(
             &mut self.settings_ui.confirm_reset,

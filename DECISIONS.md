@@ -281,3 +281,43 @@ double-counting, and a duplicated remove from decrementing twice. Reactions
 **Consequences.** Live events cost O(rows held) at worst in a scan and never
 touch the network. 25 tests cover the parsing, the transitions, replay and
 out-of-order cases, and expiry — all without a token.
+
+## D18. OAuth2 `identify` is a second, separate login — never a messaging one
+
+**Context.** D2 and D15 refuse to log in as a person, because a user token makes
+Rustcord a self-bot and gets accounts terminated. That is why the only login is
+a bot token. Users still expect a "Sign in with Discord" button, and there is a
+legitimate, documented use for OAuth2: showing *who* is signed in.
+
+**Decision.**
+
+- Add an **identity-only** OAuth2 login with `scope=identify`, and nothing else.
+  The scope is a constant asserted in a test so it cannot be widened by accident.
+- PKCE (`S256`) with **no client secret**: the verifier never leaves the process,
+  only its SHA-256 leaves in the authorise URL. No secret is stored anywhere.
+- `state` is 32 random bytes and is checked **before** the code is looked at, so a
+  forged or stray redirect cannot inject a code. `access_denied` is surfaced as a
+  cancellation, not an error.
+- The redirect is a loopback listener on `127.0.0.1:53134/callback`, polled on its
+  own named thread with a 180 s deadline and a cancel flag — no blocking accept.
+  The browser page it serves is static HTML with no scripts or remote assets.
+- The session (tokens + id/username/avatar) is JSON in the OS keyring under
+  `rustcord` / `discord_oauth_identity`, **separate from** `discord_bot_token`.
+  It never enters `settings.json`; diagnostics never print it; the only thing
+  written to settings is the public client ID (digits only, or dropped).
+- `SessionStore` is a trait with a keyring implementation and an in-memory one, so
+  restoration, expiry and logout are testable without a keyring or a network.
+- Restoration keeps an **expired** session visible but flagged, because forgetting
+  which account it was is worse than showing a stale name.
+- Logout clears only the identity; signing out of the bot also clears the identity,
+  since the app is going back to its first-run state anyway. "Switch account" is
+  clear-then-authorise: one account at a time, no session juggling.
+- Rustcord still never asks for a password, a user token or a cookie. There is no
+  scraping path and no code that reads a browser profile.
+
+**Consequences.** Messaging is still bot-only, and the UI says so next to the
+identity card. The flow needs the user's own Discord application client ID and a
+registered `http://127.0.0.1:53134/callback` redirect; without them the button is
+disabled and explains what is missing. Refresh is *not* implemented: an expired
+session is re-authorised by signing in again, which the flag in the UI prompts.
+The end-to-end exchange cannot be verified here without a real application.

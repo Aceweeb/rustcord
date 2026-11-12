@@ -370,6 +370,11 @@ Priority order for the next session:
   `MESSAGE_REACTION_REMOVE_EMOJI`, `TYPING_START`, plus pure list operations and
   a typing tracker in `models.rs`. 25 synthetic-payload tests, no token needed
   (`DECISIONS.md` D17). Test suite: 142.
+- Added an optional OAuth2 `identify` login beside the bot token: PKCE S256,
+  state validation before the code is read, loopback callback listener, keyring
+  session separate from the bot token, restoration, logout and account
+  switching. Identity only — it grants no messaging, and the UI says so. 18 tests
+  (`DECISIONS.md` D18). Test suite: 160.
 
 ---
 

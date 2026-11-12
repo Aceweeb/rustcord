@@ -1,5 +1,6 @@
 use crate::api::discord::DiscordClient;
 use crate::api::gateway::{GatewayClient, GatewayEvent, GatewayHandle, DEFAULT_INTENTS};
+use crate::api::oauth::SessionStore as _;
 use crate::auth;
 use crate::diagnostics;
 use crate::models::{Channel, ChannelKind, Guild, Message, Presence, Reaction, User};
@@ -60,6 +61,10 @@ pub struct RustcordApp {
     pub(crate) typing: crate::models::TypingTracker,
     /// The bot's own user id from READY, so a reaction can be marked as ours.
     pub(crate) bot_user_id: Option<String>,
+    /// OAuth2 *identity* (username, avatar, id). Never used for messaging.
+    pub(crate) identity: Option<crate::api::oauth::Session>,
+    pub(crate) identity_expired: bool,
+    pub(crate) oauth: OAuthFlow,
     pub(crate) monitor: MemoryMonitor,
     pub(crate) settings_ui: SettingsUiState,
     pub(crate) alert: Option<Alert>,
@@ -81,6 +86,25 @@ pub struct RustcordApp {
     history_rx: Receiver<HistoryResult>,
     send_tx: Sender<SendResult>,
     send_results: Receiver<SendResult>,
+}
+
+/// An OAuth2 identity sign-in in progress.
+#[derive(Default)]
+pub(crate) struct OAuthFlow {
+    pub(crate) pending: Option<PendingOAuth>,
+    pub(crate) status: Option<String>,
+    pub(crate) error: Option<String>,
+    /// Typed into the login page when no client id is configured yet.
+    pub(crate) client_id_draft: String,
+}
+
+pub(crate) struct PendingOAuth {
+    callback: crate::api::oauth::BrowserCallback,
+    verifier: String,
+    client_id: String,
+    /// Set once the browser handed back a code and the exchange thread started.
+    session_rx: Option<Receiver<Result<crate::api::oauth::Session, String>>>,
+    started: std::time::Instant,
 }
 
 enum SendResult {
@@ -218,6 +242,17 @@ impl RustcordApp {
             }
         };
 
+        // Restore a stored OAuth2 identity session. Expired sessions are still
+        // shown (so the account is recognisable) but flagged for re-sign-in.
+        let (identity_session, identity_expired) = match crate::api::oauth::restore(
+            &crate::api::oauth::KeyringStore,
+            crate::api::oauth::now_unix(),
+        ) {
+            crate::api::oauth::Restore::Missing => (None, false),
+            crate::api::oauth::Restore::Active(session) => (Some(session), false),
+            crate::api::oauth::Restore::Expired(session) => (Some(session), true),
+        };
+
         // First run (nothing in the keyring) opens on the sign-in page; a
         // configured install goes straight to the workspace.
         let login = crate::ui::login::LoginState::new(token_draft.trim().is_empty());
@@ -246,6 +281,9 @@ impl RustcordApp {
             login,
             typing: crate::models::TypingTracker::default(),
             bot_user_id: None,
+            identity: identity_session,
+            identity_expired,
+            oauth: OAuthFlow::default(),
             monitor: MemoryMonitor::new(),
             settings_ui: SettingsUiState::default(),
             alert: None,
@@ -864,6 +902,171 @@ impl RustcordApp {
         self.status_line = Some("continuing with demo data".to_string());
     }
 
+    /// Begin the OAuth2 identity flow: state + PKCE, loopback listener, browser.
+    pub(crate) fn start_identity_sign_in(&mut self) {
+        self.oauth.error = None;
+        self.oauth.status = None;
+
+        let Some(client_id) = self
+            .settings
+            .oauth_client_id
+            .clone()
+            .filter(|id| !id.trim().is_empty())
+        else {
+            self.oauth.error = Some(
+                "Add your Discord application's client ID first; it is on the app's \
+                 OAuth2 page in the Developer Portal."
+                    .to_string(),
+            );
+            return;
+        };
+
+        if let Some(pending) = self.oauth.pending.take() {
+            pending.callback.cancel();
+        }
+
+        let (state, verifier) = match (
+            crate::api::oauth::new_state(),
+            crate::api::oauth::new_verifier(),
+        ) {
+            (Ok(state), Ok(verifier)) => (state, verifier),
+            _ => {
+                self.oauth.error = Some("no system randomness available".to_string());
+                return;
+            }
+        };
+
+        let callback = match crate::api::oauth::listen_for_callback(state.clone()) {
+            Ok(callback) => callback,
+            Err(err) => {
+                self.oauth.error = Some(format!("{err:#}"));
+                return;
+            }
+        };
+
+        let challenge = crate::api::oauth::pkce_challenge(&verifier);
+        let url = crate::api::oauth::authorize_url(&client_id, &state, &challenge);
+        if let Err(err) = crate::api::oauth::open_browser(&url) {
+            callback.cancel();
+            self.oauth.error = Some(format!("{err:#} — open this URL yourself: {url}"));
+            return;
+        }
+
+        self.oauth.status = Some("waiting for your browser…".to_string());
+        self.oauth.pending = Some(PendingOAuth {
+            callback,
+            verifier,
+            client_id,
+            session_rx: None,
+            started: std::time::Instant::now(),
+        });
+    }
+
+    pub(crate) fn cancel_identity_sign_in(&mut self) {
+        if let Some(pending) = self.oauth.pending.take() {
+            pending.callback.cancel();
+        }
+        self.oauth.status = None;
+        self.oauth.error = None;
+    }
+
+    /// Advance an identity sign-in: the browser callback, then the exchange.
+    pub(crate) fn poll_oauth(&mut self) {
+        let Some(mut pending) = self.oauth.pending.take() else {
+            return;
+        };
+        let mut finished = false;
+
+        if let Some(rx) = &pending.session_rx {
+            match rx.try_recv() {
+                Ok(Ok(session)) => {
+                    self.identity = Some(session);
+                    self.identity_expired = false;
+                    self.oauth.status = Some("signed in with Discord".to_string());
+                    finished = true;
+                }
+                Ok(Err(err)) => {
+                    self.oauth.error = Some(err);
+                    finished = true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.oauth.error = Some("the sign-in worker stopped".to_string());
+                    finished = true;
+                }
+            }
+        } else {
+            match pending.callback.receiver.try_recv() {
+                Ok(Ok(crate::api::oauth::Callback::Code(code))) => {
+                    let (tx, rx) = mpsc::channel();
+                    let client_id = pending.client_id.clone();
+                    let verifier = pending.verifier.clone();
+
+                    // Blocking HTTP stays off the UI thread, like images.
+                    let _ = std::thread::Builder::new()
+                        .name("rustcord-oauth-token".to_string())
+                        .spawn(move || {
+                            let result = (|| -> Result<_, String> {
+                                let tokens =
+                                    crate::api::oauth::exchange_code(&client_id, &code, &verifier)
+                                        .map_err(|err| format!("{err:#}"))?;
+                                let identity =
+                                    crate::api::oauth::fetch_identity(&tokens.access_token)
+                                        .map_err(|err| format!("{err:#}"))?;
+                                let session = crate::api::oauth::Session { tokens, identity };
+                                crate::api::oauth::KeyringStore
+                                    .save(&session)
+                                    .map_err(|err| {
+                                        format!("could not store the session: {err:#}")
+                                    })?;
+                                Ok(session)
+                            })();
+                            let _ = tx.send(result);
+                        });
+
+                    pending.session_rx = Some(rx);
+                    self.oauth.status = Some("exchanging the code with Discord…".to_string());
+                }
+                Ok(Ok(crate::api::oauth::Callback::Denied(reason))) => {
+                    self.oauth.error = Some(format!("sign-in was cancelled ({reason})"));
+                    finished = true;
+                }
+                Ok(Err(err)) => {
+                    self.oauth.error = Some(format!("{err:#}"));
+                    finished = true;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.oauth.error = Some("the sign-in listener stopped".to_string());
+                    finished = true;
+                }
+            }
+        }
+
+        // The listener has its own timeout; this one covers a stalled exchange.
+        if !finished && pending.started.elapsed() > Duration::from_secs(240) {
+            pending.callback.cancel();
+            self.oauth.error = Some("sign-in timed out".to_string());
+            finished = true;
+        }
+
+        if !finished {
+            self.oauth.pending = Some(pending);
+        }
+    }
+
+    /// Forget the identity session. The bot token is untouched.
+    pub(crate) fn sign_out_identity(&mut self) {
+        if let Some(pending) = self.oauth.pending.take() {
+            pending.callback.cancel();
+        }
+        crate::api::oauth::KeyringStore.clear();
+        self.identity = None;
+        self.identity_expired = false;
+        self.oauth.status = Some("signed out of Discord identity".to_string());
+        self.oauth.error = None;
+    }
+
     /// Drop the session and keyring entry, then return to the sign-in page.
     pub(crate) fn sign_out(&mut self) {
         if let Some(handle) = self.gateway.take() {
@@ -881,6 +1084,8 @@ impl RustcordApp {
         self.bot_user_id = None;
 
         let _ = auth::clear_discord_token();
+        // Signing out of the bot ends the session, so the identity goes too.
+        self.sign_out_identity();
         self.token_status = "Signed out; token removed from the keyring".to_string();
         self.gateway_status = "No bot token stored".to_string();
         self.login = crate::ui::login::LoginState::new(true);
@@ -1019,6 +1224,12 @@ impl eframe::App for RustcordApp {
 
         if self.settings.compact_mode {
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 3.0);
+        }
+
+        self.poll_oauth();
+        if self.oauth.pending.is_some() {
+            // A browser round trip is in flight; wake often enough to notice it.
+            ctx.request_repaint_after(Duration::from_millis(250));
         }
 
         if self.login.visible {

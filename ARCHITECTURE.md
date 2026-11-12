@@ -31,7 +31,9 @@ main.rs                     installs log capture, loads Settings, starts eframe
      ├─ monitor.rs          throttled sampling + bounded history ring
      ├─ logbuf.rs           log::Log capture into a bounded ring
      ├─ diagnostics.rs      environment probes + report export
-     ├─ auth.rs             bot token in the OS keyring (never on disk)
+     ├─ auth.rs             bot token + OAuth2 identity session in the OS keyring
+     ├─ oauth.rs            OAuth2 `identify`: PKCE, state, loopback callback,
+     │                      session store trait (keyring / in-memory)
      └─ models.rs           User, Guild, Channel, Message, Activity, ...
 ```
 

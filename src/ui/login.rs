@@ -162,6 +162,145 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 });
 
             ui.add_space(12.0);
+            // Discord identity (OAuth2): shows who you are, nothing more. It is
+            // deliberately separate from the token above, and the copy says so.
+            egui::Frame::group(ui.style())
+                .fill(theme.surface)
+                .inner_margin(16.0)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(RichText::new("Discord identity").strong().color(theme.text));
+                    ui.label(
+                        RichText::new(
+                            "Optional. Shows your username, avatar and user id. Read-only: this \
+                             cannot read or send messages, and Rustcord never asks for your \
+                             password or a user token.",
+                        )
+                        .small()
+                        .color(theme.muted),
+                    );
+
+                    if let Some(session) = app.identity.clone() {
+                        ui.add_space(8.0);
+                        ui.horizontal(|ui| {
+                            let (rect, _) = ui
+                                .allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
+                            ui.painter()
+                                .circle_filled(rect.center(), 16.0, theme.accent);
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                session
+                                    .identity
+                                    .display_name()
+                                    .chars()
+                                    .next()
+                                    .unwrap_or('?')
+                                    .to_uppercase()
+                                    .to_string(),
+                                egui::FontId::proportional(15.0),
+                                theme.background,
+                            );
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    RichText::new(session.identity.display_name())
+                                        .strong()
+                                        .color(theme.text),
+                                );
+                                ui.label(
+                                    RichText::new(format!(
+                                        "@{} · id {}",
+                                        session.identity.username, session.identity.id
+                                    ))
+                                    .small()
+                                    .color(theme.muted),
+                                );
+                            });
+                        });
+
+                        if app.identity_expired {
+                            ui.label(
+                                RichText::new(
+                                    "This session has expired; sign in again to refresh it.",
+                                )
+                                .small()
+                                .color(theme.danger),
+                            );
+                        }
+
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            if ui.button("Switch account").clicked() {
+                                app.start_identity_sign_in();
+                            }
+                            if ui.button("Sign out of identity").clicked() {
+                                app.sign_out_identity();
+                            }
+                        });
+                    } else {
+                        ui.add_space(6.0);
+                        if app.settings.oauth_client_id.is_none() {
+                            ui.label(
+                                RichText::new(
+                                    "Client ID from your Discord application (OAuth2 page). It is \
+                                     public, not a secret.",
+                                )
+                                .small()
+                                .color(theme.muted),
+                            );
+                            if ui
+                                .add(
+                                    egui::TextEdit::singleline(&mut app.oauth.client_id_draft)
+                                        .hint_text("Application client ID"),
+                                )
+                                .changed()
+                            {
+                                let trimmed = app.oauth.client_id_draft.trim().to_string();
+                                app.settings.oauth_client_id = if trimmed.is_empty() {
+                                    None
+                                } else {
+                                    Some(trimmed)
+                                };
+                                app.settings_changed();
+                            }
+                            ui.label(
+                                RichText::new(format!(
+                                    "Add {} as a redirect URI on that same page.",
+                                    crate::api::oauth::redirect_uri()
+                                ))
+                                .small()
+                                .color(theme.muted),
+                            );
+                            ui.add_space(4.0);
+                        }
+
+                        if app.oauth.pending.is_some() {
+                            ui.horizontal(|ui| {
+                                ui.spinner();
+                                if ui.button("Cancel").clicked() {
+                                    app.cancel_identity_sign_in();
+                                }
+                            });
+                        } else if ui
+                            .add_enabled(
+                                app.settings.oauth_client_id.is_some(),
+                                egui::Button::new("Sign in with Discord"),
+                            )
+                            .clicked()
+                        {
+                            app.start_identity_sign_in();
+                        }
+                    }
+
+                    if let Some(status) = &app.oauth.status {
+                        ui.label(RichText::new(status).small().color(theme.muted));
+                    }
+                    if let Some(error) = &app.oauth.error {
+                        ui.label(RichText::new(error).small().color(theme.danger));
+                    }
+                });
+
+            ui.add_space(12.0);
             // No forced `open` state: egui remembers the toggle per id, and
             // forcing it every frame would make the section uncloseable.
             egui::CollapsingHeader::new(

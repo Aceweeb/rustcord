@@ -125,6 +125,11 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub diagnostics_capture: bool,
 
+    /// Discord application client ID for OAuth2 `identify`. Public, not a secret;
+    /// no client secret is ever stored because the flow uses PKCE.
+    #[serde(default)]
+    pub oauth_client_id: Option<String>,
+
     // --- keyboard shortcuts -------------------------------------------------
     /// Action id -> chord. Missing entries fall back to the built-in default.
     #[serde(default)]
@@ -170,6 +175,7 @@ impl Default for Settings {
             remember_history: true,
             image_cache_mb: DEFAULT_IMAGE_CACHE_MB,
             diagnostics_capture: true,
+            oauth_client_id: None,
             shortcuts: BTreeMap::new(),
         }
     }
@@ -310,6 +316,16 @@ impl Settings {
         if theme::preset_by(&self.theme_preset).is_none() {
             self.theme_preset = DEFAULT_THEME_ID.to_string();
         }
+        if let Some(client_id) = self.oauth_client_id.take() {
+            let trimmed = client_id.trim();
+            // A client id is digits only; anything else is a paste error.
+            self.oauth_client_id =
+                if !trimmed.is_empty() && trimmed.bytes().all(|byte| byte.is_ascii_digit()) {
+                    Some(trimmed.to_string())
+                } else {
+                    None
+                };
+        }
         if let Some(accent) = &self.accent_override {
             if parse_css_color(accent).is_none() {
                 self.accent_override = None;
@@ -350,6 +366,31 @@ mod tests {
         assert!(settings.memory_alerts);
         assert!(settings.shortcuts.is_empty());
         assert_eq!(settings.accent(), None);
+        // Identity login is opt-in and absent from older files.
+        assert_eq!(settings.oauth_client_id, None);
+    }
+
+    #[test]
+    fn the_oauth_client_id_survives_normalisation_only_as_digits() {
+        let mut settings = Settings {
+            oauth_client_id: Some("  123456789012345678  ".to_string()),
+            ..Settings::default()
+        };
+        settings.normalize();
+        assert_eq!(
+            settings.oauth_client_id.as_deref(),
+            Some("123456789012345678")
+        );
+
+        // A secret pasted by mistake, or a stray word, is dropped rather than
+        // stored in settings.json.
+        settings.oauth_client_id = Some("client-secret-abc".to_string());
+        settings.normalize();
+        assert_eq!(settings.oauth_client_id, None);
+
+        settings.oauth_client_id = Some("   ".to_string());
+        settings.normalize();
+        assert_eq!(settings.oauth_client_id, None);
     }
 
     #[test]

@@ -50,6 +50,10 @@ explicit next steps rather than half-implemented stubs that pretend to work.
   textures to stay inside the budget.
 - Bot-token authentication stored in the OS keyring (`src/auth.rs`). Tokens are
   never written to `settings.json`.
+- Optional **Discord identity** login (OAuth2 `identify`, PKCE + state, loopback
+  redirect) showing your username, avatar initial and user id. It is a separate,
+  read-only login stored under its own keyring entry: it grants no messaging, and
+  Rustcord still never asks for a password, a user token or a cookie.
 - Sign-in page on first run (`src/ui/login.rs`): token shape is checked before a
   request is spent, "Continue in demo mode" skips it, and Settings → Privacy →
   **Sign out** clears the keyring and returns to it.
@@ -66,8 +70,8 @@ Measured on the development machine (Arch, Wayland, release build):
 | Steady-state CPU | 0.0%, 0.2 fps while idle |
 | Threads (no gateway token, no images) | 2 |
 
-The sign-in screen measures lower (141 MB RSS / 45 MB PSS) because no channel
-surface is built until there is a session.
+The sign-in screen measures lower (100–141 MB RSS / 45–58 MB PSS) because no
+channel surface is built until there is a session.
 
 RSS for a GL application counts shared library pages in full, and on this machine
 ~100 MB of it is the proprietary NVIDIA driver stack (`libnvidia-gpucomp`,

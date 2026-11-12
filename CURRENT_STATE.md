@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **142 passed (137 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **160 passed (155 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -78,6 +78,29 @@ rebuild (driver and font warm-up), and later samples caught 5-second bursts of
 0.02% of a core and the frame counter showed 0.2 fps at idle, so the loader is
 innocent. See `DECISIONS.md` D14 — idle CPU is only meaningful next to a frame
 count.
+
+## Discord identity login (OAuth2 `identify`)
+
+A second, optional login beside the bot token, for showing who you are
+(`DECISIONS.md` D18). It is **not** a messaging login and the UI says so.
+
+- Flow: `state` + PKCE S256 → browser → loopback `127.0.0.1:53134/callback` →
+  code exchange without a client secret → `GET /users/@me`.
+- Displays: display name, `@username`, user id, and an initial-letter avatar. No
+  avatar download is attempted, so no CDN request is made for it.
+- Storage: keyring entry `discord_oauth_identity`, separate from the bot token;
+  only the public client ID is ever in `settings.json`.
+- Session restoration is automatic at start-up; an expired session stays visible
+  and is flagged. Sign out and switch account are both available on the sign-in
+  page and in Settings → Privacy.
+- Works without a keyring? The bot token path already needed one; identity needs
+  the same backend, and a keyring failure is reported rather than crashing.
+- 18 tests: PKCE RFC vector, base64url, authorise URL shape, state mismatch,
+  missing/empty code, denial, path mismatch, percent-decoding, token parsing,
+  identity parsing, store round trip, expiry, restoration.
+
+Not available: refresh tokens, other scopes, avatar images, and any messaging
+with a personal account — Discord does not offer that to third-party clients.
 
 ## Message lifecycle
 

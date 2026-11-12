@@ -12,6 +12,13 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [x] REST send message (`src/api/discord.rs`), invoked from the composer in
   live mode.
 - [x] Bot token in the OS keyring, never on disk (`src/auth.rs`).
+- [x] Optional OAuth2 `identify` login with PKCE, state validation, loopback
+  callback, keyring session, restoration, logout and account switching
+  (`src/api/oauth.rs`, `src/ui/login.rs`, `DECISIONS.md` D18). Identity only:
+  grants no messaging.
+- [~] OAuth2 live exchange: implemented and unit-tested, but not exercised against
+  Discord — that needs a real application client ID and the registered loopback
+  redirect.
 - [x] 12 theme presets across Dark/Light/Purple/AMOLED, accent override, live
   switching, contrast tests (`src/ui/theme.rs`).
 - [x] CSS custom-property theme files, single-line files included

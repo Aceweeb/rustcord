@@ -52,13 +52,17 @@ neither history paging nor image rendering has been seen working:
 
 ## Then, in order
 
-1. Gateway identify cap and jittered backoff (Yapfast's account-safety pattern:
+1. OAuth2 identity: verify the live exchange with a real application (client ID
+   + `http://127.0.0.1:53134/callback` redirect). Ports 53134 and the client-ID
+   normalisation are the two things to test first. Refresh-token support is the
+   obvious follow-up; today an expired session asks for a new sign-in.
+2. Gateway identify cap and jittered backoff (Yapfast's account-safety pattern:
    at most 10 IDENTIFYs an hour, random 50–100 % of each backoff step, reset the
    backoff only after a session has stayed up a while). Current backoff is
    `backoff_secs(attempt)` with no jitter and no identify cap.
-2. Per-message context menu (edit, delete, copy) so the lifecycle events above
+3. Per-message context menu (edit, delete, copy) so the lifecycle events above
    are not only inbound.
-3. Packaging: icon asset + PKGBUILD.
+4. Packaging: icon asset + PKGBUILD.
 
 ## Rules for the next session
 
@@ -79,6 +83,10 @@ neither history paging nor image rendering has been seen working:
 - `egui` 0.37: `App::ui(&mut self, ui, frame)` and `egui::Panel::left/…`.
 - `ScrollArea::show_rows` assumes uniform heights — the message list uses
   `show_viewport` plus `RowMetrics`. Do not "simplify" it back.
+- Two logins exist and must not be confused: the bot token (gateway + REST
+  messaging) and the OAuth2 identity session (display only, scope `identify`).
+  Keyring accounts are `discord_bot_token` and `discord_oauth_identity`; no
+  client secret is stored because the flow is PKCE.
 - Live events must never refetch history: they mutate `messages` and clear
   `RowMetrics` so heights are re-measured. Pagination state lives in `history`
   and is deliberately untouched.
