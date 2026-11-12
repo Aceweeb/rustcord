@@ -26,6 +26,8 @@ half-implemented stubs that pretend to work.
 - Guild member roster from the privileged Server Members intent, paginated over
   REST and capped at 5000; without the intent the panel falls back to message
   authors and says which toggle to enable.
+- Unread and mention badges on channels and guild icons, tracked locally (bots
+  have no server read state) and capped at 99+.
 - Nine-section settings window: Appearance, Themes, Performance, Memory,
   Notifications, Shortcuts, Privacy, Diagnostics, About (`Ctrl+,`).
 - 12 built-in theme presets across Dark, Light, Purple and AMOLED, plus custom

@@ -436,6 +436,93 @@ pub fn remove_message(messages: &mut Vec<Message>, id: &str, channel_id: Option<
     messages.len() != before
 }
 
+/// Discord caps visible mention badges at 99+.
+pub const UNREAD_BADGE_CAP: u32 = 99;
+
+/// Messages seen since a channel was last opened, and how many of them named
+/// this bot. Bots have no server-side read state, so this is local by nature.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Unread {
+    pub messages: u32,
+    pub mentions: u32,
+}
+
+impl Unread {
+    pub fn is_unread(&self) -> bool {
+        self.messages > 0
+    }
+
+    /// The red pill's text, or `None` when nothing mentioned us.
+    pub fn badge(&self) -> Option<String> {
+        if self.mentions == 0 {
+            return None;
+        }
+        Some(if self.mentions > UNREAD_BADGE_CAP {
+            format!("{UNREAD_BADGE_CAP}+")
+        } else {
+            self.mentions.to_string()
+        })
+    }
+}
+
+/// Per-channel unread counters.
+#[derive(Debug, Default, Clone)]
+pub struct UnreadTracker {
+    channels: std::collections::BTreeMap<String, Unread>,
+}
+
+impl UnreadTracker {
+    /// Count a message. The open channel is read by definition, and our own
+    /// messages never count.
+    pub fn observe(&mut self, channel_id: &str, is_mention: bool, is_open: bool, is_own: bool) {
+        if channel_id.is_empty() || is_open || is_own {
+            return;
+        }
+
+        let entry = self.channels.entry(channel_id.to_string()).or_default();
+        entry.messages = entry.messages.saturating_add(1);
+        if is_mention {
+            entry.mentions = entry.mentions.saturating_add(1);
+        }
+    }
+
+    pub fn mark_read(&mut self, channel_id: &str) {
+        self.channels.remove(channel_id);
+    }
+
+    pub fn get(&self, channel_id: &str) -> Unread {
+        self.channels.get(channel_id).copied().unwrap_or_default()
+    }
+
+    /// Mentions across every channel of one guild, for the rail badge.
+    pub fn guild_mentions<'a>(&self, channel_ids: impl Iterator<Item = &'a str>) -> u32 {
+        channel_ids
+            .map(|id| self.get(id).mentions)
+            .fold(0u32, u32::saturating_add)
+    }
+
+    /// Whether any channel of one guild has unread messages.
+    pub fn guild_unread<'a>(&self, channel_ids: impl Iterator<Item = &'a str>) -> bool {
+        channel_ids.into_iter().any(|id| self.get(id).is_unread())
+    }
+
+    pub fn clear(&mut self) {
+        self.channels.clear();
+    }
+}
+
+/// Whether a message body names this bot: a direct `<@id>`/`<@!id>` ping or an
+/// `@everyone`/`@here` that Discord would notify for anyway.
+pub fn mentions_user(content: &str, user_id: &str) -> bool {
+    if content.contains("@everyone") || content.contains("@here") {
+        return true;
+    }
+    if user_id.is_empty() {
+        return false;
+    }
+    content.contains(&format!("<@{user_id}>")) || content.contains(&format!("<@!{user_id}>"))
+}
+
 /// Someone sitting in a voice channel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VoiceMember {
@@ -832,6 +919,71 @@ mod tests {
 
         assert!(!remove_message(&mut messages, "100", Some("301")));
         assert_eq!(messages.len(), 1);
+    }
+
+    #[test]
+    fn unread_counts_and_ignores_the_open_channel() {
+        let mut unread = UnreadTracker::default();
+
+        unread.observe("10", false, false, false);
+        unread.observe("10", true, false, false);
+        unread.observe("20", false, false, false);
+
+        assert_eq!(
+            unread.get("10"),
+            Unread {
+                messages: 2,
+                mentions: 1
+            }
+        );
+        assert_eq!(unread.get("20").mentions, 0);
+
+        // The open channel is being read; our own messages never count.
+        unread.observe("10", true, true, false);
+        unread.observe("10", true, false, true);
+        assert_eq!(unread.get("10").messages, 2);
+    }
+
+    #[test]
+    fn opening_a_channel_clears_its_counters() {
+        let mut unread = UnreadTracker::default();
+        unread.observe("10", true, false, false);
+        unread.mark_read("10");
+        assert!(!unread.get("10").is_unread());
+        assert!(unread.get("10").badge().is_none());
+    }
+
+    #[test]
+    fn badges_cap_at_ninety_nine() {
+        let mut unread = UnreadTracker::default();
+        for _ in 0..120 {
+            unread.observe("10", true, false, false);
+        }
+        assert_eq!(unread.get("10").badge().as_deref(), Some("99+"));
+    }
+
+    #[test]
+    fn guild_totals_add_up() {
+        let mut unread = UnreadTracker::default();
+        unread.observe("1", true, false, false);
+        unread.observe("2", true, false, false);
+        unread.observe("3", false, false, false);
+
+        let ids = ["1", "2", "3"];
+        assert_eq!(unread.guild_mentions(ids.iter().copied()), 2);
+        assert!(unread.guild_unread(ids.iter().copied()));
+        assert_eq!(unread.guild_mentions(["9"].iter().copied()), 0);
+    }
+
+    #[test]
+    fn mentions_recognise_direct_pings_and_everyone() {
+        assert!(mentions_user("hi <@42>", "42"));
+        assert!(mentions_user("hi <@!42>", "42"));
+        assert!(mentions_user("@everyone look", "42"));
+        assert!(mentions_user("@here look", "42"));
+        assert!(!mentions_user("hi <@420>", "42"));
+        assert!(!mentions_user("plain", "42"));
+        assert!(!mentions_user("<@42>", ""));
     }
 
     #[test]

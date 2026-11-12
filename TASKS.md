@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [~] Unread/mention badges (`DECISIONS.md` D30): pure `UnreadTracker`, brighter
+  channel labels with a dot, red pills on channels and guild icons, marks read
+  through `select_channel`. 5 tests. **Not observed live**: no `MESSAGE_CREATE`
+  arrived during a 25 s probe on the user token available here.
 - [~] Guild member roster (`DECISIONS.md` D29): `GUILD_MEMBERS` intent with a
   4014 fallback, paginated `GET /guilds/{id}/members` (1000 per page, 5000 cap),
   scrollable roster panel with a message-author fallback. Parsing and the 4014

@@ -78,6 +78,43 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             if response.clicked() {
                                 selected_guild = Some(guild.id.clone());
                             }
+
+                            // Guild-level badge: mentions win, otherwise a dot.
+                            let ids = app
+                                .channels
+                                .iter()
+                                .filter(|channel| channel.guild_id == guild.id)
+                                .map(|channel| channel.id.as_str());
+                            let mentions = app.unread.guild_mentions(ids.clone());
+                            if mentions > 0 {
+                                let label = if mentions > crate::models::UNREAD_BADGE_CAP {
+                                    format!("{}+", crate::models::UNREAD_BADGE_CAP)
+                                } else {
+                                    mentions.to_string()
+                                };
+                                let width = 14.0 + label.chars().count() as f32 * 4.0;
+                                let centre = response.rect.right_bottom() - egui::vec2(2.0, 2.0);
+                                let pill = egui::Rect::from_center_size(
+                                    centre,
+                                    egui::vec2(width.max(16.0), 16.0),
+                                );
+                                ui.painter()
+                                    .rect_filled(pill, 8.0, Color32::from_rgb(242, 63, 66));
+                                ui.painter().text(
+                                    pill.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    label,
+                                    egui::FontId::proportional(11.0),
+                                    Color32::WHITE,
+                                );
+                            } else if app.unread.guild_unread(ids) {
+                                ui.painter().circle_filled(
+                                    response.rect.right_bottom() - egui::vec2(6.0, 6.0),
+                                    4.0,
+                                    Color32::WHITE,
+                                );
+                            }
+
                             ui.add_space(8.0);
                         }
                     });
@@ -90,8 +127,9 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
             .channels
             .iter()
             .find(|channel| channel.guild_id == id && channel.kind == ChannelKind::Text)
+            .map(|channel| channel.id.clone())
         {
-            app.selected_channel = Some(first.id.clone());
+            app.select_channel(first);
         }
     }
 }
@@ -157,7 +195,14 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             && channel.kind == ChannelKind::Text
                     }) {
                         let selected = app.selected_channel.as_deref() == Some(channel.id.as_str());
-                        if channel_row(ui, &theme, selected, "#", &channel.name) {
+                        if channel_row(
+                            ui,
+                            &theme,
+                            selected,
+                            "#",
+                            &channel.name,
+                            app.unread.get(&channel.id),
+                        ) {
                             clicked = Some(channel.id.clone());
                         }
                     }
@@ -169,7 +214,14 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             && channel.kind == ChannelKind::Voice
                     }) {
                         let selected = app.selected_channel.as_deref() == Some(channel.id.as_str());
-                        if channel_row(ui, &theme, selected, "🔊", &channel.name) {
+                        if channel_row(
+                            ui,
+                            &theme,
+                            selected,
+                            "🔊",
+                            &channel.name,
+                            app.unread.get(&channel.id),
+                        ) {
                             clicked = Some(channel.id.clone());
                         }
 
@@ -192,7 +244,7 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
         });
 
     if let Some(id) = clicked {
-        app.selected_channel = Some(id);
+        app.select_channel(id);
     }
     if open_settings {
         app.show_settings = true;
@@ -304,6 +356,7 @@ fn channel_row(
     selected: bool,
     glyph: &str,
     name: &str,
+    unread: crate::models::Unread,
 ) -> bool {
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), CHANNEL_ROW_HEIGHT),
@@ -317,7 +370,18 @@ fn channel_row(
         ui.painter().rect_filled(body, 4.0, lift(theme.surface, 10));
     }
 
-    let text_color = if selected { theme.text } else { theme.muted };
+    // Unread channels keep Discord's brighter label; a mention adds the red pill.
+    let text_color = if selected || unread.is_unread() {
+        theme.text
+    } else {
+        theme.muted
+    };
+
+    if unread.is_unread() && !selected {
+        ui.painter()
+            .circle_filled(rect.left_center() + egui::vec2(4.0, 0.0), 3.0, theme.text);
+    }
+
     ui.painter().text(
         rect.left_center() + egui::vec2(ROW_INSET + 8.0, 0.0),
         egui::Align2::LEFT_CENTER,
@@ -332,6 +396,26 @@ fn channel_row(
         egui::FontId::proportional(15.0),
         text_color,
     );
+
+    if let Some(label) = unread.badge() {
+        let width = 16.0 + label.chars().count() as f32 * 4.0;
+        let pill = egui::Rect::from_min_size(
+            egui::pos2(
+                rect.right() - ROW_INSET - width - 4.0,
+                rect.center().y - 8.0,
+            ),
+            egui::vec2(width, 16.0),
+        );
+        ui.painter()
+            .rect_filled(pill, 8.0, Color32::from_rgb(242, 63, 66));
+        ui.painter().text(
+            pill.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::proportional(11.0),
+            Color32::WHITE,
+        );
+    }
 
     response.clicked()
 }

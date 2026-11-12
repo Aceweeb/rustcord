@@ -793,3 +793,40 @@ listing itself returned 401 for the same user-token reason as D28, so no live
 roster was ever fetched. Both halves need a real bot token with the intent
 enabled to be proven end to end, and that is recorded in `TASKS.md` rather than
 claimed as tested.
+
+## D30. Unread and mention badges are local, because bots have no read state
+
+Discord's unread model is server-side read state; bots do not have one. There is
+no endpoint that says "3 unread, 1 mention" for a bot, and no `CHANNEL_UNREAD_UPDATE`
+that means anything for one. Faking a count from `last_message_id` would be wrong
+the moment the app restarts, so the counters are explicitly **local**: what this
+process has seen since each channel was last opened.
+
+**Tracking.** `UnreadTracker` (pure, in `models.rs`) keeps `{ messages, mentions }`
+per channel id:
+
+- `observe(channel, is_mention, is_open, is_own)` ignores the channel currently on
+  screen (opening a channel is reading it), ignores our own messages, and counts
+  everything else. Counts saturate rather than overflow.
+- Mentions are `<@id>`, `<@!id>` for the bot's own id, plus `@everyone`/`@here`,
+  by `mentions_user` — deliberately simple text matching, not a parser.
+- `mark_read` drops the entry; every path that opens a channel now goes through
+  `RustcordApp::select_channel`, so a click, keyboard cycling, search jump, guild
+  switch and the first channel from READY all clear it.
+- Badges cap at `99+` (`UNREAD_BADGE_CAP`), and `guild_mentions`/`guild_unread`
+  aggregate a guild's channels for the rail.
+
+**Drawing.** A channel with unread messages gets Discord's brighter label and a
+small dot at the left edge; mentions add the red pill with the count at the right.
+A guild icon shows the summed mention pill at its bottom-right, or a white dot
+when there are unread messages but no mentions. No pill is drawn for the channel
+you are looking at, because it was marked read.
+
+**Honest limits.** Nothing accrues while the app is not running, so the first
+launch after a week shows a clean slate — that is the correct behaviour for a
+client with no read state, and better than inventing counts from message ids.
+Mentions are only detectable when `MESSAGE_CONTENT` is enabled for the bot
+(without it Discord sends empty content, so the pill never appears). Live
+verification was not possible: the only credential here is a user token, and a
+25-second gateway probe saw no `MESSAGE_CREATE` at all, so the badges are tested
+through `UnreadTracker` and not observed on screen.

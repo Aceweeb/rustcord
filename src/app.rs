@@ -93,6 +93,8 @@ pub struct RustcordApp {
     pub(crate) images: crate::images::ImageLoader,
     /// Pagination state per channel id, so switching back does not refetch.
     pub(crate) history: HashMap<String, ChannelHistory>,
+    /// Locally tracked unread/mention counters; bots get no server read state.
+    pub(crate) unread: crate::models::UnreadTracker,
     /// Guild rosters, fetched over REST with the Members intent. Keyed by guild.
     pub(crate) members: std::collections::BTreeMap<String, Vec<User>>,
     members_loading: std::collections::BTreeSet<String>,
@@ -356,6 +358,7 @@ impl RustcordApp {
                 usize::try_from(crate::settings::DEFAULT_IMAGE_CACHE_BYTES).unwrap_or(0),
             ),
             history: HashMap::new(),
+            unread: crate::models::UnreadTracker::default(),
             members: std::collections::BTreeMap::new(),
             members_loading: std::collections::BTreeSet::new(),
             member_intent_missing: false,
@@ -906,6 +909,12 @@ impl RustcordApp {
         }
     }
 
+    /// Open a channel and treat it as read from that moment on.
+    pub(crate) fn select_channel(&mut self, channel_id: String) {
+        self.unread.mark_read(&channel_id);
+        self.selected_channel = Some(channel_id);
+    }
+
     /// Open the channel a search result belongs to.
     pub(crate) fn jump_to_channel(&mut self, channel_id: &str) {
         if let Some(channel) = self
@@ -915,6 +924,7 @@ impl RustcordApp {
             .cloned()
         {
             self.selected_guild = Some(channel.guild_id);
+            self.unread.mark_read(&channel.id);
             self.selected_channel = Some(channel.id);
             self.status_line = Some(format!("opened #{}", channel.name));
         }
@@ -1029,7 +1039,7 @@ impl RustcordApp {
             .and_then(|id| ids.iter().position(|candidate| candidate == id))
             .unwrap_or(0) as i32;
         let next = (current + delta).rem_euclid(ids.len() as i32) as usize;
-        self.selected_channel = Some(ids[next].clone());
+        self.select_channel(ids[next].clone());
     }
 
     fn cycle_guild(&mut self, delta: i32) {
@@ -1049,8 +1059,9 @@ impl RustcordApp {
             .channels
             .iter()
             .find(|channel| channel.guild_id == guild_id && channel.kind == ChannelKind::Text)
+            .map(|channel| channel.id.clone())
         {
-            self.selected_channel = Some(first.id.clone());
+            self.select_channel(first);
         }
     }
 
@@ -1165,7 +1176,9 @@ impl RustcordApp {
                         self.selected_guild = Some(guild.id.clone());
                     }
                     if self.selected_channel.is_none() {
-                        self.selected_channel = first_text;
+                        if let Some(channel) = first_text {
+                            self.select_channel(channel);
+                        }
                     }
 
                     // A guild can arrive twice (READY's list plus a later event,
@@ -1193,6 +1206,17 @@ impl RustcordApp {
                     }
                 }
                 GatewayEvent::Message(message) => {
+                    let channel = message.channel_id.clone().unwrap_or_default();
+                    let is_open = self.selected_channel.as_deref() == Some(channel.as_str());
+                    let is_own = self.bot_user_id.as_deref() == Some(message.author.id.as_str())
+                        || message.author.username == self.current_user.username;
+                    let is_mention = crate::models::mentions_user(
+                        &message.content,
+                        self.bot_user_id.as_deref().unwrap_or(""),
+                    );
+
+                    self.unread.observe(&channel, is_mention, is_open, is_own);
+
                     self.messages.push(*message);
                     received_message = true;
                     self.mark_search_stale();
@@ -1597,6 +1621,7 @@ impl RustcordApp {
         self.images.clear();
         self.typing.clear();
         self.voice.clear();
+        self.unread.clear();
         self.members.clear();
         self.members_loading.clear();
         self.member_intent_missing = false;

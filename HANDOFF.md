@@ -7,12 +7,22 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 212 lib + 5 bin tests passing
+- `cargo test --all-targets`: 217 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Unread and mention badges (`DECISIONS.md` D30):
+
+- `src/models.rs` — `Unread`, `UnreadTracker` (per-channel counts, `99+` cap,
+  guild aggregation) and `mentions_user`; 5 tests.
+- `src/app.rs` — counts `MESSAGE_CREATE` for channels that are not open, skips
+  our own messages, and `select_channel` marks read on every path.
+- `src/ui/sidebar.rs` — brighter unread label with a left dot, red mention pill
+  per channel and per guild icon, white dot for unread-only guilds.
+
 
 Guild member roster (`DECISIONS.md` D29):
 
