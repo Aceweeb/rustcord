@@ -1,0 +1,7 @@
+{
+  "name": "Uppercase",
+  "version": "1.0.0",
+  "module": "plugin.wasm",
+  "permissions": ["transform_messages"],
+  "fuel": 200000
+}

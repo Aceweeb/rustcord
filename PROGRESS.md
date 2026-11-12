@@ -519,6 +519,11 @@ Priority order for the next session:
   over `RowMetrics::estimated_offset_of`, a 2.5 s tint, and cancellation on manual
   scroll. Two new tests; suite 304.
 
+- Added a worked WASM plugin (`examples/wasm-uppercase`) plus `build_plugin`
+  (WAT → wasm) and `check_plugin` (load + one transform through the real loader),
+  so the sandbox can be exercised without a Discord session. Not yet dropped into
+  the live config folder or seen in the UI.
+
 ---
 
 ## 7. Notes for the next agent

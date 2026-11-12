@@ -237,6 +237,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Example WASM plugin (`examples/wasm-uppercase`): ABI-documented `.wat`, a
+  prebuilt 272-byte `.wasm`, `build_plugin` and `check_plugin` examples. Verified
+  headlessly: "Hello from Rustcord — this is a plugin test." becomes uppercase.
+  Not yet loaded from the live config folder or seen in the running UI.
 - [x] WASM plugin sandbox (`DECISIONS.md` D46): `wasmi` interpreter, manifest with
   `deny_unknown_fields`, permission gate (`transform_messages`), no host imports,
   no `start` function, path-traversal checks, fuel (5 M default / 20 M ceiling),

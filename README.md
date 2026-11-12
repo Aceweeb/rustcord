@@ -435,6 +435,19 @@ without `transform_messages`, with an unknown permission or manifest key, with a
 load. Any trap, out-of-fuel, bad pointer or invalid UTF-8 leaves the message
 exactly as typed. The loader lives in `src/plugins/wasm.rs`.
 
+A worked example is in `examples/wasm-uppercase`: a 272-byte module that
+ASCII-uppercases message text, with the ABI documented in the `.wat`. Rebuild and
+try it without a Discord session:
+
+```bash
+cargo run --example build_plugin -- examples/wasm-uppercase/plugin.wat \
+    examples/wasm-uppercase/plugin.wasm
+cargo run --example check_plugin -- examples/wasm-uppercase
+```
+
+`check_plugin` loads the folder through the same `WasmPlugin::load` and `Plugin`
+hook the app uses and prints the transformed message.
+
 ## Performance notes
 
 - `egui` avoids a browser engine entirely; the renderer is OpenGL via `glow`.
