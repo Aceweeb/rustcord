@@ -350,3 +350,59 @@ same outage retried in lockstep.
 minutes instead of a hot reconnect loop, and the status bar says why it is
 waiting. The cost is slower recovery after a long outage: at worst the app waits
 out the window rather than reconnecting at once, which is the intended trade.
+
+## D20. Search covers loaded history, and says so
+
+**Context.** Discord's `GET /guilds/{id}/messages/search` belongs to the user
+API. A bot token is refused there, and Rustcord does not hold a user token by
+design (D2, D15). So "message search" has exactly two honest shapes: scan what
+the client already holds, or build a local index over it.
+
+**Decision.**
+
+- `src/search.rs` scans the **loaded history of the open channel** newest-first
+  and stops at 50 results. No index, no extra allocation beyond the hits, no
+  network call, nothing that grows with message count.
+- Query syntax is small on purpose: whitespace tokens are ANDed,
+  case-insensitively; `from:name` or `@name` narrows to an author; a bare `from:`
+  is an unfinished filter rather than a literal term, so typing it does not
+  blank the results with a false match.
+- Results are **snapshots** (`Hit`), not references: live events can remove a
+  message between the search and the click, and a row that vanished must not be
+  indexed into.
+- Snippets are one line, windowed around the first match, and sliced on character
+  boundaries derived from the lowercased copy, so emoji and CJK cannot panic or
+  split a glyph.
+- Refresh happens only when the overlay is open and something marked it stale
+  (new page, live edit/delete/create). There is no per-frame scan.
+- The overlay states that it searches loaded messages only, and why. The limit is
+  a property of the token type, not an unfinished feature.
+
+**Consequences.** Searching does not find messages that were never fetched, and
+the copy says so instead of implying a server-side search. A real index remains
+possible later, but it would have to stay inside the memory budget and be
+invalidated by the same events that mark the overlay stale today.
+
+## Proposal (not implemented): multiple bot accounts
+
+The request to connect several bot accounts at once conflicts with the current
+single-session design: one keyring account (`discord_bot_token`), one
+`GatewayHandle`, one `DiscordClient`, and `app.messages` assuming one channel of
+one token. It is not a small change, and a half-done version would be worse than
+none, so it is proposed rather than started:
+
+1. `BotAccount { id, label, token_ref }` with one keyring entry per account
+   (`discord_bot_token:<id>`), and a migration that imports the existing entry as
+   the first account.
+2. A `BotSessions` map: account id → gateway handle, client and per-account guild
+   list, so the sidebar can show each bot's guilds under its own heading.
+3. `app.messages` keyed by `(account, channel)`, or an explicit "active account"
+   with the existing single-channel buffer and a switch that clears it — the
+   second is far cheaper and does not touch the history machinery.
+4. Identify budgets must be **per token**, not global: ten an hour across accounts
+   would still be correct, but each bot's allowance is separate in Discord's
+   accounting, so a shared budget would starve the second bot.
+
+D15 is not contradicted by this (no user tokens appear anywhere); D19's budget
+shape is what needs care. Until then, switching bots means sign out and sign in,
+which is honest and works.

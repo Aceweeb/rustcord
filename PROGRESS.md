@@ -379,6 +379,13 @@ Priority order for the next session:
   identifies an hour that waits instead of reconnecting, jittered reconnect
   delays (50–100 %, never zero), and a backoff reset that only fires after a
   session has stayed up 60 s. 11 tests. Test suite: 169.
+- Added local message search (`src/search.rs`, `src/ui/search.rs`, D20): Ctrl+F
+  overlay, `from:`/`@` author filter, case-insensitive AND terms, newest-first,
+  50 results, char-safe snippets, click to open the channel. No index, no
+  per-frame scan, and the overlay states that Discord's server-side search needs
+  a user token. 12 tests. Test suite: 180.
+- Wrote a design proposal for multiple bot accounts (D20 appendix) and did not
+  start it: it changes keyring layout, session ownership and identify budgeting.
 - Wrote `YAPFAST_PARITY.md`, an honest audit against Yapfast's public feature
   list: implemented, partial, missing-but-legitimate, refused-by-decision and
   needs-research, with the bot-token line drawn explicitly.

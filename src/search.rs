@@ -1,0 +1,349 @@
+//! Local message search.
+//!
+//! Discord's guild-search endpoint (`GET /guilds/{id}/messages/search`) is part
+//! of the **user** API: a bot token cannot use it, and Rustcord does not hold a
+//! user token on purpose (`DECISIONS.md` D2, D15). The honest alternative is to
+//! search what the client actually holds: the loaded history of the open
+//! channel, which is bounded by `ResourcePriority::history_cap()`.
+//!
+//! That limit is stated in the UI rather than papered over. It also keeps the
+//! whole feature cheap: no index, no extra memory, no network. A search is a
+//! reverse scan over a few hundred messages with a case-insensitive substring
+//! test per token.
+//!
+//! Everything here is pure and tested without a UI or a gateway.
+
+use crate::models::Message;
+use chrono::{DateTime, Utc};
+
+/// Never return more than this, whatever the caller asks for.
+pub const MAX_RESULTS: usize = 50;
+
+/// Characters of context kept around the first match.
+const SNIPPET_CHARS: usize = 96;
+/// Characters of content kept before the match.
+const SNIPPET_LEAD: usize = 28;
+
+/// A parsed query: free-text terms (all must match) plus an optional author.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct SearchQuery {
+    /// Lowercased; every term must appear in a message's content.
+    pub terms: Vec<String>,
+    /// Lowercased username fragment from `from:someone`.
+    pub author: Option<String>,
+}
+
+impl SearchQuery {
+    /// Parse `text`, `from:name` and `@name`-after-`from:` forms.
+    ///
+    /// Unknown `word:value` tokens are treated as text, not as filters, so a
+    /// colon in a message never silently drops the search term.
+    pub fn parse(input: &str) -> Self {
+        let mut terms = Vec::new();
+        let mut author = None;
+
+        for token in input.split_whitespace() {
+            if let Some(rest) = token.strip_prefix("from:") {
+                let name = rest.trim_start_matches('@').trim().to_lowercase();
+                if !name.is_empty() {
+                    author = Some(name);
+                }
+                // A bare `from:` is an unfinished filter, not a literal term.
+                continue;
+            }
+            if let Some(rest) = token.strip_prefix('@') {
+                // A bare `@name` is the same filter, which is what people type.
+                let name = rest.trim().to_lowercase();
+                if !name.is_empty() {
+                    author = Some(name);
+                    continue;
+                }
+            }
+            terms.push(token.to_lowercase());
+        }
+
+        Self { terms, author }
+    }
+
+    /// True when there is nothing to search for.
+    pub fn is_empty(&self) -> bool {
+        self.terms.is_empty() && self.author.is_none()
+    }
+
+    /// A short description of the filter, for the results header.
+    pub fn describe(&self) -> String {
+        let mut parts = Vec::new();
+        if !self.terms.is_empty() {
+            parts.push(format!("\u{201c}{}\u{201d}", self.terms.join(" ")));
+        }
+        if let Some(author) = &self.author {
+            parts.push(format!("from {author}"));
+        }
+        parts.join(" ")
+    }
+}
+
+/// One result. Deliberately a snapshot rather than a reference: the message list
+/// keeps changing under live events, and a row that vanished mid-frame must not
+/// index into it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hit {
+    pub message_id: String,
+    pub channel_id: Option<String>,
+    pub author: String,
+    pub timestamp: DateTime<Utc>,
+    pub snippet: String,
+}
+
+/// Search newest-first, stopping at `limit` (clamped to `1..=MAX_RESULTS`).
+pub fn search(messages: &[Message], query: &SearchQuery, limit: usize) -> Vec<Hit> {
+    if query.is_empty() {
+        return Vec::new();
+    }
+
+    let limit = limit.clamp(1, MAX_RESULTS);
+    let mut hits = Vec::new();
+
+    for message in messages.iter().rev() {
+        if hits.len() >= limit {
+            break;
+        }
+        if let Some(hit) = hit_for(message, query) {
+            hits.push(hit);
+        }
+    }
+
+    hits
+}
+
+fn hit_for(message: &Message, query: &SearchQuery) -> Option<Hit> {
+    if let Some(author) = &query.author {
+        if !message.author.username.to_lowercase().contains(author) {
+            return None;
+        }
+    }
+
+    let content = message.content.to_lowercase();
+    if !query.terms.iter().all(|term| content.contains(term)) {
+        return None;
+    }
+
+    Some(Hit {
+        message_id: message.id.clone(),
+        channel_id: message.channel_id.clone(),
+        author: message.author.username.clone(),
+        timestamp: message.timestamp,
+        snippet: snippet(&message.content, query.terms.first().map(String::as_str)),
+    })
+}
+
+/// A single-line window around the first matching term.
+///
+/// Byte offsets from the lowercased copy are converted to character offsets over
+/// the original before slicing, so multi-byte content (emoji, CJK, combining
+/// marks) cannot panic or split a character.
+fn snippet(content: &str, needle: Option<&str>) -> String {
+    let flat: String = content
+        .chars()
+        .map(|character| match character {
+            '\n' | '\r' | '\t' => ' ',
+            other => other,
+        })
+        .collect();
+    let chars: Vec<char> = flat.chars().collect();
+
+    let lead = needle
+        .and_then(|needle| {
+            let lowered = flat.to_lowercase();
+            let byte_offset = lowered.find(needle)?;
+            Some(lowered[..byte_offset].chars().count())
+        })
+        .unwrap_or(0);
+
+    let start = lead.saturating_sub(SNIPPET_LEAD).min(chars.len());
+    let end = (start + SNIPPET_CHARS).min(chars.len());
+
+    let mut out = String::new();
+    if start > 0 {
+        out.push('…');
+    }
+    out.extend(chars[start..end].iter());
+    if end < chars.len() {
+        out.push('…');
+    }
+
+    out.trim().to_string()
+}
+
+/// UI state for the search overlay. Lives here so the app and the view share one
+/// definition without a circular dependency.
+#[derive(Debug, Default, Clone)]
+pub struct SearchState {
+    pub open: bool,
+    /// Focus the field on the next frame (set when the overlay opens).
+    pub just_opened: bool,
+    pub query: String,
+    pub results: Vec<Hit>,
+    /// Live events or a new page changed the messages under an open overlay.
+    pub needs_refresh: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::User;
+
+    fn message(author: &str, content: &str, seconds: i64) -> Message {
+        let mut message = Message::new(
+            User {
+                id: "1".to_string(),
+                username: author.to_string(),
+                avatar: None,
+                status: crate::models::Presence::default(),
+            },
+            content,
+        );
+        message.id = format!("{seconds}");
+        message.channel_id = Some("300".to_string());
+        message.timestamp = DateTime::from_timestamp(seconds, 0).expect("timestamp");
+        message
+    }
+
+    fn hits(messages: &[Message], input: &str) -> Vec<Hit> {
+        search(messages, &SearchQuery::parse(input), MAX_RESULTS)
+    }
+
+    #[test]
+    fn a_plain_query_is_lowercased_and_split() {
+        let query = SearchQuery::parse("Hello World");
+        assert_eq!(query.terms, vec!["hello", "world"]);
+        assert_eq!(query.author, None);
+        assert!(!query.is_empty());
+    }
+
+    #[test]
+    fn from_and_at_prefixes_become_an_author_filter() {
+        assert_eq!(
+            SearchQuery::parse("from:@Alice hi").author.as_deref(),
+            Some("alice")
+        );
+        assert_eq!(SearchQuery::parse("@bob").author.as_deref(), Some("bob"));
+        // A bare `from:` with nothing after it is not a filter.
+        assert_eq!(SearchQuery::parse("from:").author, None);
+        assert_eq!(SearchQuery::parse("from:").terms, Vec::<String>::new());
+    }
+
+    #[test]
+    fn an_empty_query_finds_nothing() {
+        let messages = vec![message("alice", "hello", 1)];
+        assert!(hits(&messages, "   ").is_empty());
+        assert!(SearchQuery::parse("").is_empty());
+    }
+
+    #[test]
+    fn matching_is_case_insensitive_and_and_requires_every_term() {
+        let messages = vec![
+            message("alice", "The Quick Brown Fox", 1),
+            message("alice", "quick", 2),
+        ];
+
+        let found = hits(&messages, "quick fox");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].message_id, "1");
+
+        assert_eq!(hits(&messages, "QUICK").len(), 2);
+        assert_eq!(hits(&messages, "quick zebra").len(), 0);
+    }
+
+    #[test]
+    fn results_are_newest_first_and_capped() {
+        let messages: Vec<_> = (0..10)
+            .map(|index| message("alice", &format!("hello {index}"), index))
+            .collect();
+
+        let found = search(&messages, &SearchQuery::parse("hello"), 3);
+        assert_eq!(found.len(), 3);
+        assert_eq!(found[0].message_id, "9");
+        assert_eq!(found[2].message_id, "7");
+
+        // A zero limit still returns one result rather than nothing.
+        assert_eq!(search(&messages, &SearchQuery::parse("hello"), 0).len(), 1);
+        // And the hard ceiling holds.
+        assert_eq!(
+            search(&messages, &SearchQuery::parse("hello"), 10_000).len(),
+            10
+        );
+    }
+
+    #[test]
+    fn the_author_filter_narrows_results() {
+        let messages = vec![
+            message("alice", "ship it", 1),
+            message("bob", "ship it", 2),
+            message("bobby", "ship it", 3),
+        ];
+
+        let found = hits(&messages, "ship from:bob");
+        assert_eq!(found.len(), 2);
+        assert!(found.iter().all(|hit| hit.author.starts_with("bob")));
+    }
+
+    #[test]
+    fn an_author_only_query_lists_that_author() {
+        let messages = vec![message("alice", "one", 1), message("bob", "two", 2)];
+
+        let found = hits(&messages, "from:alice");
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].author, "alice");
+    }
+
+    #[test]
+    fn snippets_keep_the_match_and_flatten_newlines() {
+        let long = format!("{} needle tail", "x ".repeat(80));
+        let messages = vec![message("alice", &long, 1)];
+
+        let found = hits(&messages, "needle");
+        assert_eq!(found.len(), 1);
+        let snippet = &found[0].snippet;
+        assert!(snippet.contains("needle"), "snippet: {snippet}");
+        assert!(snippet.starts_with('…'), "snippet: {snippet}");
+        assert!(snippet.len() < long.len());
+
+        let multiline = vec![message("alice", "first\nsecond\nthird", 1)];
+        let found = hits(&multiline, "second");
+        assert!(!found[0].snippet.contains('\n'));
+    }
+
+    #[test]
+    fn snippets_survive_multibyte_content() {
+        let content = format!("{}🔥 needle 🎉 {}", "é".repeat(40), "ü".repeat(60));
+        let messages = vec![message("alice", &content, 1)];
+
+        let found = hits(&messages, "needle");
+        assert_eq!(found.len(), 1);
+        assert!(found[0].snippet.contains("needle"));
+        // No panic and no replacement characters: the slice landed on boundaries.
+        assert!(!found[0].snippet.contains('\u{fffd}'));
+    }
+
+    #[test]
+    fn a_hit_carries_what_the_ui_needs_to_jump() {
+        let mut message = message("alice", "hello", 1);
+        message.channel_id = Some("777".to_string());
+        message.id = "42".to_string();
+
+        let found = hits(&[message], "hello");
+        assert_eq!(found[0].message_id, "42");
+        assert_eq!(found[0].channel_id.as_deref(), Some("777"));
+        assert_eq!(found[0].timestamp.timestamp(), 1);
+    }
+
+    #[test]
+    fn the_description_names_the_filter() {
+        assert_eq!(
+            SearchQuery::parse("hi from:bob").describe(),
+            "“hi” from bob"
+        );
+        assert_eq!(SearchQuery::parse("from:bob").describe(), "from bob");
+    }
+}

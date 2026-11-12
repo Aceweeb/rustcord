@@ -6,6 +6,13 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 - [x] Native egui window, guild rail, channel list, member list, message list,
   composer (`src/ui/sidebar.rs`, `src/ui/chat.rs`).
+- [x] Local message search (`DECISIONS.md` D20, `src/search.rs`): Ctrl+F overlay,
+  loaded history of the open channel, `from:`/`@` author filter, 50 results,
+  char-safe snippets, click-to-open. 12 tests. Server-side search is not
+  available with a bot token and the UI says so.
+- [ ] Multiple bot accounts (`DECISIONS.md`, proposal section): designed, not
+  started; needs per-account keyring entries, per-account sessions and per-token
+  identify budgets.
 - [x] Gateway reliability (`DECISIONS.md` D19): identify budget of 10 an hour,
   jittered backoff (50–100 %), stability-gated reset after 60 s, monotonic clock.
   11 tests in `src/api/backoff.rs`.

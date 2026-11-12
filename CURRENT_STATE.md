@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **169 passed (164 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **180 passed (175 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -78,6 +78,24 @@ rebuild (driver and font warm-up), and later samples caught 5-second bursts of
 0.02% of a core and the frame counter showed 0.2 fps at idle, so the loader is
 innocent. See `DECISIONS.md` D14 — idle CPU is only meaningful next to a frame
 count.
+
+## Message search (local)
+
+Ctrl+F opens an overlay that searches the **loaded history of the open channel**
+(D20). `src/search.rs` is pure: terms ANDed case-insensitively, `from:name` or
+`@name` filters to an author, newest-first, 50 results maximum. Snippets are
+single-line and char-safe around multi-byte content. Results are snapshots, so a
+message deleted between search and click cannot be indexed into; clicking a
+result opens its channel.
+
+The overlay says it searches loaded messages only: Discord's guild-search
+endpoint requires a user token, which this client refuses to hold. There is no
+index and no per-frame scan — results refresh only while the overlay is open and
+something marked it stale.
+
+12 tests cover parsing, the author filter, AND semantics, ordering and the
+limit clamp, empty queries, snippet windowing, newline flattening, multi-byte
+content and the jump payload.
 
 ## Gateway reliability
 

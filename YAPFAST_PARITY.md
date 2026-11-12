@@ -58,7 +58,7 @@ README and user documentation were read as a feature checklist only.
 
 | Area | Notes |
 | --- | --- |
-| Message search | Discord's `/guilds/{id}/messages/search` needs a **user** token, so bots cannot use it. The honest version is a local index over loaded history; that is what should be built. |
+| ~~Message search~~ | **Done this session, in its honest form:** Ctrl+F searches the loaded history of the open channel (D20). Discord's `/guilds/{id}/messages/search` needs a **user** token, so a server-side search remains impossible for a bot client. |
 | Threads | readable by bots over REST (`/channels/{id}/threads/...`); no UI at all today |
 | Replies | needs `message_reference` on send and a reply preview on render |
 | Direct messages UI | the `DIRECT_MESSAGES` intent is requested but there is no DM list or DM composer |
@@ -100,14 +100,18 @@ missing item after the message lifecycle work:
   costs nothing and the budget wait is not counted as a failed attempt.
 - Wired into `src/api/gateway.rs`: a budget-exhausted cycle returns
   `CycleOutcome::BudgetWait`, reports the wait to the UI, and sleeps cancellably.
-- 11 new tests; 169 passing in total.
+- 11 new tests.
+- Local message search in the same session (`src/search.rs`, `src/ui/search.rs`,
+  D20): Ctrl+F overlay, author filter, 50-result cap, char-safe snippets.
+  12 more tests, so **180 passing** in total.
 
 ## 7. Recommended order from here
 
-1. Local message search over loaded history (no user token needed, bounded index).
-2. Message context menu: copy, edit, delete, react, reply — makes the lifecycle
+1. Message context menu: copy, edit, delete, react, reply — makes the lifecycle
    events bidirectional.
-3. Replies end to end (send with `message_reference`, render preview).
+2. Replies end to end (send with `message_reference`, render preview).
+3. Multiple bot accounts (design proposal in `DECISIONS.md`; needs per-account
+   keyring entries and per-token identify budgets).
 4. Channel category grouping and unread/mention counts.
 5. DM list and DM composer (the intent is already requested).
 6. Threads, then notifications, then bot voice research.

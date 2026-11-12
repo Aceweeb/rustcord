@@ -9,6 +9,7 @@ use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ShortcutAction {
+    Search,
     ToggleSettings,
     NextChannel,
     PrevChannel,
@@ -20,7 +21,8 @@ pub enum ShortcutAction {
 }
 
 impl ShortcutAction {
-    pub const ALL: [ShortcutAction; 8] = [
+    pub const ALL: [ShortcutAction; 9] = [
+        ShortcutAction::Search,
         ShortcutAction::ToggleSettings,
         ShortcutAction::NextChannel,
         ShortcutAction::PrevChannel,
@@ -33,6 +35,7 @@ impl ShortcutAction {
 
     pub fn id(self) -> &'static str {
         match self {
+            Self::Search => "search",
             Self::ToggleSettings => "toggle_settings",
             Self::NextChannel => "next_channel",
             Self::PrevChannel => "prev_channel",
@@ -46,6 +49,7 @@ impl ShortcutAction {
 
     pub fn label(self) -> &'static str {
         match self {
+            Self::Search => "Search loaded messages",
             Self::ToggleSettings => "Open / close settings",
             Self::NextChannel => "Next channel",
             Self::PrevChannel => "Previous channel",
@@ -63,6 +67,7 @@ impl ShortcutAction {
 
     pub fn default_chord(self) -> KeyChord {
         match self {
+            Self::Search => KeyChord::new(true, false, false, "F"),
             Self::ToggleSettings => KeyChord::new(true, false, false, "Comma"),
             Self::NextChannel => KeyChord::new(true, false, false, "ArrowDown"),
             Self::PrevChannel => KeyChord::new(true, false, false, "ArrowUp"),

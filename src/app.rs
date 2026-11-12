@@ -65,6 +65,8 @@ pub struct RustcordApp {
     pub(crate) identity: Option<crate::api::oauth::Session>,
     pub(crate) identity_expired: bool,
     pub(crate) oauth: OAuthFlow,
+    /// Local search overlay over the loaded history of the open channel.
+    pub(crate) search: crate::search::SearchState,
     pub(crate) monitor: MemoryMonitor,
     pub(crate) settings_ui: SettingsUiState,
     pub(crate) alert: Option<Alert>,
@@ -284,6 +286,7 @@ impl RustcordApp {
             identity: identity_session,
             identity_expired,
             oauth: OAuthFlow::default(),
+            search: crate::search::SearchState::default(),
             monitor: MemoryMonitor::new(),
             settings_ui: SettingsUiState::default(),
             alert: None,
@@ -504,11 +507,56 @@ impl RustcordApp {
             // later, so keep the buffer in chronological order.
             self.messages.sort_by_key(|message| message.timestamp);
             self.trim_history();
+            self.mark_search_stale();
         }
     }
 
     pub(crate) fn channel_history(&self, channel_id: &str) -> Option<&ChannelHistory> {
         self.history.get(channel_id)
+    }
+
+    // -----------------------------------------------------------------------
+    // Search
+    // -----------------------------------------------------------------------
+
+    pub(crate) fn open_search(&mut self) {
+        self.search.open = true;
+        self.search.just_opened = true;
+        self.refresh_search();
+    }
+
+    pub(crate) fn close_search(&mut self) {
+        self.search.open = false;
+    }
+
+    /// Recompute results from the messages currently held.
+    pub(crate) fn refresh_search(&mut self) {
+        let query = crate::search::SearchQuery::parse(&self.search.query);
+        self.search.results =
+            crate::search::search(&self.messages, &query, crate::search::MAX_RESULTS);
+        self.search.needs_refresh = false;
+    }
+
+    /// Something changed the message list while the overlay may be open.
+    fn mark_search_stale(&mut self) {
+        if self.search.open {
+            self.search.needs_refresh = true;
+        }
+    }
+
+    /// Open the channel a search result belongs to.
+    pub(crate) fn jump_to_channel(&mut self, channel_id: &str) {
+        if let Some(channel) = self
+            .channels
+            .iter()
+            .find(|channel| channel.id == channel_id)
+            .cloned()
+        {
+            self.selected_guild = Some(channel.guild_id);
+            self.selected_channel = Some(channel.id);
+            self.status_line = Some(format!("opened #{}", channel.name));
+        }
+        self.close_search();
     }
 
     // -----------------------------------------------------------------------
@@ -558,6 +606,13 @@ impl RustcordApp {
 
     fn dispatch(&mut self, action: ShortcutAction) {
         match action {
+            ShortcutAction::Search => {
+                if self.search.open {
+                    self.close_search();
+                } else {
+                    self.open_search();
+                }
+            }
             ShortcutAction::ToggleSettings => self.show_settings = !self.show_settings,
             ShortcutAction::NextChannel => self.cycle_channel(1),
             ShortcutAction::PrevChannel => self.cycle_channel(-1),
@@ -756,6 +811,7 @@ impl RustcordApp {
                 GatewayEvent::Message(message) => {
                     self.messages.push(message);
                     received_message = true;
+                    self.mark_search_stale();
                 }
                 GatewayEvent::MessageUpdate {
                     id,
@@ -774,6 +830,7 @@ impl RustcordApp {
                         // An edit can change the row's measured height.
                         self.metrics.clear();
                         self.status_line = Some("message edited".to_string());
+                        self.mark_search_stale();
                     }
                 }
                 GatewayEvent::MessageDelete { id, channel_id } => {
@@ -782,6 +839,7 @@ impl RustcordApp {
                         // Rows below the gap shift up, so heights are stale.
                         self.metrics.clear();
                         self.status_line = Some("message deleted".to_string());
+                        self.mark_search_stale();
                     }
                 }
                 GatewayEvent::Reaction {
@@ -1226,6 +1284,10 @@ impl eframe::App for RustcordApp {
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 3.0);
         }
 
+        if self.search.open && self.search.needs_refresh {
+            self.refresh_search();
+        }
+
         self.poll_oauth();
         if self.oauth.pending.is_some() {
             // A browser round trip is in flight; wake often enough to notice it.
@@ -1242,6 +1304,7 @@ impl eframe::App for RustcordApp {
         ui::sidebar::show(self, ui);
         ui::chat::show(self, ui);
         ui::settings::show(self, &ctx);
+        ui::search::show(self, &ctx);
     }
 }
 
