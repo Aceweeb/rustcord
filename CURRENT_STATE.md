@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **97 passed (92 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **102 passed (97 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -77,6 +77,15 @@ rebuild (driver and font warm-up), and later samples caught 5-second bursts of
 0.02% of a core and the frame counter showed 0.2 fps at idle, so the loader is
 innocent. See `DECISIONS.md` D14 — idle CPU is only meaningful next to a frame
 count.
+
+## Sign-in
+
+The app opens on a sign-in page when the keyring holds no token (`ui/login.rs`,
+`DECISIONS.md` D15). It accepts a **bot token only** — shape-checked before any
+request, stored in the keyring, then the gateway starts. "Continue in demo mode"
+skips it; **Settings → Privacy → Sign out** clears the keyring, session and
+caches and brings the page back. An install that already has a token opens in
+the workspace, so the page never interrupts an existing session.
 
 ## Attachments and images
 

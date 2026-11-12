@@ -1041,14 +1041,9 @@ impl RustcordApp {
             if ui.button("Connect gateway").clicked() {
                 self.restart_gateway();
             }
-            if ui.button("Clear token").clicked() {
-                match auth::clear_discord_token() {
-                    Ok(()) => {
-                        self.token_draft.clear();
-                        self.token_status = "Token cleared".to_string();
-                    }
-                    Err(err) => self.token_status = format!("Could not clear token: {err:#}"),
-                }
+            if ui.button("Sign out").clicked() {
+                // Drops the keyring entry and returns to the sign-in page.
+                self.sign_out();
             }
         });
 

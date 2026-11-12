@@ -55,6 +55,7 @@ pub struct RustcordApp {
     pub(crate) token_draft: String,
     pub(crate) token_status: String,
     pub(crate) live_data: bool,
+    pub(crate) login: crate::ui::login::LoginState,
     pub(crate) monitor: MemoryMonitor,
     pub(crate) settings_ui: SettingsUiState,
     pub(crate) alert: Option<Alert>,
@@ -213,6 +214,10 @@ impl RustcordApp {
             }
         };
 
+        // First run (nothing in the keyring) opens on the sign-in page; a
+        // configured install goes straight to the workspace.
+        let login = crate::ui::login::LoginState::new(token_draft.trim().is_empty());
+
         let (send_tx, send_results) = mpsc::channel();
         let (history_tx, history_rx) = mpsc::channel();
 
@@ -234,6 +239,7 @@ impl RustcordApp {
             token_draft,
             token_status,
             live_data: false,
+            login,
             monitor: MemoryMonitor::new(),
             settings_ui: SettingsUiState::default(),
             alert: None,
@@ -720,6 +726,74 @@ impl RustcordApp {
         }
     }
 
+    /// Submit the sign-in page.
+    ///
+    /// Validates the token shape, stores it in the keyring and starts the
+    /// gateway. A keyring failure is not fatal: the session continues with the
+    /// token in memory, which is the behaviour documented for a missing Secret
+    /// Service provider.
+    pub(crate) fn sign_in(&mut self) {
+        let raw = self.login.token.trim().to_string();
+        let token = raw.strip_prefix("Bot ").unwrap_or(&raw).trim().to_string();
+
+        if token.is_empty() {
+            self.login.error = Some("Paste a bot token to sign in.".to_string());
+            return;
+        }
+
+        if !crate::ui::login::looks_like_bot_token(&token) {
+            self.login.error = Some(
+                "That does not look like a bot token. Expected \
+                 <id>.<timestamp>.<signature> — copy the whole string from \
+                 Developer Portal → Bot → Reset Token."
+                    .to_string(),
+            );
+            return;
+        }
+
+        self.token_status = match auth::store_discord_token(&token) {
+            Ok(()) => "Token saved to keyring".to_string(),
+            Err(err) => {
+                format!("Keyring unavailable ({err:#}); the token will only last this session")
+            }
+        };
+
+        self.token_draft = token;
+        self.login.token.clear();
+        self.login.error = None;
+        self.login.visible = false;
+        self.status_line = Some("signing in…".to_string());
+        self.restart_gateway();
+    }
+
+    /// Skip sign-in and stay on the local demo data.
+    pub(crate) fn dismiss_login(&mut self) {
+        self.login.visible = false;
+        self.login.token.clear();
+        self.login.error = None;
+        self.status_line = Some("continuing with demo data".to_string());
+    }
+
+    /// Drop the session and keyring entry, then return to the sign-in page.
+    pub(crate) fn sign_out(&mut self) {
+        if let Some(handle) = self.gateway.take() {
+            handle.shutdown();
+        }
+        self.runtime = None;
+        self.live_data = false;
+        self.show_settings = false;
+        self.token_draft.clear();
+        self.history.clear();
+        self.metrics.clear();
+        self.metrics_channel = None;
+        self.images.clear();
+
+        let _ = auth::clear_discord_token();
+        self.token_status = "Signed out; token removed from the keyring".to_string();
+        self.gateway_status = "No bot token stored".to_string();
+        self.login = crate::ui::login::LoginState::new(true);
+    }
+
     pub(crate) fn restart_gateway(&mut self) {
         if let Some(handle) = self.gateway.take() {
             handle.shutdown();
@@ -853,6 +927,13 @@ impl eframe::App for RustcordApp {
 
         if self.settings.compact_mode {
             ui.spacing_mut().item_spacing = egui::vec2(6.0, 3.0);
+        }
+
+        if self.login.visible {
+            // Sign-in replaces the whole workspace: with no session there is no
+            // guild, channel or message worth drawing behind it.
+            ui::login::show(self, ui);
+            return;
         }
 
         ui::sidebar::show(self, ui);

@@ -188,3 +188,28 @@ pointer was over the window).
 **Consequences.** `RUST_LOG=debug` answers "is something spinning?" in seconds
 and without a profiler. A nonzero `cpu%` column is only meaningful after the
 startup seconds, and must be read alongside the frame count.
+
+## D15. The login page signs in a bot token, never an account
+
+**Context.** A login page conventionally means email/password. Discord prohibits
+third-party user-account clients, and OAuth2 that yields a user token for
+messaging lands in the same place: automating a user account is what the terms
+forbid, regardless of which app performs it. D2 already ruled the path out.
+
+**Decision.** `ui/login.rs` is a credential page for a **bot token**:
+
+- It opens on first run, when the keyring is empty. An install that already has a
+  token goes straight to the workspace, so it never interrupts a session.
+- Submitting checks the token *shape* (`<id>.<timestamp>.<signature>`, three
+  non-empty parts, 50+ characters) before spending a request. This is a usability
+  check, not authentication: a truncated paste or an application id becomes an
+  immediate message instead of a 401.
+- A valid token goes to the operating-system keyring, then the gateway starts. If
+  the keyring is unavailable the session continues in memory only.
+- "Continue in demo mode" skips sign-in.
+- Settings → Privacy → **Sign out** clears the keyring entry, gateway, history
+  and image cache, then returns to this page.
+
+**Consequences.** There is one credential path in the app, and the page cannot be
+repurposed to harvest an account password. Requests for account login are
+declined by policy, not by accident (`HANDOFF.md`).

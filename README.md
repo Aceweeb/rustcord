@@ -50,6 +50,9 @@ explicit next steps rather than half-implemented stubs that pretend to work.
   textures to stay inside the budget.
 - Bot-token authentication stored in the OS keyring (`src/auth.rs`). Tokens are
   never written to `settings.json`.
+- Sign-in page on first run (`src/ui/login.rs`): token shape is checked before a
+  request is spent, "Continue in demo mode" skips it, and Settings → Privacy →
+  **Sign out** clears the keyring and returns to it.
 - Release profile tuned for size (`opt-level = "z"`, LTO, strip).
 
 Measured on the development machine (Arch, Wayland, release build):
@@ -78,8 +81,10 @@ application's own allocations are ~23 MB anonymous. Reproduce every figure with
   (Incoming attachments and embeds *are* rendered; only uploading is missing.)
 - OAuth2 login. Email/password login is intentionally not implemented: it is
   not part of Discord's supported third-party API model, it exposes account
-  credentials to this process, and it violates Discord's terms. Use a bot token
-  (stored in the keyring) or an approved OAuth2 app instead.
+  credentials to this process, and it violates Discord's terms. The same applies
+  to OAuth2 flows that produce a user token for messaging: that is a self-bot by
+  another name. Use a bot token (stored in the keyring) or an approved OAuth2 app
+  instead.
 - Real Spotify polling loop; the plugin currently uses a demo track.
 - WASM plugin execution. `load_wasm_plugin` fails closed on purpose; see
   `src/plugins/mod.rs` for the intended permission model.
@@ -125,10 +130,12 @@ Copy or edit `settings.json`:
 
 ### Discord connection
 
-Open Settings (`Ctrl+,`) and paste a **bot token** into the password field.
-`Save token` stores it in the Secret Service keyring under `rustcord` /
-`discord_bot_token`. `Connect gateway` starts the WebSocket transport. Tokens
-are never serialized into `settings.json`.
+On first run Rustcord opens on a sign-in page; paste a **bot token** there. The
+token is stored in the Secret Service keyring under `rustcord` /
+`discord_bot_token` and the gateway starts immediately, with progress in the
+status bar. The field also lives in Settings → Privacy, next to `Connect gateway`
+and `Sign out`, which drops the keyring entry and returns to the sign-in page.
+Tokens are never serialized into `settings.json`.
 
 On Arch you need a running Secret Service provider (for example
 `gnome-keyring` or a compatible KWallet setup). If the keyring backend is not

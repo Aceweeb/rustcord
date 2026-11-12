@@ -29,6 +29,8 @@ and embeds render through a bounded image cache:
 - `src/images.rs` — byte-budgeted LRU texture cache, Discord CDN allowlist,
   download/decode caps, background decode worker created on first request.
 - `src/settings.rs` — `image_cache_mb` (default 48, clamped 8–512).
+- `src/ui/login.rs` — first-run bot-token sign-in page with a shape check, a
+  demo-mode skip, and a Sign out path in Settings → Privacy (D15).
 
 ## Immediate next task
 
@@ -54,7 +56,9 @@ neither history paging nor image rendering has been seen working:
 ## Rules for the next session
 
 - Never push without running tests, clippy and a release build first.
-- Never add user-token or password authentication. See `DECISIONS.md` D2.
+- Never add user-token or password authentication. See `DECISIONS.md` D2 and D15.
+  This includes OAuth2 flows that yield a user token for messaging: refusing these
+  requests is deliberate, because the cost is the user's account.
 - Never serialise tokens or write them to logs/diagnostics.
 - Every new dependency must justify its RSS and binary cost. `image` (decode
   only, png/jpeg/gif/webp) and `reqwest`'s `blocking` feature are the most

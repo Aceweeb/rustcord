@@ -1,4 +1,5 @@
 pub mod chat;
+pub mod login;
 pub mod settings;
 pub mod sidebar;
 pub mod theme;

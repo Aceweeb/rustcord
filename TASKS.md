@@ -23,7 +23,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   `src/monitor.rs`).
 - [x] Log capture ring + diagnostics checks/report export (`src/logbuf.rs`,
   `src/diagnostics.rs`).
-- [x] 97 unit tests, clippy `-D warnings` clean, release build verified.
+- [x] Sign-in page for bot tokens (`src/ui/login.rs`): first-run only, token
+  shape check, keyring storage, demo-mode skip, and a Sign out path.
+- [x] 102 unit tests, clippy `-D warnings` clean, release build verified.
 - [x] Measured: 159 MB RSS, 57 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
   (release, documented in `CURRENT_STATE.md`).
 
