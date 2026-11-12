@@ -178,7 +178,17 @@ fn render_qr_code(data: &str) -> Option<egui::ColorImage> {
 }
 
 pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
-    let theme = app.plugins.theme();
+    // Copy theme fields into locals to avoid holding a borrow of `app`
+    // across the CentralPanel closure, which also captures `app`.
+    let (theme_background, theme_surface, theme_accent, theme_text, theme_muted, theme_danger) =
+        (
+            app.plugins.theme().background,
+            app.plugins.theme().surface,
+            app.plugins.theme().accent,
+            app.plugins.theme().text,
+            app.plugins.theme().muted,
+            app.plugins.theme().danger,
+        );
     let mut submit = false;
     let mut demo = false;
     let mut qr_toggle = false;
@@ -192,13 +202,13 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
 
             let (rect, _) = ui.allocate_exact_size(egui::vec2(46.0, 46.0), egui::Sense::hover());
             ui.painter()
-                .circle_filled(rect.center(), 23.0, theme.accent);
+                .circle_filled(rect.center(), 23.0, theme_accent);
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,
                 "R",
                 egui::FontId::proportional(24.0),
-                theme.background,
+                theme_background,
             );
 
             ui.add_space(8.0);
@@ -206,22 +216,22 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 RichText::new("Rustcord")
                     .size(24.0)
                     .strong()
-                    .color(theme.text),
+                    .color(theme_text),
             );
             ui.label(
                 RichText::new("Native Discord client — sign in")
                     .small()
-                    .color(theme.muted),
+                    .color(theme_muted),
             );
             ui.add_space(16.0);
 
             // ── Login-kind selector ──────────────────────────────────────
             egui::Frame::group(ui.style())
-                .fill(theme.surface)
+                .fill(theme_surface)
                 .inner_margin(16.0)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
-                    ui.label(RichText::new("Sign in with").strong().color(theme.text));
+                    ui.label(RichText::new("Sign in with").strong().color(theme_text));
                     ui.add_space(6.0);
 
                     egui::Grid::new("login_kind_grid")
@@ -238,7 +248,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                 ui.label(
                                     RichText::new(kind.description())
                                         .small()
-                                        .color(theme.muted),
+                                        .color(theme_muted),
                                 );
                                 ui.end_row();
                             }
@@ -251,7 +261,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             ui.label(
                                 RichText::new("Paste a bot token from the Discord Developer Portal.")
                                     .small()
-                                    .color(theme.muted),
+                                    .color(theme_muted),
                             );
                             ui.add_space(8.0);
 
@@ -290,7 +300,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                 ui.label(
                                     RichText::new(error)
                                         .small()
-                                        .color(theme.danger),
+                                        .color(theme_danger),
                                 );
                             }
 
@@ -301,21 +311,21 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                      logs or diagnostics.",
                                 )
                                 .small()
-                                .color(theme.muted),
+                                .color(theme_muted),
                             );
                         }
                         LoginKind::Personal => {
                             ui.label(
                                 RichText::new("Paste your Discord account token.")
                                     .small()
-                                    .color(theme.muted),
+                                    .color(theme_muted),
                             );
                             ui.add_space(4.0);
                             ui.label(
                                 RichText::new("⚠️ Automating a user account is against Discord's Terms of Service. \\
                                                You accept the ban risk.")
                                     .small()
-                                    .color(theme.danger),
+                                    .color(theme_danger),
                             );
                             ui.add_space(8.0);
 
@@ -355,7 +365,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                 ui.label(
                                     RichText::new(error)
                                         .small()
-                                        .color(theme.danger),
+                                        .color(theme_danger),
                                 );
                             }
 
@@ -366,7 +376,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                      You can revoke the token at any time from Discord.",
                                 )
                                 .small()
-                                .color(theme.muted),
+                                .color(theme_muted),
                             );
                         }
                         LoginKind::Qr => {
@@ -382,7 +392,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 .link(
                     RichText::new("Continue in demo mode")
                         .small()
-                        .color(theme.muted),
+                        .color(theme_muted),
                 )
                 .clicked()
             {
@@ -393,17 +403,17 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
 
             // ── OAuth2 identity sign-in (separate from messaging) ────────
             egui::Frame::group(ui.style())
-                .fill(theme.surface)
+                .fill(theme_surface)
                 .inner_margin(16.0)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width());
                     ui.label(
-                        RichText::new("Also: Discord identity").strong().color(theme.text),
+                        RichText::new("Also: Discord identity").strong().color(theme_text),
                     );
                     ui.label(
                         RichText::new("OAuth2 `identify` only — shows your name and avatar, never sends messages.")
                             .small()
-                            .color(theme.muted),
+                            .color(theme_muted),
                     );
                     ui.add_space(8.0);
 
@@ -421,7 +431,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                         ui.label(
                             RichText::new("Client ID from your Discord application (OAuth2 page). It is public, not a secret.")
                                 .small()
-                                .color(theme.muted),
+                                .color(theme_muted),
                         );
                         if ui
                             .add(
@@ -444,7 +454,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                 crate::api::oauth::redirect_uri()
                             ))
                             .small()
-                            .color(theme.muted),
+                            .color(theme_muted),
                         );
                     }
 
@@ -460,10 +470,10 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     }
 
                     if let Some(status) = &app.oauth.status {
-                        ui.label(RichText::new(status).small().color(theme.muted));
+                        ui.label(RichText::new(status).small().color(theme_muted));
                     }
                     if let Some(error) = &app.oauth.error {
-                        ui.label(RichText::new(error).small().color(theme.danger));
+                        ui.label(RichText::new(error).small().color(theme_danger));
                     }
                 });
 
@@ -472,14 +482,14 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             // ── Bot invite link ─────────────────────────────────────────
             if app.login.kind == LoginKind::Bot {
                 egui::Frame::group(ui.style())
-                    .fill(theme.surface)
+                    .fill(theme_surface)
                     .inner_margin(16.0)
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.label(
                             RichText::new("Add the bot to a server")
                                 .strong()
-                                .color(theme.text),
+                                .color(theme_text),
                         );
                         ui.label(
                             RichText::new(
@@ -488,19 +498,19 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                  attach files and add reactions.",
                             )
                             .small()
-                            .color(theme.muted),
+                            .color(theme_muted),
                         );
                         ui.add_space(8.0);
 
                         if let Some(client_id) = &app.settings.oauth_client_id {
                             let invite_url = crate::api::oauth::bot_invite_url(client_id);
                             if ui.button("Copy invite URL").clicked() {
-                                ui.ctx().open_url(egui::OpenUrl::same_tab(invite_url));
+                                ui.ctx().open_url(egui::OpenUrl::same_tab(&invite_url));
                             }
                             ui.label(
                                 RichText::new(&invite_url)
                                     .small()
-                                    .color(theme.muted)
+                                    .color(theme_muted)
                                     .monospace(),
                             );
                         } else {
@@ -509,7 +519,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                     "Set a client ID above to generate the bot invite link.",
                                 )
                                 .small()
-                                .color(theme.muted),
+                                .color(theme_muted),
                             );
                         }
                     });
@@ -521,7 +531,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             egui::CollapsingHeader::new(
                 RichText::new("Where do I get a token?")
                     .small()
-                    .color(theme.muted),
+                    .color(theme_muted),
             )
             .show(ui, |ui| {
                 match app.login.kind {
@@ -532,46 +542,46 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             "3. On the same Bot tab, enable Message Content Intent.",
                             "4. Invite it with the bot scope and View Channels + Read Message History.",
                         ] {
-                            ui.label(RichText::new(step).small().color(theme.muted));
+                            ui.label(RichText::new(step).small().color(theme_muted));
                         }
                     }
                     LoginKind::Personal => {
                         ui.label(
                             RichText::new("1. Open Discord in your browser and open DevTools (F12).")
                                 .small()
-                                .color(theme.muted),
+                                .color(theme_muted),
                         );
                         ui.label(
                             RichText::new("2. Go to the Network tab, refresh, and filter for `?locationToken`.")
                                 .small()
-                                .color(theme.muted),
+                                .color(theme_muted),
                         );
                         ui.label(
                             RichText::new("3. The `authorization` header value is your token.")
                                 .small()
-                                .color(theme.muted),
+                                .color(theme_muted),
                         );
                         ui.label(
                             RichText::new("⚠️ Never share this token — anyone with it can access your account.")
                                 .small()
-                                .color(theme.danger),
+                                .color(theme_danger),
                         );
                     }
                     LoginKind::Qr => {
                         ui.label(
                             RichText::new("1. Open Discord on your phone.")
                                 .small()
-                                .color(theme.muted),
+                                .color(theme_muted),
                         );
                         ui.label(
                             RichText::new("2. Tap your avatar → Account → Scan QR Code.")
                                 .small()
-                                .color(theme.muted),
+                                .color(theme_muted),
                         );
                         ui.label(
                             RichText::new("3. Scan the code above and confirm the login on your phone.")
                                 .small()
-                                .color(theme.muted),
+                                .color(theme_muted),
                         );
                     }
                 }
@@ -584,7 +594,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                      user-account clients. Bot tokens and QR-linked identity sessions are the supported paths.",
                 )
                 .small()
-                .color(theme.muted),
+                .color(theme_muted),
             );
         });
     });
@@ -632,12 +642,12 @@ fn show_qr_panel(
     ui.label(
         RichText::new("Scan with the Discord mobile app")
             .strong()
-            .color(theme.text),
+            .color(theme_text),
     );
     ui.label(
         RichText::new("Account → Scan QR Code, then confirm on your phone.")
             .small()
-            .color(theme.muted),
+            .color(theme_muted),
     );
     ui.add_space(8.0);
 
@@ -676,11 +686,11 @@ fn show_qr_panel(
 
     if let Some(status) = &app.login.qr.status {
         ui.add_space(6.0);
-        ui.label(RichText::new(status).small().color(theme.muted));
+        ui.label(RichText::new(status).small().color(theme_muted));
     }
     if let Some(error) = &app.login.qr.error {
         ui.add_space(6.0);
-        ui.label(RichText::new(error).small().color(theme.danger));
+        ui.label(RichText::new(error).small().color(theme_danger));
     }
 
     // If a token was obtained from QR scanning, offer to use it.
@@ -689,7 +699,7 @@ fn show_qr_panel(
         ui.label(
             RichText::new("QR scan succeeded — token received.")
                 .small()
-                .color(theme.text),
+                .color(theme_text),
         );
         if ui
             .add(
