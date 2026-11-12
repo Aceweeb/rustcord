@@ -124,6 +124,19 @@ pub struct Settings {
     #[serde(default = "default_true")]
     pub character_counter: bool,
 
+    // --- Discord Rich Presence ---------------------------------------------
+    /// Publish an activity to the Discord client running on this machine, over
+    /// its local IPC socket. Off by default because it is visible to others.
+    #[serde(default)]
+    pub discord_rpc: bool,
+    /// Public application id used for the presence. Falls back to
+    /// `oauth_client_id` so one application can serve both features.
+    #[serde(default)]
+    pub rpc_client_id: Option<String>,
+    /// Include "in #channel" in the presence; off shows the server only.
+    #[serde(default = "default_true")]
+    pub rpc_show_channel: bool,
+
     // --- memory / notifications -------------------------------------------
     #[serde(default = "default_memory_budget")]
     pub memory_budget_mb: u32,
@@ -154,6 +167,14 @@ pub struct Settings {
     /// user's Discord folder settings (`DECISIONS.md` D32).
     #[serde(default)]
     pub guild_rail: crate::rail::GuildRail,
+}
+
+/// A Discord client id is a snowflake: digits only, so anything else is a paste
+/// error and is dropped rather than sent to the IPC socket.
+fn normalize_client_id(raw: String) -> Option<String> {
+    let trimmed = raw.trim();
+    (!trimmed.is_empty() && trimmed.bytes().all(|byte| byte.is_ascii_digit()))
+        .then(|| trimmed.to_string())
 }
 
 fn default_true() -> bool {
@@ -194,6 +215,9 @@ impl Default for Settings {
             wallpaper: None,
             message_timestamps: true,
             character_counter: true,
+            discord_rpc: false,
+            rpc_client_id: None,
+            rpc_show_channel: true,
             memory_budget_mb: default_memory_budget(),
             memory_alerts: true,
             remember_history: true,
@@ -262,6 +286,13 @@ impl Settings {
     }
 
     // --- theme helpers ------------------------------------------------------
+
+    /// The application id used for Rich Presence: its own, or the OAuth one.
+    pub fn rpc_app_id(&self) -> Option<String> {
+        self.rpc_client_id
+            .clone()
+            .or_else(|| self.oauth_client_id.clone())
+    }
 
     pub fn accent(&self) -> Option<Color32> {
         self.accent_override.as_deref().and_then(parse_css_color)
@@ -372,14 +403,10 @@ impl Settings {
             self.theme_preset = DEFAULT_THEME_ID.to_string();
         }
         if let Some(client_id) = self.oauth_client_id.take() {
-            let trimmed = client_id.trim();
-            // A client id is digits only; anything else is a paste error.
-            self.oauth_client_id =
-                if !trimmed.is_empty() && trimmed.bytes().all(|byte| byte.is_ascii_digit()) {
-                    Some(trimmed.to_string())
-                } else {
-                    None
-                };
+            self.oauth_client_id = normalize_client_id(client_id);
+        }
+        if let Some(client_id) = self.rpc_client_id.take() {
+            self.rpc_client_id = normalize_client_id(client_id);
         }
         if let Some(wallpaper) = self.wallpaper.take() {
             let trimmed = wallpaper.trim();
@@ -427,6 +454,29 @@ mod tests {
         assert_eq!(settings.accent(), None);
         // Identity login is opt-in and absent from older files.
         assert_eq!(settings.oauth_client_id, None);
+        // Rich Presence is opt-in and off for older files.
+        assert!(!settings.discord_rpc);
+        assert_eq!(settings.rpc_app_id(), None);
+        assert!(settings.rpc_show_channel);
+    }
+
+    #[test]
+    fn rpc_client_ids_are_digits_or_nothing() {
+        let mut settings = Settings {
+            discord_rpc: true,
+            rpc_client_id: Some(" 123456789012345678 ".to_string()),
+            ..Settings::default()
+        };
+        settings.normalize();
+        assert_eq!(settings.rpc_app_id().as_deref(), Some("123456789012345678"));
+
+        settings.rpc_client_id = Some("my app".to_string());
+        settings.normalize();
+        assert_eq!(settings.rpc_client_id, None);
+
+        // One application can serve both identity login and presence.
+        settings.oauth_client_id = Some("987654321098765432".to_string());
+        assert_eq!(settings.rpc_app_id().as_deref(), Some("987654321098765432"));
     }
 
     #[test]

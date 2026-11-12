@@ -13,6 +13,7 @@ pub mod nav;
 pub mod plugins;
 pub mod privacy;
 pub mod rail;
+pub mod rpc;
 pub mod search;
 pub mod settings;
 pub mod shortcuts;

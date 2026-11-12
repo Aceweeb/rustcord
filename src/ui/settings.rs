@@ -469,6 +469,50 @@ impl RustcordApp {
             .color(theme.muted),
         );
 
+        ui.add_space(10.0);
+        ui.separator();
+        ui.label(RichText::new("Discord Rich Presence").strong());
+        dirty |= ui
+            .checkbox(
+                &mut self.settings.discord_rpc,
+                "Show what I'm doing on my Discord profile",
+            )
+            .changed();
+
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Application id").color(theme.muted));
+            let mut client_id = self.settings.rpc_client_id.clone().unwrap_or_default();
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut client_id)
+                    .hint_text("digits from your Discord application")
+                    .desired_width(240.0),
+            );
+            // Commit on focus loss: each change restarts the IPC worker.
+            if response.lost_focus() {
+                let trimmed = client_id.trim();
+                let next = (!trimmed.is_empty()).then(|| trimmed.to_string());
+                if next != self.settings.rpc_client_id {
+                    self.settings.rpc_client_id = next;
+                    dirty = true;
+                }
+            }
+        });
+
+        dirty |= ui
+            .checkbox(
+                &mut self.settings.rpc_show_channel,
+                "Include the channel I'm reading",
+            )
+            .changed();
+
+        ui.label(
+            RichText::new(
+                "Presence is sent to the Discord client already running on this machine over its local socket — no token is involved and nothing goes to a server of ours. Leave the id empty to reuse the OAuth application id.",
+            )
+            .small()
+            .color(theme.muted),
+        );
+
         dirty
     }
 

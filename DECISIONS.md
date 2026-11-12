@@ -1168,3 +1168,48 @@ truncating it.
 by tests, and the app builds and starts, but the row stamp and the counter have not
 been seen in a signed-in window — the only credential here is a user token Discord
 rejects (D28).
+
+## D41. Rich Presence uses Discord's local IPC socket, not another token
+
+Discord publishes presence through the Rich Presence IPC protocol: an application
+connects to the socket of the Discord client already running on the machine
+(`$XDG_RUNTIME_DIR/discord-ipc-0`, or inside the Flatpak/Snap runtime directory),
+handshakes with a public application id, and sends `SET_ACTIVITY`. No token, no
+HTTP, no gateway — this is the same channel games and music players use, and it is
+why adding it does not touch D2/D15: nothing here authenticates as a person.
+
+**Why not read presence instead.** Reading friends' activities needs the gateway's
+`GUILD_PRESENCES` intent, which Discord grants to bots in fewer than 100 guilds and
+which is not what "integrate RPC" means here. Rustcord *publishes* its own activity;
+it does not read anybody else's.
+
+**Opt-in and narrow.** `discord_rpc` defaults to off because the activity is visible
+to other people. `rpc_client_id` is a snowflake validated like `oauth_client_id`
+(digits or nothing), with the OAuth application id as a fallback so one application
+can serve identity login and presence. `rpc_show_channel` decides whether the state
+line names the channel; off leaves just the server. Nothing about messages, tokens
+or the keyring is sent — details are the guild name, state is `#channel`, and the
+timestamp is process start.
+
+**Own thread, own failure mode.** The IPC socket may not exist (Discord closed), may
+refuse an invalid id, or may disappear mid-session, so all of that lives in one
+worker thread with a `Sender` held by the app. The thread retries every 15 s, replays
+the last presence after a reconnect, applies changes within 500 ms while connected,
+and logs one line instead of spamming when there is no socket. The UI path only
+calls `Rpc::sync`, which starts, retargets or drops the worker; it never blocks on
+I/O. Disabling the setting or clearing the id drops the sender, the socket closes,
+and Discord removes the activity.
+
+**Socket discovery covers sandboxes.** Flatpak Discord keeps its socket inside
+`app/com.discordapp.Discord/`, so sandboxed clients, canaries, Vesktop and Snap are
+tried before the bare runtime directory. The protocol itself is a small amount of
+code — 8-byte little-endian header, JSON body, opcode 0 for the handshake and 1 for
+frames — and the framing, header validation, field trimming (Discord ignores text
+shorter than two characters) and socket ordering are unit-tested.
+
+**Verified only as far as this machine allows.** The enable/disable path, payload
+shape and transport start-up were exercised live, and the app logs
+`discord rpc: no Discord IPC socket found; will keep checking` when the client is
+absent. Discord is not running here, so an activity has not actually appeared on a
+profile, and no valid application id was available to handshake with. That is
+recorded in `TASKS.md`.

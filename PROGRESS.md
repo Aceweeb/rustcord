@@ -452,6 +452,14 @@ Priority order for the next session:
   right edge, accent near the limit and red past it, using the same constant the
   send guard enforces. 2 new pure tests; suite now 269.
 
+- Integrated Discord Rich Presence (D41). `src/rpc.rs` speaks the official local
+  IPC protocol: socket discovery for native, Flatpak, Snap and Vesktop clients,
+  handshake with a public application id, `SET_ACTIVITY` frames, a worker thread
+  with reconnect/replay and one-time logging, and pure framing/field helpers with 6
+  tests. Settings → Extras gained the opt-in switch, application id field (falls
+  back to the OAuth id) and a channel toggle; presence updates on channel changes
+  and settings edits, and never blocks the UI. Suite now 276.
+
 ---
 
 ## 7. Notes for the next agent

@@ -4,6 +4,12 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [~] Discord Rich Presence (`DECISIONS.md` D41), Settings → Extras: official
+  local IPC protocol, socket discovery for native/Flatpak/Snap/Vesktop, handshake,
+  `SET_ACTIVITY` with server + optional channel, worker thread with reconnect and
+  replay, opt-in switch and application id (falls back to the OAuth id). 6 pure
+  tests; the transport starts and retries live, but Discord was not running here,
+  so no activity has appeared on a profile.
 - [~] Vencord-style extras (`DECISIONS.md` D40), Settings → Extras: per-message
   timestamps with Today/Yesterday/date (exact weekday, date and seconds in the
   tooltip) and a live `N/2000` composer counter that warns at 1800 and turns red

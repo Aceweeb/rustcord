@@ -19,6 +19,10 @@
 //! state. If it is ever wired to the network, its host has to be added here and
 //! the setting has to be disclosed in the settings window first.
 //!
+//! Rich Presence (`src/rpc.rs`) is not network traffic: it writes `SET_ACTIVITY`
+//! frames to the Discord client's local unix socket, with a public application id
+//! and no credential. It is off by default.
+//!
 //! Nothing here reads the network or touches the filesystem.
 
 /// Hosts Rustcord will talk to. Exact matches only: `discord.com.evil.test` and

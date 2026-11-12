@@ -111,6 +111,10 @@ pub struct RustcordApp {
     pub(crate) log_filter: String,
     /// Blurred desktop wallpaper painted behind the translucent panels.
     pub(crate) wallpaper: Option<Backdrop>,
+    /// Discord Rich Presence worker, if the feature is enabled.
+    pub(crate) rpc: crate::rpc::Rpc,
+    /// When this process started, so the presence shows elapsed time.
+    pub(crate) started_unix: i64,
     /// Kept so settings changes can reload the backdrop without a frame context.
     ctx: egui::Context,
     /// Server icon under the pointer, with its rect, so the rail can draw a
@@ -355,7 +359,7 @@ impl RustcordApp {
         let (action_tx, action_results) = mpsc::channel();
         let (member_tx, member_results) = mpsc::channel();
 
-        Self {
+        let mut app = Self {
             settings,
             guilds,
             channels,
@@ -421,18 +425,55 @@ impl RustcordApp {
             history_rx,
             send_tx,
             send_results,
-        }
+            rpc: crate::rpc::Rpc::default(),
+            started_unix: chrono::Utc::now().timestamp(),
+        };
+        app.refresh_presence();
+        app
     }
 
     // -----------------------------------------------------------------------
     // Settings integration
     // -----------------------------------------------------------------------
 
+    /// Publish the current channel to Discord Rich Presence. A no-op when the
+    /// feature is off: `Rpc::sync` drops the worker and returns.
+    pub(crate) fn refresh_presence(&mut self) {
+        let presence = self.presence();
+        self.rpc.sync(&self.settings, presence);
+    }
+
+    /// What the presence says. Server first, then the channel: both are already
+    /// visible to anyone who can see the bot's channels.
+    fn presence(&self) -> Option<crate::rpc::Presence> {
+        if !self.settings.discord_rpc {
+            return None;
+        }
+
+        let guild = self
+            .selected_guild
+            .as_ref()
+            .and_then(|id| self.guilds.iter().find(|guild| &guild.id == id))
+            .map(|guild| guild.name.clone());
+        let state = self
+            .settings
+            .rpc_show_channel
+            .then(|| self.selected_channel_name().map(|name| format!("#{name}")))
+            .flatten();
+
+        Some(crate::rpc::Presence {
+            details: guild.unwrap_or_else(|| "Rustcord".to_string()),
+            state,
+            started_unix: self.started_unix,
+        })
+    }
+
     /// Persist and apply a settings change: normalise, rebuild the theme, save.
     pub(crate) fn settings_changed(&mut self) {
         self.settings.normalize();
         self.plugins.on_settings(&mut self.settings);
         self.refresh_backdrop();
+        self.refresh_presence();
         self.settings_ui.hex_draft.clear();
         if let Err(err) = self.settings.save() {
             log::warn!("could not persist settings: {err:#}");
@@ -1202,6 +1243,7 @@ impl RustcordApp {
     pub(crate) fn select_channel(&mut self, channel_id: String) {
         self.unread.mark_read(&channel_id);
         self.selected_channel = Some(channel_id);
+        self.refresh_presence();
     }
 
     /// Open the channel a search result belongs to.
@@ -1216,6 +1258,7 @@ impl RustcordApp {
             self.unread.mark_read(&channel.id);
             self.selected_channel = Some(channel.id);
             self.status_line = Some(format!("opened #{}", channel.name));
+            self.refresh_presence();
         }
         self.close_search();
     }

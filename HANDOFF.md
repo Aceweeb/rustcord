@@ -7,12 +7,26 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 264 lib + 5 bin tests passing (269)
+- `cargo test --all-targets`: 271 lib + 5 bin tests passing (276)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Discord Rich Presence (`DECISIONS.md` D41):
+
+- `src/rpc.rs` (new) — IPC frame encode/validate, socket candidates (Flatpak,
+  Snap, Vesktop, bare runtime dir), handshake, `SET_ACTIVITY`/clear, presence
+  field trimming, and a worker thread that reconnects every 15 s and replays the
+  last presence; 6 tests.
+- `src/settings.rs` — `discord_rpc` (default false), `rpc_client_id` (digits-only,
+  falls back to `oauth_client_id`), `rpc_show_channel`.
+- `src/app.rs` — `rpc` handle, `started_unix`, `refresh_presence` on construction,
+  settings changes and channel selection; presence is guild name + `#channel`.
+- `src/ui/settings.rs` — Extras section hosts the switch, application id field and
+  channel toggle.
+- `src/privacy.rs` — documents the local socket as non-network, opt-in traffic.
 
 Vencord-style extras (`DECISIONS.md` D40):
 

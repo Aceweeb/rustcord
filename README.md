@@ -53,6 +53,10 @@ half-implemented stubs that pretend to work.
   accent colours, painted previews, instant switching and persisted selection.
 - Live memory and CPU figures sampled from `/proc`, with a budget alert.
 - Dark theme with live palette application.
+- Discord Rich Presence (Settings → Extras): publishes "playing Rustcord" with the
+  server and, optionally, the open channel to the Discord client running on this
+  machine, over its local IPC socket. No token is involved — it needs a public
+  application id, and a missing socket is retried quietly in the background.
 - Vencord/BetterDiscord-style `.theme` parsing for CSS custom properties:
   `--background-primary`, `--background-secondary`, `--background-tertiary`,
   `--text-normal`, `--text-muted`, `--brand-experiment`, `--status-online`,
@@ -261,12 +265,32 @@ Copy or edit `settings.json`:
   "theme_file": "themes/vencord-example.theme",
   "show_blyat_banner": true,
   "translucent": true,
-  "wallpaper": null
+  "wallpaper": null,
+  "message_timestamps": true,
+  "character_counter": true,
+  "discord_rpc": false,
+  "rpc_client_id": null,
+  "rpc_show_channel": true
 }
 ```
 
 `translucent` turns the glass on or off, and `wallpaper` pins the backdrop image
 for the blurred layer; `null` means "detect it" (Hyprland, KDE, GNOME, XFCE).
+`message_timestamps` and `character_counter` are the Extras toggles, and
+`discord_rpc` publishes Rich Presence with `rpc_client_id` (falling back to
+`oauth_client_id`), optionally naming the open channel when `rpc_show_channel` is
+true.
+
+### Rich Presence
+
+Create a Discord application (the same one as the bot is fine), copy its
+**Application ID** from the General Information page, and paste it into
+Settings → Extras → Application id with the presence switch on. Rustcord then talks
+to the Discord desktop client over its local socket; the activity shows the server
+you are in and, unless you turn it off, the channel you are reading. Nothing is sent
+to a server of ours, and no credential leaves the app. The Discord client has to be
+running — with it closed, the app logs that it found no IPC socket and keeps
+checking in the background.
 
 `theme_file` can be absolute or relative to the working directory. If it is
 `null`, Rustcord looks for `~/.config/rustcord/theme.theme`.
