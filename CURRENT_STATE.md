@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **160 passed (155 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **169 passed (164 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -78,6 +78,23 @@ rebuild (driver and font warm-up), and later samples caught 5-second bursts of
 0.02% of a core and the frame counter showed 0.2 fps at idle, so the loader is
 innocent. See `DECISIONS.md` D14 — idle CPU is only meaningful next to a frame
 count.
+
+## Gateway reliability
+
+`src/api/backoff.rs` (D19), wired into `src/api/gateway.rs`:
+
+- At most **10 identifies an hour**, sliding; a spent budget waits **before**
+  sending anything, and the wait is not counted as a failed attempt.
+- A Resume costs no allowance.
+- Reconnect delays are jittered to 50–100 % of the step, never zero.
+- The backoff ladder resets only after a session has stayed up 60 s, so a
+  handshake that immediately dies keeps backing off instead of hammering.
+- Monotonic clock only; a system clock change cannot refill or empty the budget.
+
+11 tests: the limit and its boundary, wait arithmetic, sliding expiry, reset,
+ jitter bounds (including out-of-range rolls and a zero delay), the 60 s gate, and
+the RNG staying in range. The socket loop itself is still only reachable with a
+real token, so the wiring is compile-checked and review-checked, not live-tested.
 
 ## Discord identity login (OAuth2 `identify`)
 

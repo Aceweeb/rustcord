@@ -7,7 +7,7 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 92 lib + 5 bin tests passing
+- `cargo test --all-targets`: 164 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
@@ -36,6 +36,12 @@ and embeds render through a bounded image cache:
 - Message lifecycle events (`MESSAGE_UPDATE`, `MESSAGE_DELETE`,
   `MESSAGE_REACTION_*`, `TYPING_START`) with pure list operations in
   `models.rs` and a typing tracker; 25 tests, all synthetic (D17).
+- OAuth2 identity sign-in (`identify` + PKCE, keyring session, restoration,
+  logout, account switching); 18 tests (D18).
+- Gateway reliability (`src/api/backoff.rs`): ten identifies an hour, jittered
+  delays, 60 s stability gate; 11 tests (D19).
+- `YAPFAST_PARITY.md`: the feature audit against Yapfast, including what is
+  refused by decision rather than missing.
 
 ## Immediate next task
 
@@ -56,12 +62,12 @@ neither history paging nor image rendering has been seen working:
    + `http://127.0.0.1:53134/callback` redirect). Ports 53134 and the client-ID
    normalisation are the two things to test first. Refresh-token support is the
    obvious follow-up; today an expired session asks for a new sign-in.
-2. Gateway identify cap and jittered backoff (Yapfast's account-safety pattern:
-   at most 10 IDENTIFYs an hour, random 50–100 % of each backoff step, reset the
-   backoff only after a session has stayed up a while). Current backoff is
-   `backoff_secs(attempt)` with no jitter and no identify cap.
-3. Per-message context menu (edit, delete, copy) so the lifecycle events above
-   are not only inbound.
+2. Local message search over loaded history (`YAPFAST_PARITY.md` §7). Discord's
+   guild search endpoint needs a user token, so a server-side search is not an
+   option: index what is in memory, keep it bounded, and say in the UI that it
+   searches loaded history only.
+3. Per-message context menu (edit, delete, copy, react, reply) so the lifecycle
+   events above are not only inbound.
 4. Packaging: icon asset + PKGBUILD.
 
 ## Rules for the next session

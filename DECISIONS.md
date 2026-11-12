@@ -321,3 +321,32 @@ registered `http://127.0.0.1:53134/callback` redirect; without them the button i
 disabled and explains what is missing. Refresh is *not* implemented: an expired
 session is re-authorised by signing in again, which the flag in the UI prompts.
 The end-to-end exchange cannot be verified here without a real application.
+
+## D19. The gateway spends at most ten identifies an hour
+
+**Context.** Every fresh websocket handshake costs an IDENTIFY. A client that
+reconnects — revoked token, no network, a captive portal, a wrong clock — can
+burn Discord's documented 1000-a-day ceiling in minutes and then be locked out
+of the gateway entirely, which looks exactly like a broken app. The old ladder
+was a bare `2, 4, 8 … 60` seconds with no limit and no jitter, so a fleet on the
+same outage retried in lockstep.
+
+**Decision.** `src/api/backoff.rs`:
+
+- A sliding-window budget of **10 identifies an hour**. When it is spent, the
+  cycle returns `CycleOutcome::BudgetWait` **before** sending anything, closes the
+  socket, and the loop sleeps that long with the shutdown channel still selectable.
+- A budget wait is **not** a failed attempt: the backoff ladder keeps its place.
+- A Resume costs no allowance, because Discord does not count it as an identify.
+- Each delay is scaled by a random factor in `[0.5, 1.0)`; a failed RNG lands at
+  0.5 rather than at zero, and a delay can never be zero.
+- The ladder resets only after a session has **stayed up for 60 s**. A handshake
+  that succeeds and dies immediately keeps backing off, which is the crash-loop
+  case the old code handled wrongly.
+- Time is monotonic (`Instant`), never the wall clock, so a clock jump cannot
+  refill or empty the budget.
+
+**Consequences.** A permanently broken token now costs one identify every six
+minutes instead of a hot reconnect loop, and the status bar says why it is
+waiting. The cost is slower recovery after a long outage: at worst the app waits
+out the window rather than reconnecting at once, which is the intended trade.

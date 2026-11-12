@@ -375,6 +375,13 @@ Priority order for the next session:
   session separate from the bot token, restoration, logout and account
   switching. Identity only — it grants no messaging, and the UI says so. 18 tests
   (`DECISIONS.md` D18). Test suite: 160.
+- Added gateway reliability (`src/api/backoff.rs`, D19): a sliding budget of ten
+  identifies an hour that waits instead of reconnecting, jittered reconnect
+  delays (50–100 %, never zero), and a backoff reset that only fires after a
+  session has stayed up 60 s. 11 tests. Test suite: 169.
+- Wrote `YAPFAST_PARITY.md`, an honest audit against Yapfast's public feature
+  list: implemented, partial, missing-but-legitimate, refused-by-decision and
+  needs-research, with the bot-token line drawn explicitly.
 
 ---
 

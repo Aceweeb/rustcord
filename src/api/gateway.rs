@@ -1,3 +1,7 @@
+use super::backoff::{
+    jittered_secs, monotonic_secs, random_unit, should_reset_backoff, IdentifyAllow,
+    IdentifyBudget, IDENTIFY_LIMIT,
+};
 use crate::models::{Channel, ChannelKind, Embed, Guild, Message, Presence, User};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
@@ -127,7 +131,8 @@ struct SessionState {
     session_id: Option<String>,
     resume_url: Option<String>,
     sequence: Option<u64>,
-    reset_backoff: bool,
+    /// When the last READY/RESUMED arrived, if it has not been consumed yet.
+    healthy_since: Option<std::time::Instant>,
 }
 
 impl SessionState {
@@ -135,6 +140,7 @@ impl SessionState {
         self.session_id = None;
         self.resume_url = None;
         self.sequence = None;
+        self.healthy_since = None;
     }
 }
 
@@ -142,6 +148,9 @@ enum CycleOutcome {
     Shutdown,
     Reconnect(String),
     InvalidSession,
+    /// The identify allowance is spent; wait this long before reconnecting.
+    /// Deliberately not counted as a failed attempt.
+    BudgetWait(u64),
 }
 
 async fn run_gateway(
@@ -152,12 +161,36 @@ async fn run_gateway(
 ) -> Result<()> {
     let mut session = SessionState::default();
     let mut attempt: u32 = 0;
+    let mut identify_budget = IdentifyBudget::new();
 
     loop {
-        let outcome = gateway_cycle(token, intents, &tx, &mut shutdown, &mut session).await;
+        let outcome = gateway_cycle(
+            token,
+            intents,
+            &tx,
+            &mut shutdown,
+            &mut session,
+            &mut identify_budget,
+        )
+        .await;
 
         let reason = match outcome {
             CycleOutcome::Shutdown => return Ok(()),
+            CycleOutcome::BudgetWait(secs) => {
+                let _ = tx.send(GatewayEvent::Reconnecting {
+                    attempt,
+                    delay_secs: secs,
+                    reason: format!(
+                        "identify allowance spent ({IDENTIFY_LIMIT} an hour); waiting {secs}s"
+                    ),
+                });
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(secs)) => {}
+                    _ = shutdown.recv() => return Ok(()),
+                }
+                // Not a failure: the ladder keeps its place.
+                continue;
+            }
             CycleOutcome::InvalidSession => {
                 session.invalidate();
                 "invalid session (check the bot token)".to_string()
@@ -165,15 +198,20 @@ async fn run_gateway(
             CycleOutcome::Reconnect(reason) => reason,
         };
 
-        // A READY or RESUMED event means the connection is healthy again, so
-        // the next failure should start the backoff from the bottom.
-        if session.reset_backoff {
-            session.reset_backoff = false;
+        // Only a session that stayed up resets the ladder. A handshake that
+        // succeeds and dies immediately must keep backing off, or a crash loop
+        // would retry every two seconds forever.
+        if session
+            .healthy_since
+            .take()
+            .is_some_and(|since| should_reset_backoff(since.elapsed().as_secs_f64()))
+        {
             attempt = 0;
         }
 
         attempt = attempt.saturating_add(1);
-        let delay_secs = backoff_secs(attempt);
+        // Jittered so a fleet on the same outage does not retry in lockstep.
+        let delay_secs = jittered_secs(backoff_secs(attempt), random_unit());
         let _ = tx.send(GatewayEvent::Reconnecting {
             attempt,
             delay_secs,
@@ -195,6 +233,7 @@ async fn gateway_cycle(
     tx: &mpsc::UnboundedSender<GatewayEvent>,
     shutdown: &mut mpsc::UnboundedReceiver<()>,
     session: &mut SessionState,
+    identify_budget: &mut IdentifyBudget,
 ) -> CycleOutcome {
     let url = session
         .resume_url
@@ -247,12 +286,19 @@ async fn gateway_cycle(
     // start a fresh Identify handshake.
     let resume = session.session_id.clone().zip(session.sequence);
     let (op, data, action) = match resume {
+        // A resume is not an identify and costs no allowance.
         Some((session_id, seq)) => (
             6,
             json!({ "token": token, "session_id": session_id, "seq": seq }),
             "Resume",
         ),
-        None => (2, identify_data(token, intents), "Identify"),
+        None => match identify_budget.try_take(monotonic_secs()) {
+            IdentifyAllow::Allowed => (2, identify_data(token, intents), "Identify"),
+            IdentifyAllow::Wait { retry_after } => {
+                let _ = write.close().await;
+                return CycleOutcome::BudgetWait(retry_after.max(1));
+            }
+        },
     };
     let payload = json!({ "op": op, "d": data });
     if let Err(err) = write
@@ -347,10 +393,10 @@ async fn gateway_cycle(
                                         {
                                             session.resume_url = Some(url.to_string());
                                         }
-                                        session.reset_backoff = true;
+                                        session.healthy_since = Some(std::time::Instant::now());
                                     }
                                     "RESUMED" => {
-                                        session.reset_backoff = true;
+                                        session.healthy_since = Some(std::time::Instant::now());
                                         tx.send(GatewayEvent::Resumed).ok();
                                     }
                                     _ => {}

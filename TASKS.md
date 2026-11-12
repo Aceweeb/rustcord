@@ -6,6 +6,11 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 - [x] Native egui window, guild rail, channel list, member list, message list,
   composer (`src/ui/sidebar.rs`, `src/ui/chat.rs`).
+- [x] Gateway reliability (`DECISIONS.md` D19): identify budget of 10 an hour,
+  jittered backoff (50–100 %), stability-gated reset after 60 s, monotonic clock.
+  11 tests in `src/api/backoff.rs`.
+- [~] `cargo test --all-targets`: **169 passing** (164 lib + 5 bin), clippy clean,
+  release build successful. Audited against Yapfast in `YAPFAST_PARITY.md`.
 - [x] Gateway transport: TLS WebSocket, Hello/Identify, heartbeat, ACK tracking,
   RESUME with sequence + `resume_gateway_url`, INVALID_SESSION, exponential
   backoff 2 s → 60 s (`src/api/gateway.rs`). Tested with synthetic payloads.

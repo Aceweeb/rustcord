@@ -1,3 +1,4 @@
+pub mod backoff;
 pub mod discord;
 pub mod gateway;
 pub mod oauth;

@@ -20,7 +20,8 @@ main.rs                     installs log capture, loads Settings, starts eframe
      │   └─ blyat            example banner
      ├─ api/
      │   ├─ gateway.rs      tokio WebSocket: Hello/Identify/heartbeat,
-     │   │                  RESUME, backoff, dispatch parsing
+     │   │                  RESUME, dispatch parsing
+     │   ├─ backoff.rs       identify budget, jitter, stability-gated reset
      │   ├─ discord.rs      typed REST v10 (history pages, send, current user)
      │   └─ spotify.rs      typed currently-playing client
      ├─ images.rs           byte-bounded LRU of decoded textures + CDN allowlist
@@ -49,7 +50,9 @@ main.rs                     installs log capture, loads Settings, starts eframe
    `ImageLoader::prepare` queues whatever is neither cached nor already in
    flight. The UI only uploads finished RGBA buffers; nothing blocks.
 4. **Gateway events** are plain values over an `mpsc` channel; the UI thread
-   never awaits. `poll_gateway` is non-blocking (`try_recv`).
+   never awaits. `poll_gateway` is non-blocking (`try_recv`). Reconnects are paced
+   by `api::backoff`: an identify budget, jittered delays and a stability gate
+   (D19), independent of the REST limiter in `api::ratelimit` (D16).
 5. **Live events**: `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_REACTION_*` and
    `TYPING_START` mutate the same list the view renders. Edits and deletes never
    refetch history, so pagination and measured row heights stay coherent; typing
