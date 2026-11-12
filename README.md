@@ -30,6 +30,9 @@ half-implemented stubs that pretend to work.
   have no server read state) and capped at 99+.
 - Ctrl+K quick switcher over servers and channels, with prefix-first ranking,
   arrow/Enter navigation and a rebindable shortcut.
+- Guild folders and drag-free ordering: right-click a server to move it, group it
+  into a folder or ungroup it. Stored in `settings.json`, since a bot cannot read
+  a user's Discord folder settings.
 - Nine-section settings window: Appearance, Themes, Performance, Memory,
   Notifications, Shortcuts, Privacy, Diagnostics, About (`Ctrl+,`).
 - 12 built-in theme presets across Dark, Light, Purple and AMOLED, plus custom

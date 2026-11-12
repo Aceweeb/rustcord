@@ -7,12 +7,24 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 223 lib + 5 bin tests passing
+- `cargo test --all-targets`: 232 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Guild folders and drag-free ordering (`DECISIONS.md` D32):
+
+- `src/rail.rs` — `GuildRail { order, folders }` with `items`, `move_guild`,
+  `move_folder`, `new_folder`, `add_to_folder`, `remove_from_folder`,
+  `delete_folder`; stale ids and empty folders degrade instead of breaking; 10
+  tests including a JSON roundtrip.
+- `src/settings.rs` — `guild_rail` field, saved with everything else.
+- `src/ui/sidebar.rs` — rail draws `RailItem`s, folder tiles with 2×2 initials,
+  right-click menus for move/add/ungroup, and badges for members.
+- `src/app.rs` — `rail_expanded` (session-only expansion state).
+
 
 Ctrl+K quick switcher (`DECISIONS.md` D31):
 

@@ -21,9 +21,67 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     channel_list(app, ui);
 }
 
+/// Everything the rail needs to draw a row, grouped so the row helper does not
+/// take eight loose arguments.
+struct RailView<'a> {
+    theme: &'a AppTheme,
+    badges: &'a std::collections::BTreeMap<String, (u32, bool)>,
+    folders: &'a [(String, String)],
+    selected: Option<&'a str>,
+}
+
+#[derive(Debug, Clone)]
+enum RailAction {
+    Select(String),
+    ToggleFolder(String),
+    MoveGuild(String, i32),
+    MoveFolder(String, i32),
+    NewFolder(String),
+    AddToFolder(String, String),
+    RemoveFromFolder(String),
+    DeleteFolder(String),
+}
+
 fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
     let theme = app.plugins.theme().clone();
-    let mut selected_guild: Option<String> = None;
+    let guilds = app.guilds.clone();
+    let items = app.settings.guild_rail.items(&guilds);
+    let expanded = app.rail_expanded.clone();
+    let selected = app.selected_guild.clone();
+
+    // Badges are computed once per guild instead of rescanning channels per icon.
+    let badges: std::collections::BTreeMap<String, (u32, bool)> = guilds
+        .iter()
+        .map(|guild| {
+            let ids = app
+                .channels
+                .iter()
+                .filter(|channel| channel.guild_id == guild.id)
+                .map(|channel| channel.id.as_str());
+            (
+                guild.id.clone(),
+                (
+                    app.unread.guild_mentions(ids.clone()),
+                    app.unread.guild_unread(ids),
+                ),
+            )
+        })
+        .collect();
+    let folders: Vec<(String, String)> = app
+        .settings
+        .guild_rail
+        .folders
+        .iter()
+        .map(|folder| (folder.id.clone(), folder.name.clone()))
+        .collect();
+
+    let view = RailView {
+        theme: &theme,
+        badges: &badges,
+        folders: &folders,
+        selected: selected.as_deref(),
+    };
+    let mut actions: Vec<RailAction> = Vec::new();
 
     egui::Panel::left("guild_rail")
         .exact_size(RAIL_WIDTH)
@@ -37,89 +95,123 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.vertical_centered(|ui| {
-                        for guild in &app.guilds {
-                            let selected = app.selected_guild.as_deref() == Some(guild.id.as_str());
+                        for item in &items {
+                            match item {
+                                crate::rail::RailItem::Folder(folder) => {
+                                    let open = expanded.contains(&folder.id);
+                                    let active = selected
+                                        .as_deref()
+                                        .map(|id| folder.contains(id))
+                                        .unwrap_or(false);
+                                    let response =
+                                        folder_icon(ui, &theme, folder, &guilds, open, active);
 
-                            if selected {
-                                // Discord's white pill, hugging the left edge.
-                                let top = ui.cursor().top();
-                                let rail_left = ui.max_rect().left();
-                                ui.painter().rect_filled(
-                                    egui::Rect::from_min_size(
-                                        egui::pos2(rail_left, top + 10.0),
-                                        egui::vec2(4.0, GUILD_ICON - 20.0),
-                                    ),
-                                    2.0,
-                                    Color32::WHITE,
-                                );
+                                    if response.clicked() {
+                                        actions.push(RailAction::ToggleFolder(folder.id.clone()));
+                                    }
+                                    response.context_menu(|ui| {
+                                        if ui.button("Move up").clicked() {
+                                            actions.push(RailAction::MoveFolder(
+                                                folder.id.clone(),
+                                                -1,
+                                            ));
+                                            ui.close();
+                                        }
+                                        if ui.button("Move down").clicked() {
+                                            actions
+                                                .push(RailAction::MoveFolder(folder.id.clone(), 1));
+                                            ui.close();
+                                        }
+                                        ui.separator();
+                                        if ui.button("Ungroup folder").clicked() {
+                                            actions
+                                                .push(RailAction::DeleteFolder(folder.id.clone()));
+                                            ui.close();
+                                        }
+                                    });
+
+                                    if open {
+                                        for member in &folder.guilds {
+                                            let Some(guild) =
+                                                guilds.iter().find(|guild| &guild.id == member)
+                                            else {
+                                                continue;
+                                            };
+                                            let mut member_actions = Vec::new();
+                                            ui.horizontal(|ui| {
+                                                ui.add_space(6.0);
+                                                guild_row(
+                                                    ui,
+                                                    &view,
+                                                    guild,
+                                                    true,
+                                                    &mut member_actions,
+                                                );
+                                            });
+                                            actions.extend(member_actions);
+                                        }
+                                    }
+                                    ui.add_space(8.0);
+                                }
+                                crate::rail::RailItem::Guild(id) => {
+                                    let Some(guild) = guilds.iter().find(|guild| &guild.id == id)
+                                    else {
+                                        continue;
+                                    };
+                                    guild_row(ui, &view, guild, false, &mut actions);
+                                }
                             }
-
-                            // Circle when idle, rounded square when active.
-                            let radius = if selected {
-                                16
-                            } else {
-                                (GUILD_ICON / 2.0) as u8
-                            };
-                            let fill = if selected {
-                                theme.accent
-                            } else {
-                                theme.surface
-                            };
-                            let response = ui.add(
-                                egui::Button::new(
-                                    RichText::new(initial(&guild.name))
-                                        .size(18.0)
-                                        .color(Color32::WHITE),
-                                )
-                                .min_size(egui::vec2(GUILD_ICON, GUILD_ICON))
-                                .corner_radius(egui::CornerRadius::same(radius))
-                                .fill(fill),
-                            );
-                            if response.clicked() {
-                                selected_guild = Some(guild.id.clone());
-                            }
-
-                            // Guild-level badge: mentions win, otherwise a dot.
-                            let ids = app
-                                .channels
-                                .iter()
-                                .filter(|channel| channel.guild_id == guild.id)
-                                .map(|channel| channel.id.as_str());
-                            let mentions = app.unread.guild_mentions(ids.clone());
-                            if mentions > 0 {
-                                let label = if mentions > crate::models::UNREAD_BADGE_CAP {
-                                    format!("{}+", crate::models::UNREAD_BADGE_CAP)
-                                } else {
-                                    mentions.to_string()
-                                };
-                                let width = 14.0 + label.chars().count() as f32 * 4.0;
-                                let centre = response.rect.right_bottom() - egui::vec2(2.0, 2.0);
-                                let pill = egui::Rect::from_center_size(
-                                    centre,
-                                    egui::vec2(width.max(16.0), 16.0),
-                                );
-                                ui.painter()
-                                    .rect_filled(pill, 8.0, Color32::from_rgb(242, 63, 66));
-                                ui.painter().text(
-                                    pill.center(),
-                                    egui::Align2::CENTER_CENTER,
-                                    label,
-                                    egui::FontId::proportional(11.0),
-                                    Color32::WHITE,
-                                );
-                            } else if app.unread.guild_unread(ids) {
-                                ui.painter().circle_filled(
-                                    response.rect.right_bottom() - egui::vec2(6.0, 6.0),
-                                    4.0,
-                                    Color32::WHITE,
-                                );
-                            }
-
-                            ui.add_space(8.0);
                         }
                     });
                 });
         });
+
+    let mut layout_changed = false;
+    let mut selected_guild: Option<String> = None;
+
+    for action in actions {
+        match action {
+            RailAction::Select(id) => selected_guild = Some(id),
+            RailAction::ToggleFolder(id) => {
+                if !app.rail_expanded.remove(&id) {
+                    app.rail_expanded.insert(id);
+                }
+            }
+            RailAction::MoveGuild(id, delta) => {
+                layout_changed |= app.settings.guild_rail.move_guild(&app.guilds, &id, delta);
+            }
+            RailAction::MoveFolder(id, delta) => {
+                layout_changed |= app.settings.guild_rail.move_folder(&app.guilds, &id, delta);
+            }
+            RailAction::NewFolder(id) => {
+                let name = app
+                    .guilds
+                    .iter()
+                    .find(|guild| guild.id == id)
+                    .map(|guild| guild.name.clone())
+                    .unwrap_or_else(|| "Folder".to_string());
+                let folder = app.settings.guild_rail.new_folder(&id, &name);
+                app.rail_expanded.insert(folder);
+                app.status_line = Some(format!("created folder {name}"));
+                layout_changed = true;
+            }
+            RailAction::AddToFolder(guild, folder) => {
+                layout_changed |= app.settings.guild_rail.add_to_folder(&guild, &folder);
+                app.rail_expanded.insert(folder);
+            }
+            RailAction::RemoveFromFolder(id) => {
+                layout_changed |= app.settings.guild_rail.remove_from_folder(&id);
+            }
+            RailAction::DeleteFolder(id) => {
+                layout_changed |= app.settings.guild_rail.delete_folder(&id);
+                app.rail_expanded.remove(&id);
+            }
+        }
+    }
+
+    if layout_changed {
+        app.settings_changed();
+    }
 
     if let Some(id) = selected_guild {
         app.selected_guild = Some(id.clone());
@@ -132,6 +224,187 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
             app.select_channel(first);
         }
     }
+}
+
+fn guild_row(
+    ui: &mut egui::Ui,
+    view: &RailView<'_>,
+    guild: &crate::models::Guild,
+    in_folder: bool,
+    actions: &mut Vec<RailAction>,
+) {
+    let theme = view.theme;
+    let folders = view.folders;
+    let selected = view.selected == Some(guild.id.as_str());
+
+    if selected {
+        // Discord's white pill, hugging the left edge.
+        let top = ui.cursor().top();
+        let rail_left = ui.max_rect().left();
+        ui.painter().rect_filled(
+            egui::Rect::from_min_size(
+                egui::pos2(rail_left, top + 10.0),
+                egui::vec2(4.0, GUILD_ICON - 20.0),
+            ),
+            2.0,
+            Color32::WHITE,
+        );
+    }
+
+    // Circle when idle, rounded square when active.
+    let radius = if selected {
+        16
+    } else {
+        (GUILD_ICON / 2.0) as u8
+    };
+    let fill = if selected {
+        theme.accent
+    } else {
+        theme.surface
+    };
+    let response = ui.add(
+        egui::Button::new(
+            RichText::new(initial(&guild.name))
+                .size(18.0)
+                .color(Color32::WHITE),
+        )
+        .min_size(egui::vec2(GUILD_ICON, GUILD_ICON))
+        .corner_radius(egui::CornerRadius::same(radius))
+        .fill(fill),
+    );
+    if response.clicked() {
+        actions.push(RailAction::Select(guild.id.clone()));
+    }
+
+    response.context_menu(|ui| {
+        ui.set_min_width(200.0);
+        if ui.button("Move up").clicked() {
+            actions.push(RailAction::MoveGuild(guild.id.clone(), -1));
+            ui.close();
+        }
+        if ui.button("Move down").clicked() {
+            actions.push(RailAction::MoveGuild(guild.id.clone(), 1));
+            ui.close();
+        }
+
+        ui.separator();
+        if folders.is_empty() {
+            ui.add_enabled(false, egui::Button::new("Add to folder"))
+                .on_disabled_hover_text("Right-click a server and create a folder first");
+        } else {
+            ui.menu_button("Add to folder", |ui| {
+                for (id, name) in folders {
+                    if ui.button(name).clicked() {
+                        actions.push(RailAction::AddToFolder(guild.id.clone(), id.clone()));
+                        ui.close();
+                    }
+                }
+            });
+        }
+        if ui.button("New folder with this server").clicked() {
+            actions.push(RailAction::NewFolder(guild.id.clone()));
+            ui.close();
+        }
+        if in_folder && ui.button("Remove from folder").clicked() {
+            actions.push(RailAction::RemoveFromFolder(guild.id.clone()));
+            ui.close();
+        }
+    });
+
+    if let Some((mentions, unread)) = view.badges.get(&guild.id) {
+        draw_badges(ui, response.rect, *mentions, *unread);
+    }
+
+    ui.add_space(8.0);
+}
+
+fn draw_badges(ui: &egui::Ui, rect: egui::Rect, mentions: u32, unread: bool) {
+    if mentions > 0 {
+        let label = if mentions > crate::models::UNREAD_BADGE_CAP {
+            format!("{}+", crate::models::UNREAD_BADGE_CAP)
+        } else {
+            mentions.to_string()
+        };
+        let width = 14.0 + label.chars().count() as f32 * 4.0;
+        let pill = egui::Rect::from_center_size(
+            rect.right_bottom() - egui::vec2(2.0, 2.0),
+            egui::vec2(width.max(16.0), 16.0),
+        );
+        ui.painter()
+            .rect_filled(pill, 8.0, Color32::from_rgb(242, 63, 66));
+        ui.painter().text(
+            pill.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::proportional(11.0),
+            Color32::WHITE,
+        );
+    } else if unread {
+        ui.painter().circle_filled(
+            rect.right_bottom() - egui::vec2(6.0, 6.0),
+            4.0,
+            Color32::WHITE,
+        );
+    }
+}
+
+/// A folder tile: a rounded square holding up to four member initials in a 2×2
+/// grid, the way Discord draws them.
+fn folder_icon(
+    ui: &mut egui::Ui,
+    theme: &AppTheme,
+    folder: &crate::rail::GuildFolder,
+    guilds: &[crate::models::Guild],
+    open: bool,
+    active: bool,
+) -> egui::Response {
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(GUILD_ICON, GUILD_ICON), egui::Sense::click());
+    let fill = if open || active {
+        theme.accent
+    } else {
+        theme.surface
+    };
+    ui.painter().rect_filled(rect, 16.0, fill);
+
+    let members: Vec<&crate::models::Guild> = folder
+        .guilds
+        .iter()
+        .filter_map(|id| guilds.iter().find(|guild| &guild.id == id))
+        .take(4)
+        .collect();
+
+    let tile = 17.0;
+    let gap = 3.0;
+    let span = tile * 2.0 + gap;
+    let start = rect.center() - egui::vec2(span / 2.0, span / 2.0);
+    for (index, guild) in members.iter().enumerate() {
+        let cell = egui::Rect::from_min_size(
+            start
+                + egui::vec2(
+                    (index % 2) as f32 * (tile + gap),
+                    (index / 2) as f32 * (tile + gap),
+                ),
+            egui::vec2(tile, tile),
+        );
+        ui.painter()
+            .rect_filled(cell, 5.0, theme.surface_alt.gamma_multiply(1.6));
+        ui.painter().text(
+            cell.center(),
+            egui::Align2::CENTER_CENTER,
+            initial(&guild.name),
+            egui::FontId::proportional(9.0),
+            Color32::WHITE,
+        );
+    }
+
+    let hint = format!(
+        "{} · {} server(s) · click to {}",
+        folder.name,
+        folder.guilds.len(),
+        if open { "collapse" } else { "expand" }
+    );
+    response.on_hover_text(hint)
 }
 
 fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {

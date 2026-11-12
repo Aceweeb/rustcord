@@ -862,3 +862,39 @@ takes the row clicked, `Esc` or `Ctrl+K` again closes.
 credential here is a user token whose REST calls are rejected (D28), so I checked
 that the binary launches and stays up, plus the filtering/cursor tests — not the
 overlay drawn over a live session.
+
+## D32. Guild folders and ordering live in `settings.json`
+
+Server folders are part of a user's own Discord settings; a bot token cannot read
+or write them, and `PATCH /users/@me/settings` is a user-API call this client
+deliberately does not make (D2/D15). So the rail layout is local, persisted with
+the rest of the settings as `guild_rail: { order, folders }`.
+
+**Why a flat order plus membership, not a nested tree.** A tree needs a rule for
+every guild that joins or leaves; a flat list of guild ids and a list of folders
+holding guild ids degrades instead. `items()` drops ids that no longer exist,
+appends guilds it has never seen in received order, and emits a folder at the
+position of its first member, once. A stale folder with no remaining members is
+kept in the config (so rejoining restores it) but never drawn.
+
+**Drag-free ordering.** Dragging is not the only honest way to move a server, and
+it is the part of a rail that is easiest to get wrong with a virtualised list, so
+the controls are explicit: right-click a server for `Move up` / `Move down`, `Add
+to folder ▸`, `New folder with this server`, and `Remove from folder` when it is
+already grouped. A folder tile's own menu offers `Move up` / `Move down` /
+`Ungroup folder`. Moving a member moves its whole folder block, which is what
+Discord does; moving the block rewrites the flat order from the swapped item list
+so the two representations never disagree.
+
+**Drawing.** A folder is a rounded square holding up to four member initials in a
+2×2 grid (Discord's own treatment), accent-filled while open or when it contains
+the selected server. Clicking toggles expansion; members render as normal icons
+with a 6 px indent, keeping their unread badges (D30). Expansion is session-only,
+so folders open collapsed on the next launch. Every layout change saves through
+`settings_changed()`, which normalises and rebuilds the theme as usual.
+
+**Limits stated plainly.** This layout is per machine and per config file; it does
+not sync to Discord and is not visible to anyone else. Folder names default to the
+server's name and there is no rename UI yet — a follow-up, not a hidden feature.
+The rail and its menus were tested through `GuildRail` (10 tests) and by launching
+the release binary; the menus themselves have not been clicked in a live session.

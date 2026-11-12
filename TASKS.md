@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Guild folders and drag-free rail ordering (`DECISIONS.md` D32): flat order
+  plus folder membership, context-menu move/add/ungroup, 2×2 folder tiles that
+  expand in place, persisted in `settings.json`. 10 tests over the layout model;
+  menus not clicked in a live session.
 - [x] Ctrl+K quick switcher (`DECISIONS.md` D31): pure entry building and
   filtering, cursor wrapping/clamping, rebindable `QuickSwitcher` action, Enter /
   click activation through `select_channel`. 6 tests. Overlay itself not seen

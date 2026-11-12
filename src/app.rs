@@ -93,6 +93,9 @@ pub struct RustcordApp {
     pub(crate) images: crate::images::ImageLoader,
     /// Pagination state per channel id, so switching back does not refetch.
     pub(crate) history: HashMap<String, ChannelHistory>,
+    /// Folders currently expanded in the rail. Session-only; a folder opens
+    /// collapsed again next launch, like Discord's.
+    pub(crate) rail_expanded: std::collections::BTreeSet<String>,
     /// Ctrl+K overlay state (query, cursor).
     pub(crate) switcher: crate::switcher::SwitcherState,
     /// Locally tracked unread/mention counters; bots get no server read state.
@@ -343,6 +346,7 @@ impl RustcordApp {
             oauth: OAuthFlow::default(),
             search: crate::search::SearchState::default(),
             switcher: crate::switcher::SwitcherState::default(),
+            rail_expanded: std::collections::BTreeSet::new(),
             voice: crate::models::VoiceTracker::default(),
             editing: None,
             replying_to: None,

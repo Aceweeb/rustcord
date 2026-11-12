@@ -134,6 +134,12 @@ pub struct Settings {
     /// Action id -> chord. Missing entries fall back to the built-in default.
     #[serde(default)]
     pub shortcuts: BTreeMap<String, String>,
+
+    // --- guild rail ---------------------------------------------------------
+    /// Server folders and drag-free ordering. Local only: a bot cannot read the
+    /// user's Discord folder settings (`DECISIONS.md` D32).
+    #[serde(default)]
+    pub guild_rail: crate::rail::GuildRail,
 }
 
 fn default_true() -> bool {
@@ -177,6 +183,7 @@ impl Default for Settings {
             diagnostics_capture: true,
             oauth_client_id: None,
             shortcuts: BTreeMap::new(),
+            guild_rail: crate::rail::GuildRail::default(),
         }
     }
 }

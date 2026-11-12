@@ -10,6 +10,7 @@ pub mod models;
 pub mod monitor;
 pub mod plugins;
 pub mod privacy;
+pub mod rail;
 pub mod search;
 pub mod settings;
 pub mod shortcuts;
