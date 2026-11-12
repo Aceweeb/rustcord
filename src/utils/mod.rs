@@ -25,6 +25,20 @@ pub fn lift(color: Color32, delta: i16) -> Color32 {
     )
 }
 
+/// Blend two colours: `t == 0.0` is `a`, `t == 1.0` is `b`. Alpha follows `a`,
+/// so a tint over a surface keeps the surface's opacity (D42).
+pub fn mix(a: Color32, b: Color32, t: f32) -> Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let channel =
+        |from: u8, to: u8| (f32::from(from) + (f32::from(to) - f32::from(from)) * t).round() as u8;
+    Color32::from_rgba_unmultiplied(
+        channel(a.r(), b.r()),
+        channel(a.g(), b.g()),
+        channel(a.b(), b.b()),
+        a.a(),
+    )
+}
+
 /// Parse `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb(r,g,b)` and `rgba(r,g,b,a)`.
 pub fn parse_css_color(input: &str) -> Option<Color32> {
     let value = input.trim().trim_end_matches(';').trim();
@@ -135,6 +149,18 @@ pub fn format_duration(ms: u64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mixing_moves_between_the_two_colours() {
+        let dark = Color32::from_rgb(0, 0, 0);
+        let light = Color32::from_rgb(200, 100, 50);
+        assert_eq!(mix(dark, light, 0.0), dark);
+        assert_eq!(mix(dark, light, 1.0), light);
+        assert_eq!(mix(dark, light, 0.5), Color32::from_rgb(100, 50, 25));
+        // Out-of-range weights clamp instead of wrapping.
+        assert_eq!(mix(dark, light, -2.0), dark);
+        assert_eq!(mix(dark, light, 3.0), light);
+    }
 
     #[test]
     fn parses_short_and_long_hex() {

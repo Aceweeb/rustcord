@@ -1213,3 +1213,33 @@ shape and transport start-up were exercised live, and the app logs
 absent. Discord is not running here, so an activity has not actually appeared on a
 profile, and no valid application id was available to handshake with. That is
 recorded in `TASKS.md`.
+
+## D42. A folder's colour also tints its servers, so a group reads as a group
+
+D38 gave each folder tile a colour, but expanding it showed plain `theme.surface`
+circles: the colour said "these belong together" only while the folder was closed,
+which is exactly when the individual servers are not visible.
+
+**Tint, not repaint.** A member server's fill is the theme surface blended 55 % toward
+the folder colour (`utils::mix`). At that weight the palette's mid-dark colours still
+carry white initials at the same contrast as a plain surface, while the tint is
+obvious side by side with an ungrouped server. The folder's own colour is also drawn
+as a 1.5 px ring around each member, which survives selection — the selected server
+keeps Discord's accent fill and white pill, so "where am I" still outranks "which
+group". A folder with no colour (`None`) keeps the old surface fill and gains no
+ring; nothing about the ungrouped rail changes.
+
+**The closed folder previews it too.** The 2×2 mini initials inside a collapsed
+folder are blended toward the same colour at 35 %, so the tile's colour, its preview
+grid and its expanded members all agree.
+
+**Colour source.** The tint is parsed from the same normalised `#rrggbb` the folder
+stores (D38), inside the draw call that already resolves it, so a hand-edited or
+invalid value degrades to the plain surface instead of painting something arbitrary.
+`mix` clamps its weight, keeps the base colour's alpha (important under the
+translucent glass, D39), and is covered by a test for both endpoints, the midpoint
+and out-of-range weights.
+
+**Not verified visually.** The tint maths is tested, the code compiles and the app
+starts, but the rendered rail has not been seen in a signed-in window — same
+credential blocker as D38/D39 (D28).

@@ -183,6 +183,10 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                                 continue;
                                             };
                                             let mut member_actions = Vec::new();
+                                            let tint = folder
+                                                .color
+                                                .as_deref()
+                                                .and_then(crate::utils::parse_css_color);
                                             ui.horizontal(|ui| {
                                                 ui.add_space(6.0);
                                                 if let Some(rect) = guild_row(
@@ -190,6 +194,7 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                                     &view,
                                                     guild,
                                                     true,
+                                                    tint,
                                                     focused,
                                                     &mut member_actions,
                                                 ) {
@@ -206,9 +211,15 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                     else {
                                         continue;
                                     };
-                                    if let Some(rect) =
-                                        guild_row(ui, &view, guild, false, focused, &mut actions)
-                                    {
+                                    if let Some(rect) = guild_row(
+                                        ui,
+                                        &view,
+                                        guild,
+                                        false,
+                                        None,
+                                        focused,
+                                        &mut actions,
+                                    ) {
                                         hover = Some((guild.id.clone(), rect));
                                     }
                                 }
@@ -305,6 +316,7 @@ fn guild_row(
     view: &RailView<'_>,
     guild: &crate::models::Guild,
     in_folder: bool,
+    tint: Option<Color32>,
     focused: bool,
     actions: &mut Vec<RailAction>,
 ) -> Option<egui::Rect> {
@@ -332,10 +344,16 @@ fn guild_row(
     } else {
         (GUILD_ICON / 2.0) as u8
     };
+    // A server grouped in a folder carries that folder's colour, so an expanded
+    // folder reads as one block instead of a stack of unrelated circles. The tint
+    // is a blend with the surface, which keeps white initials legible; the ring
+    // is the folder's own colour so the group survives selection too.
     let fill = if selected {
         theme.accent
     } else {
-        theme.surface
+        tint.map_or(theme.surface, |colour| {
+            crate::utils::mix(theme.surface, colour, 0.55)
+        })
     };
     let response = ui.add(
         egui::Button::new(
@@ -349,6 +367,14 @@ fn guild_row(
     );
     if response.clicked() {
         actions.push(RailAction::Select(guild.id.clone()));
+    }
+    if let Some(colour) = tint {
+        ui.painter().rect_stroke(
+            response.rect.expand(1.0),
+            egui::CornerRadius::same(radius),
+            egui::Stroke::new(1.5, colour),
+            egui::StrokeKind::Inside,
+        );
     }
     if focused {
         ui.painter().rect_stroke(
@@ -493,8 +519,10 @@ fn folder_icon(
                 ),
             egui::vec2(tile, tile),
         );
-        ui.painter()
-            .rect_filled(cell, 5.0, theme.surface_alt.gamma_multiply(1.6));
+        // The mini tiles inside a closed folder use the same tint, so the folder
+        // itself previews the group colour.
+        let cell_fill = crate::utils::mix(theme.surface_alt.gamma_multiply(1.6), fill, 0.35);
+        ui.painter().rect_filled(cell, 5.0, cell_fill);
         ui.painter().text(
             cell.center(),
             egui::Align2::CENTER_CENTER,

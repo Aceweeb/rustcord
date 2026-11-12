@@ -32,8 +32,9 @@ half-implemented stubs that pretend to work.
   arrow/Enter navigation and a rebindable shortcut.
 - Guild folders and drag-free ordering: right-click a server to move it, group it
   into a folder or ungroup it, rename a folder and give it a colour from its own
-  menu. Stored in `settings.json`, since a bot cannot read a user's Discord folder
-  settings.
+  menu. That colour also tints the folder's servers and its 2×2 preview, so an
+  expanded group reads as one block. Stored in `settings.json`, since a bot cannot
+  read a user's Discord folder settings.
 - Keyboard-only navigation (`Ctrl+Shift+K` by default): arrow through the rail and
   channel list with an in-place focus ring, Enter opens, Escape leaves.
 - Hover a server icon for a peek at its text and voice channels, with unread and

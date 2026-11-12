@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [~] Folder-coloured server tiles (`DECISIONS.md` D42): members of an expanded
+  folder blend 55 % toward the folder colour and get a 1.5 px ring in it, selection
+  keeps the accent fill and white pill, and a closed folder tints its 2×2 preview
+  cells. `utils::mix` is tested; the drawn rail has not been seen signed in (D28).
 - [~] Discord Rich Presence (`DECISIONS.md` D41), Settings → Extras: official
   local IPC protocol, socket discovery for native/Flatpak/Snap/Vesktop, handshake,
   `SET_ACTIVITY` with server + optional channel, worker thread with reconnect and

@@ -7,12 +7,21 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 271 lib + 5 bin tests passing (276)
+- `cargo test --all-targets`: 272 lib + 5 bin tests passing (277)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Folder-tinted server tiles (`DECISIONS.md` D42):
+
+- `src/utils/mod.rs` — `mix(a, b, t)`, an alpha-preserving blend with a clamped
+  weight, plus a test.
+- `src/ui/sidebar.rs` — `guild_row` takes an optional folder `tint`; unselected
+  members fill with `mix(surface, colour, 0.55)` and get a 1.5 px ring in the folder
+  colour, the collapsed folder's 2×2 preview cells blend 35 % toward it, and
+  top-level servers pass `None`.
 
 Discord Rich Presence (`DECISIONS.md` D41):
 

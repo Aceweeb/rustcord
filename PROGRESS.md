@@ -460,6 +460,12 @@ Priority order for the next session:
   back to the OAuth id) and a channel toggle; presence updates on channel changes
   and settings edits, and never blocks the UI. Suite now 276.
 
+- Tinted folder members with the folder colour (D42). A server inside an expanded
+  folder now blends its tile 55 % toward that folder's colour and carries a 1.5 px
+  ring in it, while selection keeps the accent fill and white pill; closed folders
+  blend their 2×2 preview cells too. Added `utils::mix` (alpha-preserving, clamped)
+  with a test; suite now 277.
+
 ---
 
 ## 7. Notes for the next agent
