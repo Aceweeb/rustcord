@@ -93,6 +93,8 @@ pub struct RustcordApp {
     pub(crate) images: crate::images::ImageLoader,
     /// Pagination state per channel id, so switching back does not refetch.
     pub(crate) history: HashMap<String, ChannelHistory>,
+    /// Arrow-key focus over the rail and channel list (no overlay).
+    pub(crate) navigator: crate::nav::Navigator,
     /// Folders currently expanded in the rail. Session-only; a folder opens
     /// collapsed again next launch, like Discord's.
     pub(crate) rail_expanded: std::collections::BTreeSet<String>,
@@ -347,6 +349,7 @@ impl RustcordApp {
             search: crate::search::SearchState::default(),
             switcher: crate::switcher::SwitcherState::default(),
             rail_expanded: std::collections::BTreeSet::new(),
+            navigator: crate::nav::Navigator::default(),
             voice: crate::models::VoiceTracker::default(),
             editing: None,
             replying_to: None,
@@ -892,8 +895,10 @@ impl RustcordApp {
     // -----------------------------------------------------------------------
 
     pub(crate) fn open_search(&mut self) {
-        // One palette at a time: the switcher sits on top of the same screen.
+        // One palette at a time: the switcher sits on top of the same screen,
+        // and a palette owns the keys while it is open.
         self.switcher.close();
+        self.navigator.stop();
         self.search.open = true;
         self.search.just_opened = true;
         self.refresh_search();
@@ -909,6 +914,7 @@ impl RustcordApp {
 
     pub(crate) fn open_switcher(&mut self) {
         self.close_search();
+        self.navigator.stop();
         self.switcher.open_now();
     }
 
@@ -942,6 +948,147 @@ impl RustcordApp {
                     self.select_channel(channel);
                 }
                 self.status_line = Some(format!("switched to {}", entry.primary));
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Keyboard navigation
+    // -----------------------------------------------------------------------
+
+    /// Channel ids in the sidebar's own order: text channels, then voice.
+    fn navigable_channels(&self) -> Vec<String> {
+        let selected = self.selected_guild.as_ref();
+        let text = self.channels.iter().filter(|channel| {
+            Some(&channel.guild_id) == selected && channel.kind == ChannelKind::Text
+        });
+        let voice = self.channels.iter().filter(|channel| {
+            Some(&channel.guild_id) == selected && channel.kind == ChannelKind::Voice
+        });
+        text.chain(voice)
+            .map(|channel| channel.id.clone())
+            .collect()
+    }
+
+    fn rail_items(&self) -> Vec<crate::rail::RailItem> {
+        self.settings.guild_rail.items(&self.guilds)
+    }
+
+    /// Start arrow-key navigation where the user already is.
+    pub(crate) fn begin_navigation(&mut self) {
+        let items = self.rail_items();
+        let rail = self
+            .selected_guild
+            .as_ref()
+            .and_then(|id| items.iter().position(|item| item.contains(id)))
+            .unwrap_or(0);
+        let channels = self.navigable_channels();
+        let channel = self
+            .selected_channel
+            .as_ref()
+            .and_then(|id| channels.iter().position(|candidate| candidate == id))
+            .unwrap_or(0);
+
+        self.navigator.begin(rail, channel);
+        self.status_line = Some(
+            "keyboard nav: ↑↓ move · ←/→ rail or channels · Enter open · Esc exit".to_string(),
+        );
+    }
+
+    pub(crate) fn end_navigation(&mut self) {
+        self.navigator.stop();
+        self.status_line = Some("keyboard navigation off".to_string());
+    }
+
+    fn handle_navigation(&mut self, ctx: &egui::Context) {
+        // Palettes and settings own the keyboard while they are up.
+        if !self.navigator.active || self.search.open || self.switcher.open || self.show_settings {
+            return;
+        }
+        // A focused text field owns Enter, the arrows and Escape (the composer
+        // is the common case), so navigation stays out of typing's way.
+        if ctx.memory(|memory| memory.focused().is_some()) {
+            return;
+        }
+
+        let keys: Vec<crate::nav::NavKey> = ctx.input(|input| {
+            use crate::nav::NavKey;
+            let mut keys = Vec::new();
+            if input.key_pressed(egui::Key::ArrowUp) {
+                keys.push(NavKey::Up);
+            }
+            if input.key_pressed(egui::Key::ArrowDown) {
+                keys.push(NavKey::Down);
+            }
+            if input.key_pressed(egui::Key::ArrowLeft) {
+                keys.push(NavKey::Left);
+            }
+            if input.key_pressed(egui::Key::ArrowRight) {
+                keys.push(NavKey::Right);
+            }
+            if input.key_pressed(egui::Key::Enter) {
+                keys.push(NavKey::Enter);
+            }
+            if input.key_pressed(egui::Key::Escape) {
+                keys.push(NavKey::Escape);
+            }
+            keys
+        });
+
+        for key in keys {
+            let items = self.rail_items();
+            let channels = self.navigable_channels();
+
+            match self.navigator.handle(key, items.len(), channels.len()) {
+                crate::nav::NavOutcome::Exit => {
+                    self.status_line = Some("keyboard navigation off".to_string());
+                }
+                crate::nav::NavOutcome::Activate => match self.navigator.area {
+                    crate::nav::NavArea::Rail => match items.get(self.navigator.rail).cloned() {
+                        Some(crate::rail::RailItem::Folder(folder)) => {
+                            if !self.rail_expanded.remove(&folder.id) {
+                                self.rail_expanded.insert(folder.id.clone());
+                            }
+                            self.status_line = Some(format!("folder {}", folder.name));
+                        }
+                        Some(crate::rail::RailItem::Guild(id)) => {
+                            self.selected_guild = Some(id.clone());
+                            let first = self
+                                .channels
+                                .iter()
+                                .find(|channel| {
+                                    channel.guild_id == id && channel.kind == ChannelKind::Text
+                                })
+                                .map(|channel| channel.id.clone());
+                            if let Some(channel) = first {
+                                self.select_channel(channel);
+                                self.navigator.area = crate::nav::NavArea::Channels;
+                                self.navigator.channel = 0;
+                            }
+                            let name = self
+                                .guilds
+                                .iter()
+                                .find(|guild| guild.id == id)
+                                .map(|guild| guild.name.clone())
+                                .unwrap_or_else(|| "server".to_string());
+                            self.status_line = Some(format!("opened {name}"));
+                        }
+                        None => {}
+                    },
+                    crate::nav::NavArea::Channels => {
+                        if let Some(id) = channels.get(self.navigator.channel).cloned() {
+                            self.select_channel(id.clone());
+                            let name = self
+                                .channels
+                                .iter()
+                                .find(|channel| channel.id == id)
+                                .map(|channel| channel.name.clone())
+                                .unwrap_or_default();
+                            self.status_line = Some(format!("opened #{name}"));
+                        }
+                    }
+                },
+                _ => {}
             }
         }
     }
@@ -1042,6 +1189,13 @@ impl RustcordApp {
                     self.close_switcher();
                 } else {
                     self.open_switcher();
+                }
+            }
+            ShortcutAction::KeyboardNavigation => {
+                if self.navigator.active {
+                    self.end_navigation();
+                } else {
+                    self.begin_navigation();
                 }
             }
             ShortcutAction::ToggleSettings => self.show_settings = !self.show_settings,
@@ -1844,6 +1998,7 @@ impl eframe::App for RustcordApp {
             ctx.request_repaint();
         }
         self.handle_shortcuts(&ctx);
+        self.handle_navigation(&ctx);
         self.tick_telemetry(&ctx);
 
         if self.settings.compact_mode {

@@ -11,6 +11,7 @@ use std::fmt;
 pub enum ShortcutAction {
     Search,
     QuickSwitcher,
+    KeyboardNavigation,
     ToggleSettings,
     NextChannel,
     PrevChannel,
@@ -22,7 +23,7 @@ pub enum ShortcutAction {
 }
 
 impl ShortcutAction {
-    pub const ALL: [ShortcutAction; 10] = [
+    pub const ALL: [ShortcutAction; 11] = [
         ShortcutAction::Search,
         ShortcutAction::QuickSwitcher,
         ShortcutAction::ToggleSettings,
@@ -33,12 +34,14 @@ impl ShortcutAction {
         ShortcutAction::RefreshView,
         ShortcutAction::ToggleCompact,
         ShortcutAction::ExportDiagnostics,
+        ShortcutAction::KeyboardNavigation,
     ];
 
     pub fn id(self) -> &'static str {
         match self {
             Self::Search => "search",
             Self::QuickSwitcher => "quick_switcher",
+            Self::KeyboardNavigation => "keyboard_navigation",
             Self::ToggleSettings => "toggle_settings",
             Self::NextChannel => "next_channel",
             Self::PrevChannel => "prev_channel",
@@ -54,6 +57,7 @@ impl ShortcutAction {
         match self {
             Self::Search => "Search loaded messages",
             Self::QuickSwitcher => "Quick switcher (servers and channels)",
+            Self::KeyboardNavigation => "Keyboard navigation (arrows over rail and channels)",
             Self::ToggleSettings => "Open / close settings",
             Self::NextChannel => "Next channel",
             Self::PrevChannel => "Previous channel",
@@ -73,6 +77,7 @@ impl ShortcutAction {
         match self {
             Self::Search => KeyChord::new(true, false, false, "F"),
             Self::QuickSwitcher => KeyChord::new(true, false, false, "K"),
+            Self::KeyboardNavigation => KeyChord::new(true, true, false, "K"),
             Self::ToggleSettings => KeyChord::new(true, false, false, "Comma"),
             Self::NextChannel => KeyChord::new(true, false, false, "ArrowDown"),
             Self::PrevChannel => KeyChord::new(true, false, false, "ArrowUp"),

@@ -898,3 +898,41 @@ not sync to Discord and is not visible to anyone else. Folder names default to t
 server's name and there is no rename UI yet — a follow-up, not a hidden feature.
 The rail and its menus were tested through `GuildRail` (10 tests) and by launching
 the release binary; the menus themselves have not been clicked in a live session.
+
+## D33. Keyboard navigation is a mode with an in-place focus ring
+
+The quick switcher (D31) needs typing. Keyboard-only browsing does not: Discord's
+own "keyboard navigation" moves a focus through the rail and channel list and
+opens with Enter, with no overlay at all. That is a different feature, so it is a
+separate mode (`nav.rs`) rather than another use of the switcher.
+
+**The model is pure.** `Navigator` owns only `active`, `area` (rail or channels)
+and the two cursors. `handle(key, rail_len, channel_len)` reports `Moved`,
+`SwitchArea`, `Activate`, `Exit` or `Ignored`, and the app decides what
+"activate" means: a folder toggles its expansion, a server selects itself and
+moves the focus into its channels, a channel opens through `select_channel` (so
+it is marked read, D30). Cursors wrap and are clamped against the live list sizes
+every key, so a guild joining, a folder being ungrouped or a channel list
+shrinking can never leave the focus pointing past the end.
+
+**Keys.** Up/Down move within the current list; Right enters the channel list (and
+is refused when the server has no channels); Left returns to the rail; Enter opens;
+Escape leaves. The mode is toggled by `KeyboardNavigation`, a normal rebindable
+shortcut, default `Ctrl+Shift+K`, and it starts on whatever is already selected.
+
+**Guards.** The mode yields to anything that owns the keyboard: while settings,
+search or the switcher are open it does nothing, and it stands down entirely when
+any widget holds keyboard focus, which is the case while the composer is being
+typed in — otherwise Enter would send a message *and* activate the focus. Opening
+a palette, clicking a server or clicking a channel turns the mode off, because a
+pointer has taken over.
+
+**Drawing.** The focus is a ring drawn in place: white around a rail icon or folder
+tile (readable on both the idle and accent fills), accent-coloured around a channel
+row. The rail focus is computed by rail *item* index, so a collapsed folder is one
+stop and its expanded members are none — matching what is on screen.
+
+**Not verified live.** Toggling, arrows and activation are covered by `Navigator`
+tests (6) and the code compiles/clippy/tests clean, and the release binary starts;
+the rings themselves have not been seen in a signed-in window, for the same reason
+as the switcher (D31): the only credential here is a user token REST rejects.

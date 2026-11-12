@@ -8,7 +8,8 @@
 
 Last updated: 2026-11-12 (Europe/Berlin)
 
-Latest increment: guild folders and drag-free rail ordering persisted locally (D32);
+Latest increment: keyboard-only navigation with an in-place focus ring (D33);
+guild folders and drag-free rail ordering persisted locally (D32);
 a Ctrl+K quick switcher over servers and channels (D31); local
 unread and mention badges on channels and guild icons (D30); guild member roster over the Members intent and REST (D29); load failures
 are visible in the channel (D28 addendum); the guild rail is populated from READY

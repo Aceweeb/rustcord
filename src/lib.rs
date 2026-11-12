@@ -8,6 +8,7 @@ pub mod images;
 pub mod logbuf;
 pub mod models;
 pub mod monitor;
+pub mod nav;
 pub mod plugins;
 pub mod privacy;
 pub mod rail;

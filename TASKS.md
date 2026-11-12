@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Keyboard-only navigation (`DECISIONS.md` D33): pure `Navigator` with area
+  switching, wrapping and clamping, rebindable `Ctrl+Shift+K` toggle, in-place
+  focus rings on rail items/folders/channel rows, guards against palettes and
+  focused text fields. 6 tests; rings not seen in a signed-in window.
 - [x] Guild folders and drag-free rail ordering (`DECISIONS.md` D32): flat order
   plus folder membership, context-menu move/add/ungroup, 2×2 folder tiles that
   expand in place, persisted in `settings.json`. 10 tests over the layout model;

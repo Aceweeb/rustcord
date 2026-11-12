@@ -28,6 +28,8 @@ struct RailView<'a> {
     badges: &'a std::collections::BTreeMap<String, (u32, bool)>,
     folders: &'a [(String, String)],
     selected: Option<&'a str>,
+    /// Rail index that arrow-key navigation is on, when it is on the rail.
+    focus: Option<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -75,11 +77,17 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
         .map(|folder| (folder.id.clone(), folder.name.clone()))
         .collect();
 
+    let focus = if app.navigator.active && app.navigator.area == crate::nav::NavArea::Rail {
+        Some(app.navigator.rail)
+    } else {
+        None
+    };
     let view = RailView {
         theme: &theme,
         badges: &badges,
         folders: &folders,
         selected: selected.as_deref(),
+        focus,
     };
     let mut actions: Vec<RailAction> = Vec::new();
 
@@ -95,7 +103,8 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     ui.vertical_centered(|ui| {
-                        for item in &items {
+                        for (index, item) in items.iter().enumerate() {
+                            let focused = view.focus == Some(index);
                             match item {
                                 crate::rail::RailItem::Folder(folder) => {
                                     let open = expanded.contains(&folder.id);
@@ -103,8 +112,9 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                         .as_deref()
                                         .map(|id| folder.contains(id))
                                         .unwrap_or(false);
-                                    let response =
-                                        folder_icon(ui, &theme, folder, &guilds, open, active);
+                                    let response = folder_icon(
+                                        ui, &theme, folder, &guilds, open, active, focused,
+                                    );
 
                                     if response.clicked() {
                                         actions.push(RailAction::ToggleFolder(folder.id.clone()));
@@ -145,6 +155,7 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                                     &view,
                                                     guild,
                                                     true,
+                                                    focused,
                                                     &mut member_actions,
                                                 );
                                             });
@@ -158,7 +169,7 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                     else {
                                         continue;
                                     };
-                                    guild_row(ui, &view, guild, false, &mut actions);
+                                    guild_row(ui, &view, guild, false, focused, &mut actions);
                                 }
                             }
                         }
@@ -171,7 +182,10 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
 
     for action in actions {
         match action {
-            RailAction::Select(id) => selected_guild = Some(id),
+            RailAction::Select(id) => {
+                app.navigator.stop();
+                selected_guild = Some(id);
+            }
             RailAction::ToggleFolder(id) => {
                 if !app.rail_expanded.remove(&id) {
                     app.rail_expanded.insert(id);
@@ -231,6 +245,7 @@ fn guild_row(
     view: &RailView<'_>,
     guild: &crate::models::Guild,
     in_folder: bool,
+    focused: bool,
     actions: &mut Vec<RailAction>,
 ) {
     let theme = view.theme;
@@ -274,6 +289,14 @@ fn guild_row(
     );
     if response.clicked() {
         actions.push(RailAction::Select(guild.id.clone()));
+    }
+    if focused {
+        ui.painter().rect_stroke(
+            response.rect.expand(1.0),
+            egui::CornerRadius::same(radius),
+            egui::Stroke::new(2.0, Color32::WHITE),
+            egui::StrokeKind::Inside,
+        );
     }
 
     response.context_menu(|ui| {
@@ -357,6 +380,7 @@ fn folder_icon(
     guilds: &[crate::models::Guild],
     open: bool,
     active: bool,
+    focused: bool,
 ) -> egui::Response {
     let (rect, response) =
         ui.allocate_exact_size(egui::vec2(GUILD_ICON, GUILD_ICON), egui::Sense::click());
@@ -366,6 +390,14 @@ fn folder_icon(
         theme.surface
     };
     ui.painter().rect_filled(rect, 16.0, fill);
+    if focused {
+        ui.painter().rect_stroke(
+            rect.expand(1.0),
+            16.0,
+            egui::Stroke::new(2.0, Color32::WHITE),
+            egui::StrokeKind::Inside,
+        );
+    }
 
     let members: Vec<&crate::models::Guild> = folder
         .guilds
@@ -462,12 +494,15 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    let mut nav_index = 0usize;
                     category_label(ui, &theme, "TEXT CHANNELS");
                     for channel in app.channels.iter().filter(|channel| {
                         Some(&channel.guild_id) == app.selected_guild.as_ref()
                             && channel.kind == ChannelKind::Text
                     }) {
                         let selected = app.selected_channel.as_deref() == Some(channel.id.as_str());
+                        let focused = app.navigator.on_channel(nav_index);
+                        nav_index += 1;
                         if channel_row(
                             ui,
                             &theme,
@@ -475,6 +510,7 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             "#",
                             &channel.name,
                             app.unread.get(&channel.id),
+                            focused,
                         ) {
                             clicked = Some(channel.id.clone());
                         }
@@ -487,6 +523,8 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             && channel.kind == ChannelKind::Voice
                     }) {
                         let selected = app.selected_channel.as_deref() == Some(channel.id.as_str());
+                        let focused = app.navigator.on_channel(nav_index);
+                        nav_index += 1;
                         if channel_row(
                             ui,
                             &theme,
@@ -494,6 +532,7 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             "🔊",
                             &channel.name,
                             app.unread.get(&channel.id),
+                            focused,
                         ) {
                             clicked = Some(channel.id.clone());
                         }
@@ -517,6 +556,8 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
         });
 
     if let Some(id) = clicked {
+        // A click takes over from the keyboard focus.
+        app.navigator.stop();
         app.select_channel(id);
     }
     if open_settings {
@@ -630,6 +671,7 @@ fn channel_row(
     glyph: &str,
     name: &str,
     unread: crate::models::Unread,
+    focused: bool,
 ) -> bool {
     let (rect, response) = ui.allocate_exact_size(
         egui::vec2(ui.available_width(), CHANNEL_ROW_HEIGHT),
@@ -641,6 +683,15 @@ fn channel_row(
         ui.painter().rect_filled(body, 4.0, lift(theme.surface, 22));
     } else if response.hovered() {
         ui.painter().rect_filled(body, 4.0, lift(theme.surface, 10));
+    }
+
+    if focused {
+        ui.painter().rect_stroke(
+            body,
+            4.0,
+            egui::Stroke::new(1.5, theme.accent),
+            egui::StrokeKind::Inside,
+        );
     }
 
     // Unread channels keep Discord's brighter label; a mention adds the red pill.

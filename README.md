@@ -33,6 +33,8 @@ half-implemented stubs that pretend to work.
 - Guild folders and drag-free ordering: right-click a server to move it, group it
   into a folder or ungroup it. Stored in `settings.json`, since a bot cannot read
   a user's Discord folder settings.
+- Keyboard-only navigation (`Ctrl+Shift+K` by default): arrow through the rail and
+  channel list with an in-place focus ring, Enter opens, Escape leaves.
 - Nine-section settings window: Appearance, Themes, Performance, Memory,
   Notifications, Shortcuts, Privacy, Diagnostics, About (`Ctrl+,`).
 - 12 built-in theme presets across Dark, Light, Purple and AMOLED, plus custom
