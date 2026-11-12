@@ -32,7 +32,9 @@ pub enum GatewayEvent {
         guild: Guild,
         channels: Vec<Channel>,
     },
-    Message(Message),
+    /// Boxed: a message carries its reply reference, and the enum is cloned
+    /// through the event channel; the pointer keeps the variant small.
+    Message(Box<Message>),
     /// `MESSAGE_UPDATE`. Absent fields were not sent and must be preserved.
     MessageUpdate {
         channel_id: Option<String>,
@@ -500,7 +502,7 @@ fn handle_payload(payload: &Value, tx: &mpsc::UnboundedSender<GatewayEvent>) {
         }
         "MESSAGE_CREATE" => {
             if let Ok(message) = parse_message(&payload["d"]) {
-                tx.send(GatewayEvent::Message(message)).ok();
+                tx.send(GatewayEvent::Message(Box::new(message))).ok();
             }
         }
         "MESSAGE_UPDATE" => {
@@ -599,6 +601,23 @@ fn parse_message(value: &Value) -> Result<Message> {
         .map(|parsed| parsed.with_timezone(&Utc))
         .unwrap_or_else(Utc::now);
 
+    // A reply carries the target as `referenced_message`; a deleted target only
+    // leaves `message_reference`, which this client shows as a plain message.
+    let reply_to = value.get("referenced_message").and_then(|reference| {
+        Some(crate::models::ReplyRef {
+            message_id: reference["id"].as_str()?.to_string(),
+            channel_id: value["channel_id"].as_str().map(str::to_string),
+            author: reference["author"]["username"]
+                .as_str()
+                .unwrap_or("someone")
+                .to_string(),
+            content: reference["content"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+        })
+    });
+
     Ok(Message {
         id: value["id"].as_str().unwrap_or_default().to_string(),
         channel_id: value["channel_id"].as_str().map(str::to_string),
@@ -608,6 +627,7 @@ fn parse_message(value: &Value) -> Result<Message> {
         reactions: Vec::new(),
         attachments: serde_json::from_value(value["attachments"].clone()).unwrap_or_default(),
         embeds: serde_json::from_value(value["embeds"].clone()).unwrap_or_default(),
+        reply_to,
     })
 }
 
@@ -701,6 +721,44 @@ fn parse_typing(value: &Value) -> Option<GatewayEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_a_reply_reference() {
+        let payload = json!({
+            "op": 0,
+            "t": "MESSAGE_CREATE",
+            "d": {
+                "id": "101",
+                "channel_id": "300",
+                "content": "replying",
+                "timestamp": "2026-01-01T00:00:00.000000+00:00",
+                "author": { "id": "2", "username": "bob", "avatar": null },
+                "referenced_message": {
+                    "id": "100",
+                    "content": "the original",
+                    "author": { "id": "1", "username": "alice", "avatar": null }
+                }
+            }
+        });
+
+        let event = parse_message(&payload["d"]).expect("message");
+        let reply = event.reply_to.expect("reply reference");
+        assert_eq!(reply.message_id, "100");
+        assert_eq!(reply.author, "alice");
+        assert_eq!(reply.preview(40), "the original");
+        assert_eq!(reply.channel_id.as_deref(), Some("300"));
+
+        // A deleted target leaves only `message_reference`, so no preview.
+        let orphan = json!({
+            "id": "102",
+            "channel_id": "300",
+            "content": "still here",
+            "timestamp": "2026-01-01T00:00:00.000000+00:00",
+            "author": { "id": "2", "username": "bob", "avatar": null },
+            "message_reference": { "message_id": "99" }
+        });
+        assert!(parse_message(&orphan).expect("message").reply_to.is_none());
+    }
 
     #[test]
     fn parses_a_voice_join_and_a_leave() {

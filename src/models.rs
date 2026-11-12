@@ -162,6 +162,43 @@ impl Embed {
     }
 }
 
+/// What a message replies to: enough to draw Discord's `↳ @author snippet`
+/// line and to send a `message_reference`. Discord sends this as
+/// `referenced_message` (a full message) or `message_reference` (an id only).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReplyRef {
+    pub message_id: String,
+    pub channel_id: Option<String>,
+    pub author: String,
+    pub content: String,
+}
+
+impl ReplyRef {
+    pub fn new(message: &Message) -> Self {
+        Self {
+            message_id: message.id.clone(),
+            channel_id: message.channel_id.clone(),
+            author: message.author.username.clone(),
+            content: message.content.clone(),
+        }
+    }
+
+    /// One line, whichever characters the source used.
+    pub fn preview(&self, max_chars: usize) -> String {
+        snippet(&self.content, max_chars)
+    }
+}
+
+/// Cut at a character boundary so multi-byte text never panics or splits a
+/// glyph in half. Ellipsis included in the budget.
+pub fn snippet(text: &str, max_chars: usize) -> String {
+    let mut out: String = text.chars().take(max_chars).collect();
+    if text.chars().count() > max_chars {
+        out.push('…');
+    }
+    out.replace('\n', " ")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Message {
     pub id: String,
@@ -174,6 +211,8 @@ pub struct Message {
     pub attachments: Vec<Attachment>,
     #[serde(default)]
     pub embeds: Vec<Embed>,
+    #[serde(default)]
+    pub reply_to: Option<ReplyRef>,
 }
 
 impl Message {
@@ -187,6 +226,48 @@ impl Message {
             reactions: Vec::new(),
             attachments: Vec::new(),
             embeds: Vec::new(),
+            reply_to: None,
+        }
+    }
+
+    /// Apply our own reaction locally, exactly as Discord will after the PUT
+    /// lands. Returns `false` when we had already reacted with this emoji, in
+    /// which case the API call would be a no-op too.
+    pub fn add_own_reaction(&mut self, emoji: &str) -> bool {
+        if let Some(reaction) = self.reactions.iter_mut().find(|it| it.emoji == emoji) {
+            if reaction.me {
+                return false;
+            }
+            reaction.me = true;
+            reaction.count = reaction.count.saturating_add(1);
+            return true;
+        }
+
+        self.reactions.push(Reaction {
+            emoji: emoji.to_string(),
+            count: 1,
+            me: true,
+            users: Vec::new(),
+        });
+        true
+    }
+
+    /// Undo `add_own_reaction`, used when the request failed.
+    pub fn remove_own_reaction(&mut self, emoji: &str) {
+        if let Some(index) = self
+            .reactions
+            .iter()
+            .position(|reaction| reaction.emoji == emoji)
+        {
+            let reaction = &mut self.reactions[index];
+            if !reaction.me {
+                return;
+            }
+            reaction.me = false;
+            reaction.count = reaction.count.saturating_sub(1);
+            if reaction.count == 0 {
+                self.reactions.remove(index);
+            }
         }
     }
 
@@ -751,6 +832,68 @@ mod tests {
 
         assert!(!remove_message(&mut messages, "100", Some("301")));
         assert_eq!(messages.len(), 1);
+    }
+
+    #[test]
+    fn snippet_is_char_safe() {
+        assert_eq!(snippet("hello", 10), "hello");
+        assert_eq!(snippet("hello world", 5), "hello…");
+        // Each emoji is one character, four bytes.
+        assert_eq!(
+            snippet("\u{1f525}\u{1f525}\u{1f525}", 2),
+            "\u{1f525}\u{1f525}…"
+        );
+        assert_eq!(snippet("two\nlines", 20), "two lines");
+    }
+
+    #[test]
+    fn a_reply_ref_captures_the_target() {
+        let mut message = message_with("original");
+        message.author.username = "tester".to_string();
+        message.id = "42".to_string();
+        message.channel_id = Some("10".to_string());
+
+        let reply = ReplyRef::new(&message);
+        assert_eq!(reply.message_id, "42");
+        assert_eq!(reply.channel_id.as_deref(), Some("10"));
+        assert_eq!(reply.author, "tester");
+        assert_eq!(reply.preview(40), "original");
+    }
+
+    #[test]
+    fn own_reaction_is_added_once_and_removed() {
+        let mut message = message_with("hi");
+
+        assert!(message.add_own_reaction("\u{1f44d}"));
+        assert_eq!(message.reactions.len(), 1);
+        assert_eq!(message.reactions[0].count, 1);
+        assert!(message.reactions[0].me);
+
+        // A second click never inflates the count; Discord ignores the PUT.
+        assert!(!message.add_own_reaction("\u{1f44d}"));
+        assert_eq!(message.reactions[0].count, 1);
+
+        message.remove_own_reaction("\u{1f44d}");
+        assert!(
+            message.reactions.is_empty(),
+            "a lone own reaction disappears"
+        );
+    }
+
+    #[test]
+    fn removing_our_reaction_keeps_other_peoples_counts() {
+        let mut message = message_with("hi");
+        message.reactions.push(Reaction {
+            emoji: "\u{2764}".to_string(),
+            count: 4,
+            me: true,
+            users: Vec::new(),
+        });
+
+        message.remove_own_reaction("\u{2764}");
+        assert_eq!(message.reactions.len(), 1);
+        assert_eq!(message.reactions[0].count, 3);
+        assert!(!message.reactions[0].me);
     }
 
     #[test]

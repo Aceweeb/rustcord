@@ -7,12 +7,28 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 200 lib + 5 bin tests passing
+- `cargo test --all-targets`: 207 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Right-click context menu, replies and reactions (`DECISIONS.md` D25):
+
+- `src/ui/chat.rs` — rows are click-sensing containers with `context_menu`
+  offering quick reactions, copy, reply, edit, delete; reply preview line; reply
+  banner in the composer with Esc/✕ cancel.
+- `src/api/discord.rs` — `add_reaction` (PUT, percent-encoded emoji path),
+  `send_reply` / `send_message_with_reference`, `encode_path_segment`, and
+  `referenced_message` → `ReplyRef` mapping.
+- `src/models.rs` — `ReplyRef`, char-safe `snippet`, `Message::reply_to`,
+  `add_own_reaction` / `remove_own_reaction` for the optimistic update.
+- `src/app.rs` — `replying_to`, `begin_reply`/`cancel_reply`, `react_to` with
+  `MessageAction::ReactFailed` rollback, reply-aware send.
+- `src/api/gateway.rs` — inbound `referenced_message` parsing; `GatewayEvent::Message`
+  is boxed to keep the enum small.
+
 
 Messaging actions and voice presence (`DECISIONS.md` D24):
 

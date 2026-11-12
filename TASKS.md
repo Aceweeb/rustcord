@@ -4,6 +4,11 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Right-click message context menu (`DECISIONS.md` D25): quick reactions
+  (optimistic, rolled back on failure), copy text, reply with a real
+  `message_reference`, plus edit/delete on the bot's own messages. Inbound
+  replies render from `referenced_message`. 9 tests across models, REST and
+  gateway.
 - [x] Message actions (`DECISIONS.md` D24): `⋯` menu on the bot's own messages,
   edit-in-composer (Enter saves, Esc cancels) via PATCH, delete with a
   confirmation via DELETE, client-side 1–2000-character rule, and results applied

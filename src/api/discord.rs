@@ -1,7 +1,7 @@
 use crate::api::ratelimit::{
     global_from_body, retry_after_from_body, RateLimitHeaders, RateLimiter, Route, MAX_WAIT_SECS,
 };
-use crate::models::{Attachment, Embed, Message, Presence, Reaction, User};
+use crate::models::{Attachment, Embed, Message, Presence, Reaction, ReplyRef, User};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
@@ -11,6 +11,23 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 pub const API_BASE: &str = "https://discord.com/api/v10";
+
+/// Percent-encode one path segment. Discord accepts both raw Unicode and
+/// `%XX`, but a request line with raw bytes is fragile, and a custom emoji
+/// (`name:id`) contains a colon that would otherwise end the segment early.
+/// RFC 3986 unreserved characters stay literal.
+pub fn encode_path_segment(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
 
 /// The content to send, or `None` when Discord would reject it anyway: empty
 /// after trimming, or over the 2000-character limit. Pure so the rule is tested
@@ -235,12 +252,69 @@ impl DiscordClient {
         Ok(())
     }
 
+    /// Add a reaction as the bot. Discord answers 204; reaction emoji are part
+    /// of the path, so a Unicode glyph has to be percent-encoded.
+    pub async fn add_reaction(
+        &self,
+        channel_id: &str,
+        message_id: &str,
+        emoji: &str,
+    ) -> Result<()> {
+        let emoji = emoji.trim();
+        if emoji.is_empty() {
+            anyhow::bail!("a reaction needs an emoji");
+        }
+
+        self.request(
+            reqwest::Method::PUT,
+            &format!(
+                "/channels/{channel_id}/messages/{message_id}/reactions/{}/@me",
+                encode_path_segment(emoji)
+            ),
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
     pub async fn send_message(&self, channel_id: &str, content: &str) -> Result<Message> {
+        self.send_message_with_reference(channel_id, content, None)
+            .await
+    }
+
+    /// Send a message that references another one. `fail_if_not_exists: false`
+    /// is what Discord's own clients send: a deleted target shows a plain
+    /// message rather than failing the send.
+    pub async fn send_reply(
+        &self,
+        channel_id: &str,
+        content: &str,
+        reply_to: &str,
+    ) -> Result<Message> {
+        self.send_message_with_reference(channel_id, content, Some(reply_to))
+            .await
+    }
+
+    async fn send_message_with_reference(
+        &self,
+        channel_id: &str,
+        content: &str,
+        reply_to: Option<&str>,
+    ) -> Result<Message> {
+        let mut payload = serde_json::json!({ "content": content });
+        if let Some(reply_to) = reply_to {
+            payload["message_reference"] = serde_json::json!({
+                "message_id": reply_to,
+                "channel_id": channel_id,
+                "fail_if_not_exists": false
+            });
+        }
+
         let body = self
             .request(
                 reqwest::Method::POST,
                 &format!("/channels/{channel_id}/messages"),
-                Some(serde_json::json!({ "content": content })),
+                Some(payload),
             )
             .await?;
 
@@ -283,6 +357,17 @@ struct DiscordMessage {
     attachments: Vec<Attachment>,
     #[serde(default)]
     embeds: Vec<Embed>,
+    #[serde(default)]
+    referenced_message: Option<DiscordReference>,
+}
+
+/// The part of Discord's `referenced_message` this client renders.
+#[derive(Debug, Deserialize)]
+struct DiscordReference {
+    id: String,
+    #[serde(default)]
+    content: String,
+    author: DiscordUser,
 }
 
 #[derive(Debug, Deserialize)]
@@ -332,9 +417,17 @@ impl TryFrom<DiscordMessage> for Message {
             .context("invalid Discord timestamp")?
             .with_timezone(&Utc);
 
+        let channel_id = raw.channel_id;
+        let reply_to = raw.referenced_message.map(|reference| ReplyRef {
+            message_id: reference.id,
+            channel_id: channel_id.clone(),
+            author: reference.author.username,
+            content: reference.content,
+        });
+
         Ok(Self {
             id: raw.id,
-            channel_id: raw.channel_id,
+            channel_id,
             author: raw.author.into(),
             content: raw.content,
             timestamp,
@@ -355,6 +448,7 @@ impl TryFrom<DiscordMessage> for Message {
                 .collect(),
             attachments: raw.attachments,
             embeds: raw.embeds,
+            reply_to,
         })
     }
 }
@@ -362,6 +456,31 @@ impl TryFrom<DiscordMessage> for Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reaction_emoji_is_encoded_for_the_path() {
+        // Thumbs up is U+1F44D.
+        assert_eq!(encode_path_segment("\u{1f44d}"), "%F0%9F%91%8D");
+        // Custom emoji carry a colon, which must not end the segment.
+        assert_eq!(encode_path_segment("blobcat:123"), "blobcat%3A123");
+        assert_eq!(encode_path_segment("wave"), "wave");
+    }
+
+    #[test]
+    fn requires_a_reference_block_for_replies() {
+        // The payload shape is what Discord's docs specify; a reply without it
+        // would be sent as a normal message, which is the bug this guards.
+        let payload = serde_json::json!({
+            "content": "hi",
+            "message_reference": {
+                "message_id": "42",
+                "channel_id": "10",
+                "fail_if_not_exists": false
+            }
+        });
+        assert_eq!(payload["message_reference"]["message_id"], "42");
+        assert_eq!(payload["message_reference"]["fail_if_not_exists"], false);
+    }
 
     #[test]
     fn content_is_trimmed_for_sending() {

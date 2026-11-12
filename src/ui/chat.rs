@@ -204,6 +204,38 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     egui::Panel::bottom("composer").show(ui, |ui| {
         ui.add_space(6.0);
 
+        // A reply is only valid in the channel the target lives in, so it is
+        // hidden (and dropped on send) once another channel is opened.
+        if let Some(reply) = app
+            .replying_to
+            .clone()
+            .filter(|reply| reply.channel_id == app.selected_channel)
+        {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!("Replying to {}", reply.author))
+                        .size(12.0)
+                        .strong()
+                        .color(app.plugins.theme().accent),
+                );
+                ui.label(
+                    RichText::new(reply.preview(60))
+                        .size(11.0)
+                        .color(app.plugins.theme().muted),
+                );
+                if ui
+                    .small_button("\u{2715}")
+                    .on_hover_text("Cancel reply")
+                    .clicked()
+                {
+                    app.cancel_reply();
+                }
+            });
+            if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                app.cancel_reply();
+            }
+        }
+
         if app.editing.is_some() {
             ui.horizontal(|ui| {
                 ui.label(
@@ -365,12 +397,22 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         app.metrics = metrics;
 
         match row_action {
+            Some(RowAction::Copy(text)) => {
+                ui.ctx().copy_text(text);
+                app.status_line = Some("message copied".to_string());
+            }
             Some(RowAction::Edit(id)) => {
                 if let Some(message) = app.messages.iter().find(|m| m.id == id).cloned() {
                     app.begin_edit(&message);
                 }
             }
             Some(RowAction::Delete(id)) => app.request_delete(id),
+            Some(RowAction::Reply(id)) => {
+                if let Some(message) = app.messages.iter().find(|m| m.id == id).cloned() {
+                    app.begin_reply(&message);
+                }
+            }
+            Some(RowAction::React { message_id, emoji }) => app.react_to(message_id, emoji),
             None => {}
         }
 
@@ -387,12 +429,81 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
 /// action is recorded and applied once the borrow ends.
 #[derive(Clone, PartialEq, Eq)]
 pub(crate) enum RowAction {
+    Copy(String),
     Edit(String),
     Delete(String),
+    Reply(String),
+    React { message_id: String, emoji: String },
 }
+
+/// The quick reactions in the context menu, in the order Discord shows them.
+pub(crate) const QUICK_REACTIONS: [&str; 4] =
+    ["\u{1f44d}", "\u{2764}\u{fe0f}", "\u{1f602}", "\u{1f389}"];
 
 /// A single message row, separated so the virtualised list can measure it.
 fn message_row(
+    app: &RustcordApp,
+    ui: &mut egui::Ui,
+    message: &Message,
+    action: &mut Option<RowAction>,
+) {
+    let response = ui
+        // A clickable container so a right-click anywhere on the row opens the
+        // context menu; the widgets inside still get their own clicks first.
+        .scope_builder(egui::UiBuilder::new().sense(egui::Sense::click()), |ui| {
+            message_row_body(app, ui, message, action);
+        })
+        .response;
+
+    response.context_menu(|ui| {
+        ui.set_min_width(190.0);
+
+        ui.horizontal(|ui| {
+            for emoji in QUICK_REACTIONS {
+                if ui
+                    .button(RichText::new(emoji).size(16.0))
+                    .on_hover_text("React")
+                    .clicked()
+                {
+                    *action = Some(RowAction::React {
+                        message_id: message.id.clone(),
+                        emoji: emoji.to_string(),
+                    });
+                    ui.close();
+                }
+            }
+        });
+
+        ui.separator();
+
+        if ui
+            .add_enabled(!message.content.is_empty(), egui::Button::new("Copy text"))
+            .clicked()
+        {
+            *action = Some(RowAction::Copy(message.content.clone()));
+            ui.close();
+        }
+
+        if ui.button("Reply").clicked() {
+            *action = Some(RowAction::Reply(message.id.clone()));
+            ui.close();
+        }
+
+        if app.can_modify(message) {
+            ui.separator();
+            if ui.button("Edit message").clicked() {
+                *action = Some(RowAction::Edit(message.id.clone()));
+                ui.close();
+            }
+            if ui.button("Delete message").clicked() {
+                *action = Some(RowAction::Delete(message.id.clone()));
+                ui.close();
+            }
+        }
+    });
+}
+
+fn message_row_body(
     app: &RustcordApp,
     ui: &mut egui::Ui,
     message: &Message,
@@ -443,6 +554,15 @@ fn message_row(
                     });
                 }
             });
+            // Discord's reply line: who it answers, then a truncated copy.
+            if let Some(reply) = &message.reply_to {
+                ui.label(
+                    RichText::new(format!("\u{21b3} {}: {}", reply.author, reply.preview(70)))
+                        .size(12.0)
+                        .color(theme.muted),
+                );
+            }
+
             ui.label(RichText::new(&message.content).size(15.0).color(theme.text));
 
             for attachment in &message.attachments {

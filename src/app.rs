@@ -71,6 +71,8 @@ pub struct RustcordApp {
     pub(crate) voice: crate::models::VoiceTracker,
     /// The message being edited, if the composer is in edit mode.
     pub(crate) editing: Option<String>,
+    /// The message the next send will reference, if any.
+    pub(crate) replying_to: Option<crate::models::ReplyRef>,
     /// A delete waiting for confirmation.
     pub(crate) pending_delete: Option<String>,
     action_tx: Sender<MessageAction>,
@@ -127,6 +129,11 @@ pub(crate) struct PendingOAuth {
 enum MessageAction {
     Edited(Box<Message>),
     Deleted(String),
+    ReactFailed {
+        message_id: String,
+        emoji: String,
+        error: String,
+    },
     Failed(String),
 }
 
@@ -311,6 +318,7 @@ impl RustcordApp {
             search: crate::search::SearchState::default(),
             voice: crate::models::VoiceTracker::default(),
             editing: None,
+            replying_to: None,
             pending_delete: None,
             action_tx,
             action_results,
@@ -558,6 +566,7 @@ impl RustcordApp {
     }
 
     pub(crate) fn begin_edit(&mut self, message: &Message) {
+        self.replying_to = None;
         self.editing = Some(message.id.clone());
         self.draft = message.content.clone();
         self.status_line = Some("editing message — Enter saves, Esc cancels".to_string());
@@ -568,6 +577,69 @@ impl RustcordApp {
             self.draft.clear();
             self.status_line = Some("edit cancelled".to_string());
         }
+    }
+
+    /// Reply to any message, ours or not — that needs no extra permission.
+    pub(crate) fn begin_reply(&mut self, message: &Message) {
+        self.cancel_edit();
+        self.replying_to = Some(crate::models::ReplyRef::new(message));
+        self.status_line = Some(format!("replying to {}", message.author.username));
+    }
+
+    pub(crate) fn cancel_reply(&mut self) {
+        if self.replying_to.take().is_some() {
+            self.status_line = Some("reply cancelled".to_string());
+        }
+    }
+
+    /// React optimistically, then let the REST result confirm or undo it.
+    pub(crate) fn react_to(&mut self, message_id: String, emoji: String) {
+        let Some(message) = self
+            .messages
+            .iter_mut()
+            .find(|message| message.id == message_id)
+        else {
+            return;
+        };
+
+        if !message.add_own_reaction(&emoji) {
+            self.status_line = Some(format!("already reacted with {emoji}"));
+            return;
+        }
+
+        if !self.live_data {
+            self.status_line = Some(format!("reacted with {emoji} (demo)"));
+            return;
+        }
+
+        let (Some(runtime), Some(channel_id)) = (&self.runtime, self.selected_channel.clone())
+        else {
+            return;
+        };
+
+        let token = self.token_draft.clone();
+        let tx = self.action_tx.clone();
+        let id = message_id.clone();
+        let reaction = emoji.clone();
+        runtime.spawn(async move {
+            let result = match DiscordClient::new(token) {
+                Ok(client) => client
+                    .add_reaction(&channel_id, &id, &reaction)
+                    .await
+                    .map_err(|err| format!("{err:#}")),
+                Err(err) => Err(format!("{err:#}")),
+            };
+
+            if let Err(error) = result {
+                let _ = tx.send(MessageAction::ReactFailed {
+                    message_id: id,
+                    emoji: reaction,
+                    error,
+                });
+            }
+        });
+
+        self.status_line = Some(format!("reacted with {emoji}"));
     }
 
     pub(crate) fn request_delete(&mut self, message_id: String) {
@@ -679,6 +751,20 @@ impl RustcordApp {
                     self.metrics.clear();
                     self.status_line = Some("message deleted".to_string());
                     self.mark_search_stale();
+                }
+                MessageAction::ReactFailed {
+                    message_id,
+                    emoji,
+                    error,
+                } => {
+                    if let Some(message) = self
+                        .messages
+                        .iter_mut()
+                        .find(|message| message.id == message_id)
+                    {
+                        message.remove_own_reaction(&emoji);
+                    }
+                    self.status_line = Some(format!("reaction failed: {error}"));
                 }
                 MessageAction::Failed(err) => {
                     self.status_line = Some(format!("message action failed: {err}"));
@@ -982,7 +1068,7 @@ impl RustcordApp {
                     self.channels.extend(channels);
                 }
                 GatewayEvent::Message(message) => {
-                    self.messages.push(message);
+                    self.messages.push(*message);
                     received_message = true;
                     self.mark_search_stale();
                 }
@@ -1380,6 +1466,7 @@ impl RustcordApp {
         self.typing.clear();
         self.voice.clear();
         self.cancel_edit();
+        self.replying_to = None;
         self.pending_delete = None;
         self.bot_user_id = None;
 
@@ -1449,14 +1536,23 @@ impl RustcordApp {
                 (&self.runtime, self.selected_channel.clone())
             {
                 if self.gateway.is_some() {
+                    // A reply only makes sense in the channel it came from.
+                    let reply_id = self
+                        .replying_to
+                        .take()
+                        .filter(|reply| reply.channel_id.as_deref() == Some(channel_id.as_str()))
+                        .map(|reply| reply.message_id);
                     let token = self.token_draft.clone();
                     let tx = self.send_tx.clone();
                     runtime.spawn(async move {
                         let result = match DiscordClient::new(token) {
-                            Ok(client) => client
-                                .send_message(&channel_id, &content)
-                                .await
-                                .map_err(|err| format!("{err:#}")),
+                            Ok(client) => match reply_id {
+                                Some(target) => {
+                                    client.send_reply(&channel_id, &content, &target).await
+                                }
+                                None => client.send_message(&channel_id, &content).await,
+                            }
+                            .map_err(|err| format!("{err:#}")),
                             Err(err) => Err(format!("{err:#}")),
                         };
 
@@ -1477,6 +1573,7 @@ impl RustcordApp {
 
         let mut message = Message::new(self.current_user.clone(), content);
         message.channel_id = self.selected_channel.clone();
+        message.reply_to = self.replying_to.take();
         self.plugins.on_message(&mut message);
         self.messages.push(message);
         self.draft.clear();

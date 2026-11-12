@@ -582,3 +582,48 @@ sidebar shows presence, and the README says audio is absent.
 sending. Voice **presence** needs no extra intent (`GUILDS` is already
 requested). Voice audio stays on the "not implemented" list until there is a
 worker for Opus and DAVE, and `TASKS.md` records the parts.
+
+## D25. The message context menu is the one action surface; replies are real references
+
+D24 added edit and delete behind a small `⋯` menu inside the row. That was the
+wrong place for them: Discord's own action surface is a right-click anywhere on
+the message, it holds five actions rather than two, and hovering into a 16 px
+button is a worse target than the row you are already reading.
+
+So the row itself is now a click-sensing container whose `context_menu`
+(`src/ui/chat.rs`) offers, in Discord's order:
+
+1. **Quick reactions** — 👍 ❤️ 😂 🎉, one click each.
+2. **Copy text** — the local clipboard, disabled when the message has no text.
+3. **Reply**.
+4. **Edit** and **Delete**, only for messages `can_modify` allows (the bot's own).
+
+Every entry except Copy is a REST call, and all three carry the same lesson:
+optimism needs a rollback.
+
+- **React** optimistically adds the reaction to the row (so the chip appears
+  before the round trip) and `add_own_reaction` refuses a second click, because
+  `PUT …/reactions/{emoji}/@me` is idempotent server-side. If the request fails,
+  `MessageAction::ReactFailed` removes the optimistic chip again and reports the
+  error — a reaction that silently disappears on reload is worse than one that
+  was never drawn.
+- **Reply** does not fake a quote. The composer shows `Replying to @name` with
+  the target's snippet, Esc or `✕` cancels, and sending includes
+  `message_reference { message_id, channel_id, fail_if_not_exists: false }` —
+  the same shape Discord's clients send, so a deleted target still posts. The
+  reference is filtered to the channel the target lives in, since a cross-channel
+  reference is rejected by the API.
+- **Edit** and **Delete** are unchanged from D24.
+
+Inbound replies are parsed from `referenced_message` (guild gateway payloads and
+REST history alike) into `ReplyRef`, which is `Option` on `Message` and defaults
+to `None`, so old payloads and stored shapes stay readable. A payload that only
+carries `message_reference` (deleted target) shows no preview rather than an
+invented author.
+
+**Consequences.** `Message` grew a reply reference, which pushed `GatewayEvent`
+past clippy's variant-size threshold; `GatewayEvent::Message` is now
+`Box<Message>`, so the event channel still moves a pointer. Copy is the only
+purely local action, and it is the only one that cannot fail.
+
+**Voice is untouched by this**: no audio, per D24.
