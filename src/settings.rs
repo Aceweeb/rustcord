@@ -75,6 +75,14 @@ const MIN_UI_SCALE: f32 = 0.8;
 const MAX_UI_SCALE: f32 = 1.6;
 const MIN_BUDGET_MB: u32 = 100;
 const MAX_BUDGET_MB: u32 = 2000;
+/// Decoded attachment/embed textures, bounded independently of the message
+/// buffer so a channel full of screenshots cannot blow the RSS budget.
+const DEFAULT_IMAGE_CACHE_MB: u32 = 48;
+const MIN_IMAGE_CACHE_MB: u32 = 8;
+const MAX_IMAGE_CACHE_MB: u32 = 512;
+
+/// Starting budget for the image cache, in bytes.
+pub const DEFAULT_IMAGE_CACHE_BYTES: u64 = DEFAULT_IMAGE_CACHE_MB as u64 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -109,6 +117,9 @@ pub struct Settings {
     pub memory_alerts: bool,
     #[serde(default = "default_true")]
     pub remember_history: bool,
+    /// Byte budget for decoded images. Eviction is least-recently-used.
+    #[serde(default = "default_image_cache_mb")]
+    pub image_cache_mb: u32,
 
     // --- privacy / diagnostics --------------------------------------------
     #[serde(default = "default_true")]
@@ -132,6 +143,10 @@ fn default_memory_budget() -> u32 {
     DEFAULT_MEMORY_BUDGET_MB
 }
 
+fn default_image_cache_mb() -> u32 {
+    DEFAULT_IMAGE_CACHE_MB
+}
+
 fn default_theme_preset() -> String {
     DEFAULT_THEME_ID.to_string()
 }
@@ -153,6 +168,7 @@ impl Default for Settings {
             memory_budget_mb: default_memory_budget(),
             memory_alerts: true,
             remember_history: true,
+            image_cache_mb: DEFAULT_IMAGE_CACHE_MB,
             diagnostics_capture: true,
             shortcuts: BTreeMap::new(),
         }
@@ -288,6 +304,9 @@ impl Settings {
         }
         self.ui_scale = self.ui_scale.clamp(MIN_UI_SCALE, MAX_UI_SCALE);
         self.memory_budget_mb = self.memory_budget_mb.clamp(MIN_BUDGET_MB, MAX_BUDGET_MB);
+        self.image_cache_mb = self
+            .image_cache_mb
+            .clamp(MIN_IMAGE_CACHE_MB, MAX_IMAGE_CACHE_MB);
         if theme::preset_by(&self.theme_preset).is_none() {
             self.theme_preset = DEFAULT_THEME_ID.to_string();
         }
@@ -327,6 +346,7 @@ mod tests {
         assert_eq!(settings.theme_preset, DEFAULT_THEME_ID);
         assert_eq!(settings.ui_scale, 1.0);
         assert_eq!(settings.memory_budget_mb, DEFAULT_MEMORY_BUDGET_MB);
+        assert_eq!(settings.image_cache_mb, DEFAULT_IMAGE_CACHE_MB);
         assert!(settings.memory_alerts);
         assert!(settings.shortcuts.is_empty());
         assert_eq!(settings.accent(), None);
@@ -358,6 +378,7 @@ mod tests {
         let mut settings = Settings {
             ui_scale: 9.0,
             memory_budget_mb: 1,
+            image_cache_mb: 1,
             theme_preset: "nope".to_string(),
             accent_override: Some("not-a-colour".to_string()),
             ..Settings::default()
@@ -367,6 +388,7 @@ mod tests {
 
         assert_eq!(settings.ui_scale, MAX_UI_SCALE);
         assert_eq!(settings.memory_budget_mb, MIN_BUDGET_MB);
+        assert_eq!(settings.image_cache_mb, MIN_IMAGE_CACHE_MB);
         assert_eq!(settings.theme_preset, DEFAULT_THEME_ID);
         assert_eq!(settings.accent_override, None);
     }

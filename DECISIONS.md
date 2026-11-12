@@ -145,3 +145,46 @@ one frame of a change, because a change is itself what triggers the next frame.
 **Consequences.** 20-second idle sample now shows 0.0% CPU with one scheduler tick
 at the 5 s sampling wake-up. The rule generalises: any per-frame call that
 requests a repaint must be gated, or it becomes a spin loop.
+
+## D13. Images are cached by bytes, not by count, and only for visible rows
+
+**Context.** Attachments and embeds are the one part of Discord that can blow a
+memory budget without bound: a channel of 2560×1440 screenshots decodes to
+~14.7 MB each. A count-based cache ("keep 100 images") says nothing about RAM.
+
+**Decision.**
+
+- Decoded textures are accounted at `width × height × 4` and held in an LRU with
+  a byte budget (default 48 MB, `Settings::image_cache_mb`, clamped 8–512 MB).
+  Exceeding the budget evicts the least-recently-used texture, which drops the
+  GPU texture too.
+- Only rows the virtualised list actually drew request images, so scrolling past
+  a large screenshot never downloads it.
+- Downloads are restricted to `https://` on Discord's CDN hosts. A crafted embed
+  cannot make the client fetch arbitrary URLs, and the allowlist is a pure
+  function with tests rather than a comment.
+- Downloads are capped at 12 MB and 4096 px on either axis; failures are
+  remembered per URL so a broken embed cannot cause a retry storm.
+- Decoding runs on a worker thread created on the first image request, so a
+  text-only session keeps its original two threads and never pays for reqwest's
+  internal runtime.
+
+**Consequences.** Memory during image-heavy scrolling is bounded by the setting,
+not by the channel. Idle footprint rose by ~1 MB (RSS 158 → 159 MB) and threads
+stay at 2 until an image is actually needed.
+
+## D14. Detect repaint loops with a frame counter, not CPU samples
+
+**Context.** A single CPU sample cannot distinguish "the app is busy" from "the
+window is under the cursor and the compositor is asking for frames". A freshly
+built binary also spends its first seconds in driver and font warm-up. Twice
+during this project a CPU spike looked like a regression and wasn't one.
+
+**Decision.** `tick_telemetry` logs frames rendered since the previous tick at
+debug level. Idle is ~1 frame per 5 s telemetry tick (0.2 fps); a repaint loop is
+hundreds of frames per tick (a 5 s burst measured 244 frames, 48.8 fps, while the
+pointer was over the window).
+
+**Consequences.** `RUST_LOG=debug` answers "is something spinning?" in seconds
+and without a profiler. A nonzero `cpu%` column is only meaningful after the
+startup seconds, and must be read alongside the frame count.

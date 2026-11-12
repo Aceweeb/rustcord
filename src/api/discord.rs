@@ -1,4 +1,4 @@
-use crate::models::{Message, Presence, Reaction, User};
+use crate::models::{Attachment, Embed, Message, Presence, Reaction, User};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
@@ -144,6 +144,10 @@ struct DiscordMessage {
     author: DiscordUser,
     #[serde(default)]
     reactions: Vec<DiscordReaction>,
+    #[serde(default)]
+    attachments: Vec<Attachment>,
+    #[serde(default)]
+    embeds: Vec<Embed>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -212,6 +216,8 @@ impl TryFrom<DiscordMessage> for Message {
                     me: reaction.me,
                 })
                 .collect(),
+            attachments: raw.attachments,
+            embeds: raw.embeds,
         })
     }
 }
@@ -275,6 +281,54 @@ mod tests {
         let messages = parse_history(PAGE, "10").expect("parse");
         assert_eq!(messages[0].author.username, "bob");
         assert_eq!(messages[0].author.id, "3");
+    }
+
+    #[test]
+    fn attachments_and_embeds_are_parsed() {
+        let body = r#"[{
+          "id": "1",
+          "content": "",
+          "timestamp": "2026-01-02T03:04:05+00:00",
+          "author": { "id": "2", "username": "alice", "avatar": null },
+          "attachments": [
+            { "id": "9", "filename": "cat.png", "url": "https://cdn.discordapp.com/a/cat.png",
+              "content_type": "image/png", "width": 800, "height": 600, "size": 2048 }
+          ],
+          "embeds": [
+            { "title": "A link", "color": 5793266,
+              "image": { "url": "https://cdn.discordapp.com/e.png", "width": 400, "height": 300 } }
+          ]
+        }]"#;
+
+        let messages = parse_history(body, "10").expect("parse");
+        let message = &messages[0];
+
+        let attachment = &message.attachments[0];
+        assert_eq!(attachment.filename, "cat.png");
+        assert!(attachment.is_image());
+        assert_eq!(attachment.dimensions(), Some((800, 600)));
+
+        let embed = &message.embeds[0];
+        assert_eq!(embed.title.as_deref(), Some("A link"));
+        assert_eq!(embed.color, Some(5_793_266));
+        assert_eq!(embed.image_url(), Some("https://cdn.discordapp.com/e.png"));
+        assert!(!embed.is_empty());
+    }
+
+    #[test]
+    fn image_detection_falls_back_to_the_extension() {
+        let attachment = Attachment {
+            filename: "photo.JPEG".to_string(),
+            ..Attachment::default()
+        };
+        assert!(attachment.is_image());
+
+        let document = Attachment {
+            filename: "notes.pdf".to_string(),
+            content_type: Some("application/pdf".to_string()),
+            ..Attachment::default()
+        };
+        assert!(!document.is_image());
     }
 
     #[test]

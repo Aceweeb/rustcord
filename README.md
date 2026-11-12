@@ -41,6 +41,13 @@ explicit next steps rather than half-implemented stubs that pretend to work.
   Identify, heartbeat loop, READY / GUILD_CREATE / MESSAGE_CREATE parsing.
 - Live guild and channel sync from `GUILD_CREATE`; the composer switches from
   local demo messages to the Discord REST API once live channels exist.
+- Real channel history from `GET /channels/{id}/messages`, paged backwards with
+  Discord's `before` cursor, rendered through a variable-height virtualised list
+  so only visible rows cost anything.
+- Inline attachments and embeds with a byte-bounded LRU image cache
+  (`image_cache_mb`, default 48 MB). Only visible rows are downloaded, only
+  Discord's CDN hosts are contacted, and the cache drops least-recently-used
+  textures to stay inside the budget.
 - Bot-token authentication stored in the OS keyring (`src/auth.rs`). Tokens are
   never written to `settings.json`.
 - Release profile tuned for size (`opt-level = "z"`, LTO, strip).
@@ -50,11 +57,11 @@ Measured on the development machine (Arch, Wayland, release build):
 | Metric | Result |
 | --- | --- |
 | Binary size | ~11 MB stripped |
-| Idle RSS (release, 1280×800) | 158 MB (`VmRSS`) |
-| Idle PSS (fair per-process figure) | 56 MB (`smaps_rollup`) |
-| Peak RSS | 159 MB (`VmHWM`) |
-| Steady-state CPU (6 s sample while idle) | ~0.0% |
-| Threads (no gateway token) | 2 |
+| Idle RSS (release, 1280×800) | 159 MB (`VmRSS`) |
+| Idle PSS (fair per-process figure) | 57–61 MB (`smaps_rollup`) |
+| Peak RSS | 160 MB (`VmHWM`) |
+| Steady-state CPU | 0.0%, 0.2 fps while idle |
+| Threads (no gateway token, no images) | 2 |
 
 RSS for a GL application counts shared library pages in full, and on this machine
 ~100 MB of it is the proprietary NVIDIA driver stack (`libnvidia-gpucomp`,
@@ -67,7 +74,8 @@ application's own allocations are ~23 MB anonymous. Reproduce every figure with
 
 - Gateway resume/reconnect/backoff, sharding, and a rate-limit queue.
 - Voice/video transport, Opus codec, screen capture/streaming.
-- Attachment/image upload, reactions, typing indicators, and message editing.
+- Attachment upload, sending reactions, typing indicators, and message editing.
+  (Incoming attachments and embeds *are* rendered; only uploading is missing.)
 - OAuth2 login. Email/password login is intentionally not implemented: it is
   not part of Discord's supported third-party API model, it exposes account
   credentials to this process, and it violates Discord's terms. Use a bot token
@@ -145,6 +153,7 @@ src/
 ├── auth.rs              # bot token storage via the OS keyring
 ├── models.rs            # User, Guild, Channel, Message, Activity, ...
 ├── settings.rs          # JSON config load/save (no credentials)
+├── images.rs            # bounded LRU of decoded textures, CDN allowlist, worker
 ├── api/
 │   ├── discord.rs       # typed REST client for Discord v10
 │   ├── gateway.rs       # WebSocket gateway, heartbeat, dispatch parsing
@@ -158,6 +167,8 @@ src/
 ├── ui/
 │   ├── theme.rs         # palette + egui Visuals application
 │   ├── sidebar.rs       # guild rail, channel list, user panel
+│   ├── virtual_list.rs  # variable-height row virtualisation
+│   ├── settings.rs      # nine-section settings window
 │   └── chat.rs          # top bar, members, messages, composer
 └── utils/mod.rs         # color parsing, initials, duration formatting
 ```
@@ -198,8 +209,9 @@ a `Plugin`.
 - The release profile uses `opt-level = "z"`, LTO, one codegen unit, and strips
   symbols. Expect a much smaller binary than an Electron client; actual RAM/CPU
   numbers depend on fonts, window size, and how much history you load.
-- Message history should be virtualized before you feed it thousands of rows.
-  The current demo list is small and uses a plain `ScrollArea`.
+- Message history is virtualised (`ui/virtual_list.rs`) with measured row
+  heights, because egui's uniform-height row API would clip multi-line messages
+  and image rows.
 - The `resource_priority` setting is a policy hook, not a scheduler yet. A
   production implementation can use it to cap repaint rates, history fetch
   depth, and image decode concurrency.

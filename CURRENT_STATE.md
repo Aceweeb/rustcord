@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **75 lib + 5 bin passed, 0 failed** |
+| Tests | `cargo test --all-targets` | **97 passed (92 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -17,10 +17,10 @@ Release binary, 1280×800 window, default settings, theme file loaded.
 
 | Metric | Before | After | How measured |
 | --- | --- | --- | --- |
-| RSS | 190–195 MB | **158 MB** | `/proc/<pid>/status` `VmRSS` |
-| PSS | 64.6 MB | **56 MB** | `/proc/<pid>/smaps_rollup` |
-| Peak (`VmHWM`) | 196 MB | **159 MB** | kernel high-water mark |
-| Idle CPU | 3–8% after ~10 s (repaint loop) | **0.0% over 20 s** | ticks per second |
+| RSS | 190–195 MB | **159 MB** | `/proc/<pid>/status` `VmRSS` |
+| PSS | 64.6 MB | **57–61 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
+| Peak (`VmHWM`) | 196 MB | **160 MB** | kernel high-water mark |
+| Idle CPU | 3–8% after ~10 s (repaint loop) | **0.0% (0.2 fps)** | ticks/s; frames at debug |
 | Threads | 2 | 2 | `/proc/<pid>/status` |
 
 Reproduce with `scripts/measure-memory.sh 20`. The script prints RSS, PSS, peak,
@@ -69,6 +69,29 @@ each frame scheduled the next one.
 Fix: hash the palette and call `set_visuals` only when it changes
 (`RustcordApp::apply_theme`, `DECISIONS.md` D12). The 20 s sample is now flat at
 0.0% CPU, with a single scheduler tick at the 5 s telemetry wake-up.
+
+A second CPU spike appeared after the image loader landed and turned out to be
+measurement, not code: the binary was sampled in the seconds right after a
+rebuild (driver and font warm-up), and later samples caught 5-second bursts of
+~49 fps while the pointer sat over the window. `/proc/<pid>/schedstat` showed
+0.02% of a core and the frame counter showed 0.2 fps at idle, so the loader is
+innocent. See `DECISIONS.md` D14 — idle CPU is only meaningful next to a frame
+count.
+
+## Attachments and images
+
+Message attachments and embeds render inline through a byte-bounded image cache
+(`src/images.rs`):
+
+- Budget is `Settings::image_cache_mb` (default 48 MB, range 8–512 MB); eviction
+  is least-recently-used and accounted at 4 bytes per pixel.
+- Only rows the virtualised list drew are fetched, so scrolling is what triggers
+  a download.
+- URLs must be `https://` on Discord's CDN; downloads are capped at 12 MB and
+  4096 px, and failures are not retried.
+- Decoding happens on a worker thread spawned by the first request; placeholders
+  use Discord's reported dimensions so rows do not jump when a texture lands.
+- The Memory settings page shows live cache usage and a budget slider.
 
 ## Coverage
 

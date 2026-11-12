@@ -21,7 +21,9 @@ fi
 APP=$!
 trap 'kill "$APP" 2>/dev/null || true' EXIT
 
-sleep 2
+# Three, not two: the first frames after a rebuild include driver and font
+# warm-up, which otherwise looks like an idle-CPU regression.
+sleep 3
 if ! kill -0 "$APP" 2>/dev/null; then
   echo "app exited during startup; log:" >&2
   tail -20 /tmp/rustcord-measure.log >&2
@@ -53,7 +55,9 @@ done
 
 echo
  echo "* cpu% = scheduler ticks consumed since the previous row. One tick is 10 ms,"
-echo "  so 1 tick/s is about 1% of one core."
+echo "  so 1 tick/s is about 1% of one core. A single burst is usually the window"
+echo "  being redrawn under the pointer; sustained high values across every row are"
+echo "  what a repaint loop looks like. Cross-check with RUST_LOG=debug frame counts."
 echo "RSS counts shared library pages, which on a GL app are dominated by the GPU"
 echo "driver (libnvidia-gpucomp / eglcore / libLLVM). PSS charges shared pages"
 echo "proportionally and is the fair per-process figure."

@@ -23,9 +23,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   `src/monitor.rs`).
 - [x] Log capture ring + diagnostics checks/report export (`src/logbuf.rs`,
   `src/diagnostics.rs`).
-- [x] 61 unit tests, clippy `-D warnings` clean, release build verified.
-- [x] Measured: 195 MB RSS, 2 threads, ~0.0% idle CPU (release, documented in
-  `CURRENT_STATE.md`).
+- [x] 97 unit tests, clippy `-D warnings` clean, release build verified.
+- [x] Measured: 159 MB RSS, 57 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
+  (release, documented in `CURRENT_STATE.md`).
 
 ## Next, in priority order
 
@@ -46,8 +46,13 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [ ] Handle `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_REACTION_*`,
   `TYPING_START`.
 - [ ] Rate-limit queue for REST (`X-RateLimit-*` headers, bucket per route).
-- [ ] Attachments and embeds: render images lazily with an LRU cache and a hard
-  memory ceiling.
+- [x] Attachments and embeds render inline through a byte-bounded LRU image
+  cache (`src/images.rs`): 48 MB default budget, CDN allowlist, 12 MB / 4096 px
+  download caps, LRU eviction, decode worker spawned on first request. Only rows
+  the virtualised list drew are fetched. Cache tests cover budget, LRU order,
+  oversized eviction, URL rejection and PNG decode accounting.
+- [ ] See the image path on screen with a real message containing an attachment;
+  no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
 - [ ] WASM plugin sandbox (`wasmi` + manifest + permissions), currently

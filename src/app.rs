@@ -64,6 +64,9 @@ pub struct RustcordApp {
     /// re-applying visuals every frame, which would request a repaint each
     /// time and turn the idle app into a spin loop.
     applied_theme: Option<u64>,
+    frames_at_last_tick: u64,
+    /// Decoded attachment/embed textures, byte-bounded and LRU-evicted.
+    pub(crate) images: crate::images::ImageLoader,
     /// Pagination state per channel id, so switching back does not refetch.
     pub(crate) history: HashMap<String, ChannelHistory>,
     /// Measured row heights for the virtualised message list.
@@ -76,7 +79,9 @@ pub struct RustcordApp {
 }
 
 enum SendResult {
-    Sent(Message),
+    /// Boxed: `Message` now carries attachments and embeds, so the inline
+    /// variant would dwarf `Failed` and bloat every `SendResult` on the wire.
+    Sent(Box<Message>),
     Failed(String),
 }
 
@@ -235,6 +240,10 @@ impl RustcordApp {
             frames: 0,
             applied_ui_scale: 0.0,
             applied_theme: None,
+            frames_at_last_tick: 0,
+            images: crate::images::ImageLoader::new(
+                usize::try_from(crate::settings::DEFAULT_IMAGE_CACHE_BYTES).unwrap_or(0),
+            ),
             history: HashMap::new(),
             metrics: RowMetrics::new(),
             metrics_channel: None,
@@ -273,6 +282,16 @@ impl RustcordApp {
             let theme = theme.clone();
             theme.apply(ctx);
             self.applied_theme = Some(signature);
+        }
+    }
+
+    /// Keep the cache budget in step with the setting without reallocating on
+    /// every frame (`set_budget` is a no-op comparison here).
+    fn sync_image_budget(&mut self) {
+        let bytes =
+            usize::try_from(u64::from(self.settings.image_cache_mb) * 1024 * 1024).unwrap_or(0);
+        if self.images.budget() != bytes {
+            self.images.set_budget(bytes);
         }
     }
 
@@ -579,7 +598,20 @@ impl RustcordApp {
             Duration::from_millis(5000)
         };
 
-        if self.monitor.maybe_sample(interval)
+        // Frame accounting: a repaint loop shows up here as hundreds of frames
+        // per tick, which is the cheapest way to answer "why is idle CPU
+        // nonzero?" without a profiler. Run with `RUST_LOG=debug`.
+        let sampled = self.monitor.maybe_sample(interval);
+        if sampled {
+            let delta = self.frames.saturating_sub(self.frames_at_last_tick);
+            self.frames_at_last_tick = self.frames;
+            log::debug!(
+                "ui frames: {delta} per {interval:?} ({:.1} fps)",
+                delta as f64 / interval.as_secs_f64()
+            );
+        }
+
+        if sampled
             && self.settings.memory_alerts
             && self.monitor.over_budget(self.settings.memory_budget_mb)
             && self.alert.is_none()
@@ -754,7 +786,7 @@ impl RustcordApp {
 
                         match result {
                             Ok(message) => {
-                                let _ = tx.send(SendResult::Sent(message));
+                                let _ = tx.send(SendResult::Sent(Box::new(message)));
                             }
                             Err(err) => {
                                 let _ = tx.send(SendResult::Failed(err));
@@ -780,7 +812,7 @@ impl RustcordApp {
         while let Ok(result) = self.send_results.try_recv() {
             match result {
                 SendResult::Sent(message) => {
-                    self.messages.push(message);
+                    self.messages.push(*message);
                     self.status_line = Some("message sent".to_string());
                     sent = true;
                 }
@@ -811,6 +843,11 @@ impl eframe::App for RustcordApp {
         self.poll_send_results();
         self.poll_history();
         self.ensure_history();
+        self.sync_image_budget();
+        if self.images.poll(&ctx) > 0 {
+            // Freshly decoded textures only show up on the next frame.
+            ctx.request_repaint();
+        }
         self.handle_shortcuts(&ctx);
         self.tick_telemetry(&ctx);
 

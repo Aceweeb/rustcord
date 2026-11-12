@@ -1,5 +1,5 @@
 use crate::app::RustcordApp;
-use crate::models::Message;
+use crate::models::{Embed, Message};
 use crate::utils::initial;
 use egui::RichText;
 
@@ -114,6 +114,13 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         }
         status.push_str(&format!(" · {} thr", sample.threads));
     }
+    let (image_bytes, _, image_count, _) = app.images.stats();
+    if image_count > 0 {
+        status.push_str(&format!(
+            " · {} in {image_count} img",
+            crate::sysinfo::human_bytes(image_bytes as u64)
+        ));
+    }
     egui::Panel::bottom("status_bar").show(ui, |ui| {
         ui.label(
             RichText::new(status)
@@ -219,6 +226,10 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         let mut metrics = std::mem::take(&mut app.metrics);
         metrics.ensure_len(visible.len());
 
+        // Image URLs seen while drawing. Filled inside the viewport closure and
+        // acted on afterwards, because requesting a download needs `&mut app`.
+        let mut wanted: Vec<String> = Vec::new();
+
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
             .stick_to_bottom(true)
@@ -231,8 +242,11 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
 
                 for row in range.clone() {
                     let index = visible[row];
+                    let message = &app.messages[index];
+                    wanted.extend(message.image_urls().map(str::to_string));
+
                     let response = ui.scope(|ui| {
-                        message_row(app, ui, &app.messages[index]);
+                        message_row(app, ui, message);
                     });
                     metrics.set_height(row, response.response.rect.height() + gap);
                 }
@@ -243,6 +257,13 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             });
 
         app.metrics = metrics;
+
+        // Only rows that were actually drawn pull their images down; scrolling
+        // past a 9 MB screenshot never touches the network.
+        if app.images.prepare(&wanted) > 0 {
+            // Wake up when decodes land instead of waiting for the telemetry tick.
+            ui.ctx().request_repaint();
+        }
     });
 }
 
@@ -277,6 +298,26 @@ fn message_row(app: &RustcordApp, ui: &mut egui::Ui, message: &Message) {
             });
             ui.label(RichText::new(&message.content).color(theme.text));
 
+            for attachment in &message.attachments {
+                if attachment.is_image() {
+                    image_block(app, ui, &attachment.url, attachment.dimensions());
+                } else {
+                    ui.label(
+                        RichText::new(format!(
+                            "📎 {} · {}",
+                            attachment.filename,
+                            crate::sysinfo::human_bytes(attachment.size)
+                        ))
+                        .small()
+                        .color(theme.muted),
+                    );
+                }
+            }
+
+            for embed in &message.embeds {
+                embed_block(app, ui, embed);
+            }
+
             if !message.reactions.is_empty() {
                 ui.horizontal(|ui| {
                     for reaction in &message.reactions {
@@ -291,4 +332,162 @@ fn message_row(app: &RustcordApp, ui: &mut egui::Ui, message: &Message) {
             }
         });
     });
+}
+
+/// Draw an attachment or embed image, or a placeholder of the same size while
+/// it decodes. The placeholder uses Discord's reported dimensions so the row
+/// does not jump when the texture arrives.
+fn image_block(app: &RustcordApp, ui: &mut egui::Ui, url: &str, known: Option<(u32, u32)>) {
+    let theme = app.plugins.theme();
+
+    if app.images.failure(url).is_some() {
+        ui.label(
+            RichText::new("image unavailable")
+                .small()
+                .color(theme.muted),
+        );
+        return;
+    }
+
+    let available = ui.available_width().min(360.0);
+    let target = match app.images.peek(url) {
+        Some(texture) => fitted_size(available, texture.size_vec2()),
+        None => {
+            let (width, height) = known.unwrap_or((4, 3));
+            fitted_size(
+                available,
+                egui::vec2(width.max(1) as f32, height.max(1) as f32),
+            )
+        }
+    };
+
+    let (rect, _) = ui.allocate_exact_size(target, egui::Sense::hover());
+
+    match app.images.peek(url) {
+        Some(texture) => {
+            ui.painter().image(
+                texture.id(),
+                rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+        None => {
+            ui.painter()
+                .rect_filled(rect, egui::CornerRadius::same(6), theme.surface_alt);
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                if app.images.is_pending(url) {
+                    "loading image…"
+                } else {
+                    "image queued…"
+                },
+                egui::FontId::proportional(11.0),
+                theme.muted,
+            );
+        }
+    }
+}
+
+fn embed_block(app: &RustcordApp, ui: &mut egui::Ui, embed: &Embed) {
+    if embed.is_empty() {
+        return;
+    }
+
+    let theme = app.plugins.theme();
+    let accent = embed
+        .color
+        .map(|color| {
+            egui::Color32::from_rgb(
+                ((color >> 16) & 0xff) as u8,
+                ((color >> 8) & 0xff) as u8,
+                (color & 0xff) as u8,
+            )
+        })
+        .unwrap_or(theme.accent);
+
+    egui::Frame::group(ui.style())
+        .fill(theme.surface)
+        .inner_margin(8.0)
+        .show(ui, |ui| {
+            ui.set_max_width(ui.available_width().min(420.0));
+
+            if let Some(title) = &embed.title {
+                ui.label(RichText::new(title).strong().color(accent));
+            }
+            if let Some(description) = &embed.description {
+                ui.label(RichText::new(description).small().color(theme.text));
+            }
+            if let Some(url) = embed.image_url() {
+                let known =
+                    embed
+                        .image
+                        .as_ref()
+                        .and_then(|media| match (media.width, media.height) {
+                            (Some(width), Some(height)) if width > 0 && height > 0 => {
+                                Some((width, height))
+                            }
+                            _ => None,
+                        });
+                image_block(app, ui, url, known);
+            }
+            if let Some(url) = &embed.url {
+                ui.label(RichText::new(url).small().color(theme.muted));
+            }
+        });
+}
+
+/// Fit an image into the message column while preserving its aspect ratio.
+fn fitted_size(available: f32, image: egui::Vec2) -> egui::Vec2 {
+    const MAX_HEIGHT: f32 = 220.0;
+
+    if image.x <= 0.0 || image.y <= 0.0 {
+        return egui::vec2(available, 90.0);
+    }
+
+    let scale = (available / image.x).min(1.0);
+    let mut width = image.x * scale;
+    let mut height = image.y * scale;
+
+    if height > MAX_HEIGHT {
+        let shrink = MAX_HEIGHT / height;
+        width *= shrink;
+        height = MAX_HEIGHT;
+    }
+
+    egui::vec2(width, height)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wide_images_fill_the_column() {
+        let size = fitted_size(360.0, egui::vec2(1200.0, 400.0));
+        assert!((size.x - 360.0).abs() < 0.01);
+        assert!((size.y - 120.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn tall_images_are_capped_by_height() {
+        let size = fitted_size(360.0, egui::vec2(400.0, 2000.0));
+        assert!((size.y - 220.0).abs() < 0.01);
+        assert!(size.x <= 360.0);
+        assert!(size.x > 0.0);
+    }
+
+    #[test]
+    fn small_images_are_not_upscaled() {
+        let size = fitted_size(360.0, egui::vec2(64.0, 32.0));
+        assert!((size.x - 64.0).abs() < 0.01);
+        assert!((size.y - 32.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn missing_dimensions_still_produce_a_placeholder() {
+        let size = fitted_size(300.0, egui::vec2(0.0, 0.0));
+        assert!(size.x > 0.0 && size.y > 0.0);
+    }
 }

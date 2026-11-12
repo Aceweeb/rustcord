@@ -469,6 +469,8 @@ fn parse_message(value: &Value) -> Result<Message> {
         content: value["content"].as_str().unwrap_or_default().to_string(),
         timestamp,
         reactions: Vec::new(),
+        attachments: serde_json::from_value(value["attachments"].clone()).unwrap_or_default(),
+        embeds: serde_json::from_value(value["embeds"].clone()).unwrap_or_default(),
     })
 }
 

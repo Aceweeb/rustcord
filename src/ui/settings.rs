@@ -662,6 +662,36 @@ impl RustcordApp {
         );
 
         ui.add_space(8.0);
+        let (used, cap, count, pending) = self.images.stats();
+        let mut cache_mb = self.settings.image_cache_mb;
+        ui.horizontal(|ui| {
+            ui.label(RichText::new("Image cache").small().color(theme.muted));
+            let mut detail = format!(
+                "{} / {} · {count} held",
+                sysinfo::human_bytes(used as u64),
+                sysinfo::human_bytes(cap as u64)
+            );
+            if pending > 0 {
+                detail.push_str(&format!(" · {pending} loading"));
+            }
+            ui.label(RichText::new(detail).small().color(theme.text));
+        });
+        if ui
+            .add(
+                egui::Slider::new(&mut cache_mb, 8..=512)
+                    .suffix(" MB")
+                    .text("budget"),
+            )
+            .changed()
+        {
+            self.settings.image_cache_mb = cache_mb;
+            dirty = true;
+        }
+        if ui.button("Clear image cache").clicked() {
+            self.images.clear();
+        }
+
+        ui.add_space(8.0);
         let history: Vec<u64> = self.monitor.history.samples().iter().copied().collect();
         let (rect, _) = ui.allocate_exact_size(
             egui::vec2(ui.available_width().min(460.0), 64.0),
@@ -971,6 +1001,7 @@ impl RustcordApp {
                 self.history.clear();
                 self.metrics.clear();
                 self.metrics_channel = None;
+                self.images.clear();
                 self.status_line = Some("message history cleared".to_string());
             }
         });
