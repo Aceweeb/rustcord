@@ -37,8 +37,12 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [ ] Optional further trim: `system_fonts` pulls ~8 MB of fonts
   (wqy-zenhei, NotoColorEmoji, GoogleSansFlex). Dropping the feature would save
   that at the cost of falling back to bundled typography.
-- [ ] Fetch real channel history (`GET /channels/{id}/messages`) with
-  pagination, and virtualise the message list before loading thousands of rows.
+- [x] Real channel history with `before` pagination (`fetch_messages`,
+  `parse_history`) and a variable-height virtualised list
+  (`ui/virtual_list.rs`, `ScrollArea::show_viewport`). Parsing and layout are
+  unit-tested; the network path still needs a real bot token to confirm.
+- [ ] Verify the live paging path end-to-end with a bot token: first page,
+  "Load older messages", duplicate-free prepend, and 429 behaviour.
 - [ ] Handle `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_REACTION_*`,
   `TYPING_START`.
 - [ ] Rate-limit queue for REST (`X-RateLimit-*` headers, bucket per route).

@@ -1,4 +1,5 @@
 use crate::app::RustcordApp;
+use crate::models::Message;
 use crate::utils::initial;
 use egui::RichText;
 
@@ -148,78 +149,146 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     });
 
     egui::CentralPanel::default().show(ui, |ui| {
-        egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .stick_to_bottom(true)
-            .show(ui, |ui| {
-                ui.add_space(12.0);
-                for message in app.messages.iter().filter(|message| {
-                    message.channel_id.as_deref() == app.selected_channel.as_deref()
-                }) {
-                    ui.horizontal(|ui| {
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
-                        ui.painter().circle_filled(
-                            rect.center(),
-                            18.0,
-                            app.plugins.theme().surface_alt,
-                        );
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            initial(&message.author.username),
-                            egui::FontId::proportional(14.0),
-                            app.plugins.theme().text,
-                        );
-
-                        ui.vertical(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    RichText::new(&message.author.username)
-                                        .strong()
-                                        .color(app.plugins.theme().text),
-                                );
-                                ui.label(
-                                    RichText::new(message.timestamp.format("%H:%M").to_string())
-                                        .small()
-                                        .color(app.plugins.theme().muted),
-                                );
-                            });
-                            ui.label(
-                                RichText::new(&message.content).color(app.plugins.theme().text),
-                            );
-
-                            if !message.reactions.is_empty() {
-                                ui.horizontal(|ui| {
-                                    for reaction in &message.reactions {
-                                        let text = format!("{} {}", reaction.emoji, reaction.count);
-                                        let mut rich = RichText::new(text).small();
-                                        if reaction.me {
-                                            rich = rich.color(app.plugins.theme().accent).strong();
-                                        }
-                                        ui.label(rich);
-                                    }
-                                });
-                            }
-                        });
-                    });
-                    let gap = if app.settings.compact_mode { 4.0 } else { 10.0 };
-                    ui.add_space(gap);
-                }
-            });
-
-        let has_visible_messages = app
+        let channel_id = app.selected_channel.clone();
+        let visible: Vec<usize> = app
             .messages
             .iter()
-            .any(|message| message.channel_id.as_deref() == app.selected_channel.as_deref());
+            .enumerate()
+            .filter(|(_, message)| message.channel_id == channel_id)
+            .map(|(index, _)| index)
+            .collect();
 
-        if !has_visible_messages {
+        // Heights measured for a different channel would be wrong for a frame.
+        if app.metrics_channel != channel_id {
+            app.metrics.clear();
+            app.metrics_channel = channel_id.clone();
+        }
+
+        if visible.is_empty() {
             ui.centered_and_justified(|ui| {
                 ui.label(
                     RichText::new("No messages in this channel yet.")
                         .color(app.plugins.theme().muted),
                 );
             });
+            return;
         }
+
+        // Pagination controls for live channels only; demo data has no cursor.
+        if app.live_data {
+            if let Some(state) = channel_id
+                .as_deref()
+                .and_then(|id| app.channel_history(id))
+                .cloned()
+            {
+                ui.horizontal(|ui| {
+                    if state.loading {
+                        ui.label(
+                            RichText::new("loading messages…")
+                                .small()
+                                .color(app.plugins.theme().muted),
+                        );
+                    } else {
+                        if !state.exhausted && ui.button("Load older messages").clicked() {
+                            app.load_older();
+                        }
+                        if state.exhausted {
+                            ui.label(
+                                RichText::new("start of channel")
+                                    .small()
+                                    .color(app.plugins.theme().muted),
+                            );
+                        }
+                    }
+                    if let Some(error) = &state.error {
+                        ui.label(
+                            RichText::new(error)
+                                .small()
+                                .color(app.plugins.theme().danger),
+                        );
+                    }
+                });
+                ui.separator();
+            }
+        }
+
+        let gap = if app.settings.compact_mode { 4.0 } else { 10.0 };
+
+        // Take the metrics out so the closure can borrow `app` immutably while
+        // recording measurements into a local.
+        let mut metrics = std::mem::take(&mut app.metrics);
+        metrics.ensure_len(visible.len());
+
+        egui::ScrollArea::vertical()
+            .auto_shrink([false, false])
+            .stick_to_bottom(true)
+            .show_viewport(ui, |ui, viewport| {
+                let range = metrics.range_for(viewport.min.y, viewport.max.y);
+                ui.allocate_space(egui::vec2(
+                    ui.available_width(),
+                    metrics.offset_of(range.start),
+                ));
+
+                for row in range.clone() {
+                    let index = visible[row];
+                    let response = ui.scope(|ui| {
+                        message_row(app, ui, &app.messages[index]);
+                    });
+                    metrics.set_height(row, response.response.rect.height() + gap);
+                }
+
+                let consumed = metrics.offset_of(range.end);
+                let remaining = (metrics.total() - consumed).max(0.0);
+                ui.allocate_space(egui::vec2(ui.available_width(), remaining));
+            });
+
+        app.metrics = metrics;
+    });
+}
+
+/// A single message row, separated so the virtualised list can measure it.
+fn message_row(app: &RustcordApp, ui: &mut egui::Ui, message: &Message) {
+    let theme = app.plugins.theme();
+
+    ui.horizontal_top(|ui| {
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
+        ui.painter()
+            .circle_filled(rect.center(), 18.0, theme.surface_alt);
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            initial(&message.author.username),
+            egui::FontId::proportional(14.0),
+            theme.text,
+        );
+
+        ui.vertical(|ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(&message.author.username)
+                        .strong()
+                        .color(theme.text),
+                );
+                ui.label(
+                    RichText::new(message.timestamp.format("%H:%M").to_string())
+                        .small()
+                        .color(theme.muted),
+                );
+            });
+            ui.label(RichText::new(&message.content).color(theme.text));
+
+            if !message.reactions.is_empty() {
+                ui.horizontal(|ui| {
+                    for reaction in &message.reactions {
+                        let text = format!("{} {}", reaction.emoji, reaction.count);
+                        let mut rich = RichText::new(text).small();
+                        if reaction.me {
+                            rich = rich.color(theme.accent).strong();
+                        }
+                        ui.label(rich);
+                    }
+                });
+            }
+        });
     });
 }

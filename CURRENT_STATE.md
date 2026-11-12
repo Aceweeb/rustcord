@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **66 passed, 0 failed** |
+| Tests | `cargo test --all-targets` | **75 lib + 5 bin passed, 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -17,10 +17,10 @@ Release binary, 1280×800 window, default settings, theme file loaded.
 
 | Metric | Before | After | How measured |
 | --- | --- | --- | --- |
-| RSS | 190–195 MB | **157 MB** | `/proc/<pid>/status` `VmRSS` |
-| PSS | 64.6 MB | **54 MB** | `/proc/<pid>/smaps_rollup` |
-| Peak (`VmHWM`) | 196 MB | **157 MB** | kernel high-water mark |
-| Idle CPU | ~0.0% | ~0.0% | ticks over 6 s |
+| RSS | 190–195 MB | **158 MB** | `/proc/<pid>/status` `VmRSS` |
+| PSS | 64.6 MB | **56 MB** | `/proc/<pid>/smaps_rollup` |
+| Peak (`VmHWM`) | 196 MB | **159 MB** | kernel high-water mark |
+| Idle CPU | 3–8% after ~10 s (repaint loop) | **0.0% over 20 s** | ticks per second |
 | Threads | 2 | 2 | `/proc/<pid>/status` |
 
 Reproduce with `scripts/measure-memory.sh 20`. The script prints RSS, PSS, peak,
@@ -55,16 +55,29 @@ The old README claimed ~134 MB. It was **not** a code regression:
    −10 MB PSS**, and `libLLVM` is confirmed absent from `/proc/<pid>/maps`.
 
 The remaining ~100 MB of RSS is the proprietary NVIDIA GL stack, which is shared
-with other GL clients and is not reducible from application code. PSS (54 MB) is
-the fair per-process figure; RSS overstates a GL app's cost because it counts
-shared library pages in full.
+with other GL clients and is not reducible from application code. PSS is the fair
+per-process figure; RSS overstates a GL app's cost because it counts shared
+library pages in full.
+
+## Repaint loop found and fixed
+
+While measuring the new message list, a 20 s sample showed CPU jumping to 3–8%
+of a core around t≈11 s and staying there, with PSS climbing. Cause: the app
+re-applied the palette every frame, and `set_visuals` calls `request_repaint`, so
+each frame scheduled the next one.
+
+Fix: hash the palette and call `set_visuals` only when it changes
+(`RustcordApp::apply_theme`, `DECISIONS.md` D12). The 20 s sample is now flat at
+0.0% CPU, with a single scheduler tick at the 5 s telemetry wake-up.
 
 ## Coverage
 
 - Unit-tested: `/proc` parsing, CPU percentage math, history eviction, settings
   roundtrip + legacy migration, shortcut parsing/matching/conflicts, all 12 theme
   presets' WCAG contrast, CSS variable extraction, diagnostics report rendering,
-  log ring eviction, gateway payload parsing, EGL vendor selection policy.
+  log ring eviction, gateway payload parsing, EGL vendor selection policy,
+  history page parsing (order, reactions, malformed bodies) and row
+  virtualisation (viewport ranges, clamping, 10k-row cost).
 - Not tested automatically: the GUI itself (no UI test harness), live Discord
   connectivity (needs a real bot token), keyring storage (no Secret Service
   provider was assumed, and none was used).

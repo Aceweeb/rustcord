@@ -129,3 +129,19 @@ driver mappings (`libnvidia-gpucomp`, `libnvidia-eglcore`, and Mesa's
 2 threads and ~0.0% idle CPU. The override is skipped on AMD/Intel systems and
 whenever the user set the variable, so no non-NVIDIA setup is affected. The
 remaining RSS is the proprietary driver and is not reducible from app code.
+
+## D12. Apply the theme only when the palette changes
+
+**Context.** `RustcordApp::ui` re-applied the palette every frame so that theme
+switches appear instantly. `egui::Context::set_visuals` calls `request_repaint`,
+so the app scheduled another frame from inside every frame. Measured effect: it
+looked idle at 0% CPU until the window was mapped, then held 3–8% of a core
+while doing nothing, with PSS creeping up as frames allocated and freed.
+
+**Decision.** Hash the palette (FNV-1a over the eight colours, polarity and name)
+and call `set_visuals` only when the hash changes. The theme still updates within
+one frame of a change, because a change is itself what triggers the next frame.
+
+**Consequences.** 20-second idle sample now shows 0.0% CPU with one scheduler tick
+at the 5 s sampling wake-up. The rule generalises: any per-frame call that
+requests a repaint must be gated, or it becomes a spin loop.

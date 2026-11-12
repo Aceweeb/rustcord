@@ -10,9 +10,14 @@ use crate::shortcuts::ShortcutAction;
 use crate::sysinfo;
 use crate::ui;
 use crate::ui::settings::SettingsUiState;
+use crate::ui::virtual_list::RowMetrics;
 use chrono::{Duration as ChronoDuration, Utc};
+use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
+
+/// Messages requested per history page (Discord's maximum).
+const HISTORY_PAGE: u8 = 100;
 
 /// Transient in-app banner shown above the chat.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +60,17 @@ pub struct RustcordApp {
     pub(crate) alert: Option<Alert>,
     pub(crate) frames: u64,
     applied_ui_scale: f32,
+    /// Hash of the palette currently installed in egui. Guards against
+    /// re-applying visuals every frame, which would request a repaint each
+    /// time and turn the idle app into a spin loop.
+    applied_theme: Option<u64>,
+    /// Pagination state per channel id, so switching back does not refetch.
+    pub(crate) history: HashMap<String, ChannelHistory>,
+    /// Measured row heights for the virtualised message list.
+    pub(crate) metrics: RowMetrics,
+    pub(crate) metrics_channel: Option<String>,
+    history_tx: Sender<HistoryResult>,
+    history_rx: Receiver<HistoryResult>,
     send_tx: Sender<SendResult>,
     send_results: Receiver<SendResult>,
 }
@@ -62,6 +78,27 @@ pub struct RustcordApp {
 enum SendResult {
     Sent(Message),
     Failed(String),
+}
+
+/// Per-channel history pagination state.
+#[derive(Debug, Clone, Default)]
+pub struct ChannelHistory {
+    pub loading: bool,
+    /// At least one page has been fetched successfully.
+    pub loaded: bool,
+    /// Discord returned a short page: there is nothing older to fetch.
+    pub exhausted: bool,
+    pub error: Option<String>,
+}
+
+struct HistoryPage {
+    messages: Vec<Message>,
+    exhausted: bool,
+}
+
+struct HistoryResult {
+    channel_id: String,
+    result: Result<HistoryPage, String>,
 }
 
 impl RustcordApp {
@@ -172,6 +209,7 @@ impl RustcordApp {
         };
 
         let (send_tx, send_results) = mpsc::channel();
+        let (history_tx, history_rx) = mpsc::channel();
 
         Self {
             settings,
@@ -196,6 +234,12 @@ impl RustcordApp {
             alert: None,
             frames: 0,
             applied_ui_scale: 0.0,
+            applied_theme: None,
+            history: HashMap::new(),
+            metrics: RowMetrics::new(),
+            metrics_channel: None,
+            history_tx,
+            history_rx,
             send_tx,
             send_results,
         }
@@ -213,6 +257,22 @@ impl RustcordApp {
         if let Err(err) = self.settings.save() {
             log::warn!("could not persist settings: {err:#}");
             self.status_line = Some(format!("could not save settings: {err:#}"));
+        }
+    }
+
+    /// Install the current palette, but only when it actually changed.
+    ///
+    /// `egui::Context::set_visuals` calls `request_repaint`, so applying the
+    /// theme on every frame keeps the event loop awake forever: the app idles
+    /// at 0% CPU until the window is mapped, then burns ~5–8% of a core doing
+    /// nothing. The signature makes the call idempotent.
+    fn apply_theme(&mut self, ctx: &egui::Context) {
+        let theme = self.plugins.theme();
+        let signature = theme_signature(theme);
+        if self.applied_theme != Some(signature) {
+            let theme = theme.clone();
+            theme.apply(ctx);
+            self.applied_theme = Some(signature);
         }
     }
 
@@ -245,6 +305,141 @@ impl RustcordApp {
             let excess = self.messages.len() - cap;
             self.messages.drain(0..excess);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Channel history
+    // -----------------------------------------------------------------------
+
+    /// Fetch the first page for the selected channel exactly once.
+    ///
+    /// Called every frame; the guards make it a no-op once the channel is
+    /// loaded, loading, exhausted, or when running on demo data.
+    pub(crate) fn ensure_history(&mut self) {
+        if !self.live_data || self.gateway.is_none() {
+            return;
+        }
+        let Some(channel_id) = self.selected_channel.clone() else {
+            return;
+        };
+        let is_text = self
+            .channels
+            .iter()
+            .any(|channel| channel.id == channel_id && channel.kind == ChannelKind::Text);
+        if !is_text {
+            return;
+        }
+
+        if let Some(state) = self.history.get(&channel_id) {
+            if state.loading || state.loaded || state.exhausted {
+                return;
+            }
+        }
+        self.start_history_fetch(channel_id, None);
+    }
+
+    /// Request the page before the oldest message currently held.
+    pub(crate) fn load_older(&mut self) {
+        let Some(channel_id) = self.selected_channel.clone() else {
+            return;
+        };
+        let oldest = self
+            .messages
+            .iter()
+            .filter(|message| message.channel_id.as_deref() == Some(channel_id.as_str()))
+            .min_by(|a, b| a.timestamp.cmp(&b.timestamp))
+            .map(|message| message.id.clone());
+
+        // With no messages yet, `before: None` loads the newest page.
+        self.start_history_fetch(channel_id, oldest);
+    }
+
+    fn start_history_fetch(&mut self, channel_id: String, before: Option<String>) {
+        let Some(runtime) = &self.runtime else {
+            return;
+        };
+        if self.token_draft.trim().is_empty() {
+            return;
+        }
+
+        if let Some(state) = self.history.get_mut(&channel_id) {
+            state.loading = true;
+            state.error = None;
+        } else {
+            self.history.insert(
+                channel_id.clone(),
+                ChannelHistory {
+                    loading: true,
+                    ..ChannelHistory::default()
+                },
+            );
+        }
+
+        let token = self.token_draft.clone();
+        let tx = self.history_tx.clone();
+        runtime.spawn(async move {
+            let result = match DiscordClient::new(token) {
+                Ok(client) => client
+                    .fetch_messages(&channel_id, before.as_deref(), HISTORY_PAGE)
+                    .await
+                    .map(|messages| HistoryPage {
+                        exhausted: messages.len() < usize::from(HISTORY_PAGE),
+                        messages,
+                    })
+                    .map_err(|err| format!("{err:#}")),
+                Err(err) => Err(format!("{err:#}")),
+            };
+            let _ = tx.send(HistoryResult { channel_id, result });
+        });
+    }
+
+    fn poll_history(&mut self) {
+        let mut added_total = 0usize;
+
+        while let Ok(HistoryResult { channel_id, result }) = self.history_rx.try_recv() {
+            match result {
+                Ok(page) => {
+                    let mut added = 0;
+                    for message in page.messages {
+                        if !self
+                            .messages
+                            .iter()
+                            .any(|existing| existing.id == message.id)
+                        {
+                            self.messages.push(message);
+                            added += 1;
+                        }
+                    }
+                    added_total += added;
+
+                    if let Some(state) = self.history.get_mut(&channel_id) {
+                        state.loading = false;
+                        state.loaded = true;
+                        state.exhausted = page.exhausted;
+                        state.error = None;
+                    }
+                    self.status_line = Some(format!("loaded {added} message(s)"));
+                }
+                Err(err) => {
+                    if let Some(state) = self.history.get_mut(&channel_id) {
+                        state.loading = false;
+                        state.error = Some(err.clone());
+                    }
+                    self.status_line = Some(format!("history unavailable: {err}"));
+                }
+            }
+        }
+
+        if added_total > 0 {
+            // Pages arrive newest-first within a page but older pages arrive
+            // later, so keep the buffer in chronological order.
+            self.messages.sort_by_key(|message| message.timestamp);
+            self.trim_history();
+        }
+    }
+
+    pub(crate) fn channel_history(&self, channel_id: &str) -> Option<&ChannelHistory> {
+        self.history.get(channel_id)
     }
 
     // -----------------------------------------------------------------------
@@ -605,15 +800,17 @@ impl eframe::App for RustcordApp {
         let ctx = ui.ctx().clone();
         self.frames = self.frames.wrapping_add(1);
 
-        // Re-apply every frame so a preset switch or theme-file reload shows at
-        // once; this only writes a handful of colours.
+        // Both are change-gated: applying the palette unconditionally would
+        // request a repaint every frame (see `apply_theme`).
         self.apply_ui_scale(&ctx);
-        self.plugins.theme().apply(&ctx);
+        self.apply_theme(&ctx);
 
         let now = ctx.input(|input| input.time) as f32;
         self.plugins.spotify.tick(now);
         self.poll_gateway();
         self.poll_send_results();
+        self.poll_history();
+        self.ensure_history();
         self.handle_shortcuts(&ctx);
         self.tick_telemetry(&ctx);
 
@@ -625,6 +822,38 @@ impl eframe::App for RustcordApp {
         ui::chat::show(self, ui);
         ui::settings::show(self, &ctx);
     }
+}
+
+/// FNV-1a over the palette's colours and name. No allocation, so it is cheap
+/// enough to compute every frame.
+fn theme_signature(theme: &crate::ui::theme::AppTheme) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut feed = |value: u8| {
+        hash ^= u64::from(value);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    };
+
+    for color in [
+        theme.background,
+        theme.surface,
+        theme.surface_alt,
+        theme.accent,
+        theme.text,
+        theme.muted,
+        theme.danger,
+        theme.success,
+    ] {
+        feed(color.r());
+        feed(color.g());
+        feed(color.b());
+        feed(color.a());
+    }
+    feed(u8::from(theme.is_dark));
+    for byte in theme.name.as_bytes() {
+        feed(*byte);
+    }
+
+    hash
 }
 
 fn demo_messages(current_user: &User) -> Vec<Message> {

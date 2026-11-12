@@ -7,43 +7,69 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 66 passing
+- `cargo test --all-targets`: 75 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 157 MB RSS, 54 MB PSS, 157 MB peak, 2 threads, ~0.0% idle CPU
-- RSS investigation is closed: see `CURRENT_STATE.md` and `DECISIONS.md` D11
+- Runtime: 158 MB RSS, 56 MB PSS, 2 threads, 0.0% idle CPU over 20 s
 
-## Immediate next task (highest value)
+## What changed most recently
 
-1. Real channel history: `GET /channels/{id}/messages` with pagination, plus a
-   virtualised list. Guard with the existing `history_cap`.
-2. `MESSAGE_UPDATE` / `MESSAGE_DELETE` / `MESSAGE_REACTION_*` / `TYPING_START`
-   in `src/api/gateway.rs`, each with a synthetic payload test before touching
-   the socket loop.
-3. REST rate-limit bucket handling in `src/api/discord.rs`.
-4. Packaging: icon asset + PKGBUILD; `.desktop` entry already exists.
+Channel history is now real and paginated, and the message list is virtualised:
+
+- `src/api/discord.rs` — `fetch_messages(channel_id, before, limit)` walks
+  Discord's `before` cursor; `parse_history` is pure and unit-tested
+  (reversal to chronological order, reaction mapping, channel-id override,
+  malformed bodies).
+- `src/app.rs` — `ensure_history`, `load_older`, `start_history_fetch`,
+  `poll_history`, per-channel `ChannelHistory` state. Requests run on the tokio
+  worker and return over an `mpsc` channel; the UI thread never awaits.
+- `src/ui/virtual_list.rs` — variable-height row virtualisation with measured
+  heights, clamping and a 10k-row performance test.
+- `src/ui/chat.rs` — `ScrollArea::show_viewport` draws only visible rows, with a
+  "Load older messages" control and an end-of-channel marker.
+
+## Immediate next task
+
+**Exercise the live path with a real bot token.** Everything up to the network
+boundary is tested, but no request has actually been made against Discord:
+
+1. Put a bot token in the keyring via **Settings → Privacy → Discord connection**
+   (or `DISCORD_TOKEN` is *not* read — use the UI).
+2. Confirm a guild appears, a text channel loads 100 messages, and
+   "Load older messages" prepends the previous page without duplicates.
+3. Watch for rate limiting: rapid paging will eventually return `429`. The client
+   currently surfaces the error text; the next task is a proper bucket queue.
+
+## Then, in order
+
+1. REST rate-limit handling: parse `X-RateLimit-*` and `retry_after`, queue sends
+   and history requests per route bucket (`src/api/discord.rs`).
+2. `MESSAGE_UPDATE` / `MESSAGE_DELETE` / `MESSAGE_REACTION_*` / `TYPING_START`,
+   each with a synthetic payload test before touching the socket loop.
+3. Attachments and embeds with a bounded image cache.
+4. Packaging: icon asset + PKGBUILD.
 
 ## Rules for the next session
 
-- Never push without running the three checks above first.
+- Never push without running tests, clippy and a release build first.
 - Never add user-token or password authentication. See `DECISIONS.md` D2.
 - Never serialise tokens or write them to logs/diagnostics.
-- Keep the release profile size-conscious; new dependencies should justify their
-  RSS and binary cost.
-- Commit and push after each verified milestone (the user asked for this
-  explicitly).
+- Every new dependency must justify its RSS and binary cost.
+- Commit and push after each verified milestone.
 
 ## Gotchas
 
-- `/` is nearly full. Cargo's registry lives there; a build failure with
-  "No space left" is about `CARGO_HOME`, not the project volume.
-- `eframe`/`egui` 0.37: `App::ui(&mut self, ui, frame)` and `egui::Panel::left/…`
-  are the correct shapes. Do not "modernise" them to `update`/`SidePanel`.
-- The window is created in `main.rs`; settings are applied per frame in
-  `RustcordApp::ui`, so a theme change needs no restart.
-- Emoji in labels is fine functionally but affects the font atlas (see above).
-- Keyring requires a Secret Service provider; absence degrades to session-only
-  token memory and shows as `WARN` in Diagnostics.
+- `/` is nearly full; `CARGO_HOME` lives there. Build failures with ENOSPC are
+  about the registry, not the project volume.
+- `egui` 0.37: `App::ui(&mut self, ui, frame)` and `egui::Panel::left/…`.
+- `ScrollArea::show_rows` assumes uniform heights — that is why the message list
+  uses `show_viewport` plus `RowMetrics`. Do not "simplify" it back.
+- `app.metrics` is `std::mem::take`n inside `chat::show` so the closure can
+  borrow `app` immutably; it is restored after the scroll area. Keep that shape
+  or the borrow checker will reject the closure.
+- History cursors are derived from the oldest message held, not stored, so
+  trimming history cannot desynchronise pagination.
+- Mesa is deliberately not initialised on NVIDIA; see `DECISIONS.md` D11.
 
 ## Verification commands
 

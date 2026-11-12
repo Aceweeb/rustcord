@@ -968,6 +968,9 @@ impl RustcordApp {
         ui.horizontal(|ui| {
             if ui.button("Clear message history").clicked() {
                 self.messages.clear();
+                self.history.clear();
+                self.metrics.clear();
+                self.metrics_channel = None;
                 self.status_line = Some("message history cleared".to_string());
             }
         });

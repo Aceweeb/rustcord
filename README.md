@@ -50,9 +50,9 @@ Measured on the development machine (Arch, Wayland, release build):
 | Metric | Result |
 | --- | --- |
 | Binary size | ~11 MB stripped |
-| Idle RSS (release, 1280×800) | 157 MB (`VmRSS`) |
-| Idle PSS (fair per-process figure) | 54 MB (`smaps_rollup`) |
-| Peak RSS | 157 MB (`VmHWM`) |
+| Idle RSS (release, 1280×800) | 158 MB (`VmRSS`) |
+| Idle PSS (fair per-process figure) | 56 MB (`smaps_rollup`) |
+| Peak RSS | 159 MB (`VmHWM`) |
 | Steady-state CPU (6 s sample while idle) | ~0.0% |
 | Threads (no gateway token) | 2 |
 
