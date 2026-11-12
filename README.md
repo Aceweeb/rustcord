@@ -23,6 +23,9 @@ half-implemented stubs that pretend to work.
   (the last two on the bot's own messages), all wired to the Discord REST API.
 - Reaction chips are clickable: yours toggle off with a `DELETE`, anyone's chip
   adds yours with a `PUT`, and a failed request rolls the chip back.
+- Guild member roster from the privileged Server Members intent, paginated over
+  REST and capped at 5000; without the intent the panel falls back to message
+  authors and says which toggle to enable.
 - Nine-section settings window: Appearance, Themes, Performance, Memory,
   Notifications, Shortcuts, Privacy, Diagnostics, About (`Ctrl+,`).
 - 12 built-in theme presets across Dark, Light, Purple and AMOLED, plus custom

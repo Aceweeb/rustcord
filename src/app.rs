@@ -93,6 +93,14 @@ pub struct RustcordApp {
     pub(crate) images: crate::images::ImageLoader,
     /// Pagination state per channel id, so switching back does not refetch.
     pub(crate) history: HashMap<String, ChannelHistory>,
+    /// Guild rosters, fetched over REST with the Members intent. Keyed by guild.
+    pub(crate) members: std::collections::BTreeMap<String, Vec<User>>,
+    members_loading: std::collections::BTreeSet<String>,
+    /// Set when Discord refuses the privileged intent, so the UI can say why the
+    /// roster is empty instead of retrying every frame.
+    pub(crate) member_intent_missing: bool,
+    member_tx: Sender<MemberResult>,
+    member_results: Receiver<MemberResult>,
     /// Measured row heights for the virtualised message list.
     pub(crate) metrics: RowMetrics,
     pub(crate) metrics_channel: Option<String>,
@@ -123,6 +131,18 @@ pub(crate) struct PendingOAuth {
     /// Set once the browser handed back a code and the exchange thread started.
     session_rx: Option<Receiver<Result<crate::api::oauth::Session, String>>>,
     started: std::time::Instant,
+}
+
+/// A guild roster arriving from the REST call.
+enum MemberResult {
+    Loaded {
+        guild_id: String,
+        members: Vec<User>,
+    },
+    Failed {
+        guild_id: String,
+        error: String,
+    },
 }
 
 /// Result of an outbound edit or delete, applied on the UI thread.
@@ -291,6 +311,7 @@ impl RustcordApp {
         let (send_tx, send_results) = mpsc::channel();
         let (history_tx, history_rx) = mpsc::channel();
         let (action_tx, action_results) = mpsc::channel();
+        let (member_tx, member_results) = mpsc::channel();
 
         Self {
             settings,
@@ -335,6 +356,11 @@ impl RustcordApp {
                 usize::try_from(crate::settings::DEFAULT_IMAGE_CACHE_BYTES).unwrap_or(0),
             ),
             history: HashMap::new(),
+            members: std::collections::BTreeMap::new(),
+            members_loading: std::collections::BTreeSet::new(),
+            member_intent_missing: false,
+            member_tx,
+            member_results,
             metrics: RowMetrics::new(),
             metrics_channel: None,
             history_tx,
@@ -445,6 +471,67 @@ impl RustcordApp {
             }
         }
         self.start_history_fetch(channel_id, None);
+    }
+
+    /// The roster for the selected guild, once fetched.
+    pub(crate) fn roster(&self) -> &[User] {
+        self.selected_guild
+            .as_ref()
+            .and_then(|id| self.members.get(id))
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
+    }
+
+    /// Fetch the selected guild's roster once. The Members intent is privileged;
+    /// `member_intent_missing` stops the retry loop when Discord refuses it.
+    fn ensure_members(&mut self) {
+        if !self.live_data || self.member_intent_missing {
+            return;
+        }
+        let Some(guild_id) = self.selected_guild.clone() else {
+            return;
+        };
+        if self.members.contains_key(&guild_id) || self.members_loading.contains(&guild_id) {
+            return;
+        }
+
+        let Some(runtime) = &self.runtime else {
+            return;
+        };
+
+        let token = self.token_draft.clone();
+        let tx = self.member_tx.clone();
+        self.members_loading.insert(guild_id.clone());
+
+        runtime.spawn(async move {
+            let result = match DiscordClient::new(token) {
+                Ok(client) => client
+                    .fetch_members(&guild_id)
+                    .await
+                    .map_err(|err| format!("{err:#}")),
+                Err(err) => Err(format!("{err:#}")),
+            };
+
+            let _ = tx.send(match result {
+                Ok(members) => MemberResult::Loaded { guild_id, members },
+                Err(error) => MemberResult::Failed { guild_id, error },
+            });
+        });
+    }
+
+    fn poll_members(&mut self) {
+        while let Ok(result) = self.member_results.try_recv() {
+            match result {
+                MemberResult::Loaded { guild_id, members } => {
+                    self.members_loading.remove(&guild_id);
+                    self.members.insert(guild_id, members);
+                }
+                MemberResult::Failed { guild_id, error } => {
+                    self.members_loading.remove(&guild_id);
+                    self.status_line = Some(format!("member list unavailable: {error}"));
+                }
+            }
+        }
     }
 
     /// Request the page before the oldest message currently held.
@@ -1110,6 +1197,13 @@ impl RustcordApp {
                     received_message = true;
                     self.mark_search_stale();
                 }
+                GatewayEvent::MemberIntentMissing => {
+                    self.member_intent_missing = true;
+                    self.status_line = Some(
+                        "member roster needs the Server Members Intent in the Developer Portal"
+                            .to_string(),
+                    );
+                }
                 GatewayEvent::VoiceState {
                     channel_id,
                     user_id,
@@ -1503,6 +1597,9 @@ impl RustcordApp {
         self.images.clear();
         self.typing.clear();
         self.voice.clear();
+        self.members.clear();
+        self.members_loading.clear();
+        self.member_intent_missing = false;
         self.cancel_edit();
         self.replying_to = None;
         self.pending_delete = None;
@@ -1654,7 +1751,9 @@ impl eframe::App for RustcordApp {
         self.poll_send_results();
         self.poll_action_results();
         self.poll_history();
+        self.poll_members();
         self.ensure_history();
+        self.ensure_members();
         self.sync_image_budget();
         if self.images.poll(&ctx) > 0 {
             // Freshly decoded textures only show up on the next frame.

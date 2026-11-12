@@ -757,3 +757,39 @@ clipped into a single row.
 
 This does not make a user token work, and is not meant to: it makes the refusal
 legible where the user is looking.
+
+## D29. Guild roster via the privileged Members intent, with a fallback
+
+The member panel used to be derived from message authors, so a quiet channel had
+an empty panel and there was no way to see who is actually in the guild.
+
+**Gateway.** `DEFAULT_INTENTS` now includes `GUILD_MEMBERS` (1 << 1). That intent
+is privileged: if "Server Members Intent" is not enabled for the application,
+Discord closes the socket with **4014 (Disallowed intent(s))** and the whole
+gateway dies — guilds, channels and messages with it. So a 4014 is not treated as
+a network failure: `run_gateway` keeps a mutable intent mask, drops the member
+bit, emits `GatewayEvent::MemberIntentMissing`, invalidates the session, waits one
+second and identifies again. Without the bit the client behaves exactly as
+before; the roster is simply unavailable, and the panel says which toggle to
+enable. `is_disallowed_intents` is unit-tested against 4014, 4004, 1000 and a
+missing code.
+
+**REST.** `DiscordClient::fetch_members` walks
+`GET /guilds/{id}/members?limit=1000&after=<last user id>` until a short page,
+capping at 5000 members. Pagination depends on Discord's id ordering, so
+`parse_members` deliberately does **not** sort — the last id of the raw page is
+the cursor — and deduplicates while dropping entries without a `user` object.
+Display sorting happens in the UI, case-insensitively by username.
+
+**UI.** The panel shows the roster when it has one, falls back to the distinct
+authors of loaded messages when it does not, and otherwise shows why: the
+Developer Portal toggle, "loading members…", or "connect a bot token". It scrolls,
+because a 5000-member guild does not fit 240 px.
+
+**Verification limits.** With the token in this machine's keyring the gateway
+accepted the member intent and delivered READY plus 23 guilds, so the fallback
+path could not be exercised live; it is covered by the close-code test. The REST
+listing itself returned 401 for the same user-token reason as D28, so no live
+roster was ever fetched. Both halves need a real bot token with the intent
+enabled to be proven end to end, and that is recorded in `TASKS.md` rather than
+claimed as tested.

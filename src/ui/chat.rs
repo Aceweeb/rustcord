@@ -96,58 +96,73 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 .inner_margin(egui::Margin::symmetric(8, 0)),
         )
         .show(ui, |ui| {
+            let theme = app.plugins.theme().clone();
             ui.add_space(12.0);
-            let online = app
-                .messages
-                .iter()
-                .map(|message| message.author.username.as_str())
-                .collect::<std::collections::BTreeSet<_>>()
-                .len();
+
+            // The real roster when the Members intent is available; otherwise
+            // the authors of loaded messages, so the panel is never useless.
+            let roster = app.roster();
+            let mut members: Vec<crate::models::User> = if roster.is_empty() {
+                let mut seen = std::collections::BTreeSet::new();
+                app.messages
+                    .iter()
+                    .rev()
+                    .filter(|message| seen.insert(message.author.id.clone()))
+                    .map(|message| message.author.clone())
+                    .collect()
+            } else {
+                roster.to_vec()
+            };
+            members.sort_by(|a, b| {
+                a.username
+                    .to_lowercase()
+                    .cmp(&b.username.to_lowercase())
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+
             ui.label(
-                RichText::new(format!("ONLINE — {online}"))
+                RichText::new(format!("MEMBERS \u{2014} {}", members.len()))
                     .size(11.0)
                     .strong()
-                    .color(app.plugins.theme().muted),
+                    .color(theme.muted),
             );
+
+            if members.is_empty() {
+                let hint = if app.member_intent_missing {
+                    "Enable the Server Members Intent in the Developer Portal to load the roster."
+                } else if app.live_data {
+                    "Loading members\u{2026}"
+                } else {
+                    "Members appear once a bot token is connected."
+                };
+                ui.add_space(4.0);
+                ui.add(egui::Label::new(RichText::new(hint).size(11.0).color(theme.muted)).wrap());
+            }
+
             ui.add_space(6.0);
-
-            if app.messages.is_empty() {
-                ui.label(
-                    RichText::new(
-                        "Members appear as messages load; the guild member \
-                         list needs the privileged Members intent.",
-                    )
-                    .size(11.0)
-                    .color(app.plugins.theme().muted),
-                );
-            }
-
-            let mut seen = std::collections::BTreeSet::new();
-            for message in app.messages.iter().rev() {
-                if seen.insert(message.author.username.clone()) {
-                    ui.horizontal(|ui| {
-                        let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
-                        ui.painter().circle_filled(
-                            rect.center(),
-                            16.0,
-                            crate::utils::lift(app.plugins.theme().surface, 18),
-                        );
-                        ui.painter().text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            initial(&message.author.username),
-                            egui::FontId::proportional(12.0),
-                            app.plugins.theme().text,
-                        );
-                        ui.label(
-                            RichText::new(&message.author.username)
-                                .size(14.0)
-                                .color(app.plugins.theme().text),
-                        );
-                    });
-                }
-            }
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    for member in &members {
+                        ui.horizontal(|ui| {
+                            let (rect, _) = ui
+                                .allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
+                            ui.painter().circle_filled(
+                                rect.center(),
+                                16.0,
+                                crate::utils::lift(theme.surface, 18),
+                            );
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                initial(&member.username),
+                                egui::FontId::proportional(12.0),
+                                theme.text,
+                            );
+                            ui.label(RichText::new(&member.username).size(14.0).color(theme.text));
+                        });
+                    }
+                });
         });
 
     let mut status = app.gateway_status.clone();

@@ -8,9 +8,10 @@
 
 Last updated: 2026-11-12 (Europe/Berlin)
 
-Latest increment: load failures are no longer hidden by the empty-channel view —
-a 401 now appears in the channel and says the stored credential is a user token
-(D28, addendum); the guild rail is populated from READY (D27). Reaction chips toggle (D26), on top of the right-click menu
+Latest increment: guild member roster over the Members intent and REST, with a
+fallback that keeps the gateway alive when the intent is refused (D29); load
+failures are visible in the channel (D28 addendum); the guild rail is populated
+from READY (D27). Reaction chips toggle (D26), on top of the right-click menu
 (D25), message actions and voice presence (D24).
 `HANDOFF.md` has the file-by-file detail; voice **audio** remains deliberately
 unimplemented.

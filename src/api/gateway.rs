@@ -16,7 +16,13 @@ const GATEWAY_URL: &str = "wss://gateway.discord.gg/?v=10&encoding=json";
 /// GUILDS | GUILD_MESSAGES | DIRECT_MESSAGES | MESSAGE_CONTENT.
 /// MESSAGE_CONTENT is privileged; enable it in the bot settings or remove that
 /// bit if you only need metadata.
-pub const DEFAULT_INTENTS: u64 = (1 << 0) | (1 << 9) | (1 << 12) | (1 << 15);
+/// GUILD_MEMBERS is privileged: it only works when "Server Members Intent" is
+/// enabled for the application, and Discord closes the session with 4014 when it
+/// is not. The gateway strips the bit and keeps running in that case, so a bot
+/// without the toggle still gets guilds, channels and messages.
+pub const MEMBER_INTENT: u64 = 1 << 1;
+
+pub const DEFAULT_INTENTS: u64 = (1 << 0) | MEMBER_INTENT | (1 << 9) | (1 << 12) | (1 << 15);
 
 #[derive(Debug, Clone)]
 pub enum GatewayEvent {
@@ -66,6 +72,9 @@ pub enum GatewayEvent {
         user_id: String,
         username: String,
     },
+    /// Discord refused the privileged Members intent; the roster is unavailable
+    /// until it is enabled in the Developer Portal.
+    MemberIntentMissing,
     /// `VOICE_STATE_UPDATE`. `channel_id` is `None` when the user left voice.
     VoiceState {
         channel_id: Option<String>,
@@ -159,11 +168,14 @@ enum CycleOutcome {
     /// The identify allowance is spent; wait this long before reconnecting.
     /// Deliberately not counted as a failed attempt.
     BudgetWait(u64),
+    /// Discord refused the requested intents (4014). The member intent is
+    /// privileged, so the caller retries without it instead of giving up.
+    IntentsRejected,
 }
 
 async fn run_gateway(
     token: &str,
-    intents: u64,
+    mut intents: u64,
     tx: mpsc::UnboundedSender<GatewayEvent>,
     mut shutdown: mpsc::UnboundedReceiver<()>,
 ) -> Result<()> {
@@ -199,6 +211,19 @@ async fn run_gateway(
                 // Not a failure: the ladder keeps its place.
                 continue;
             }
+            CycleOutcome::IntentsRejected if intents & MEMBER_INTENT != 0 => {
+                intents &= !MEMBER_INTENT;
+                // A fresh identify is required: the session never started.
+                session.invalidate();
+                let _ = tx.send(GatewayEvent::MemberIntentMissing);
+                log::warn!("Discord refused the Members intent; retrying without it");
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {}
+                    _ = shutdown.recv() => return Ok(()),
+                }
+                continue;
+            }
+            CycleOutcome::IntentsRejected => "disallowed intents".to_string(),
             CycleOutcome::InvalidSession => {
                 session.invalidate();
                 "invalid session (check the bot token)".to_string()
@@ -427,6 +452,10 @@ async fn gateway_cycle(
                         }
                     }
                     WsMessage::Close(frame) => {
+                        let code = frame.as_ref().map(|frame| u16::from(frame.code));
+                        if is_disallowed_intents(code) {
+                            return CycleOutcome::IntentsRejected;
+                        }
                         return CycleOutcome::Reconnect(format!("closed: {frame:?}"));
                     }
                     _ => {}
@@ -434,6 +463,14 @@ async fn gateway_cycle(
             }
         }
     }
+}
+
+/// Discord closes with 4014 ("Disallowed intent(s)") when a privileged intent
+/// is requested without being enabled for the application. That is a
+/// configuration fact, so the caller retries without the member intent rather
+/// than backing off as if the network failed.
+fn is_disallowed_intents(code: Option<u16>) -> bool {
+    code == Some(4014)
 }
 
 /// Exponential backoff capped at one minute: 2, 4, 8, ... 60 seconds.
@@ -739,6 +776,14 @@ fn parse_typing(value: &Value) -> Option<GatewayEvent> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_disallowed_intent_close_is_recognised() {
+        assert!(is_disallowed_intents(Some(4014)));
+        assert!(!is_disallowed_intents(Some(4004)));
+        assert!(!is_disallowed_intents(Some(1000)));
+        assert!(!is_disallowed_intents(None));
+    }
 
     #[test]
     fn ready_carries_whole_guilds() {

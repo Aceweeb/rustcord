@@ -285,6 +285,49 @@ impl DiscordClient {
         Ok(())
     }
 
+    /// Every guild member, newest id first order, in pages of 1000. Needs the
+    /// privileged Members intent enabled for the application; without it Discord
+    /// answers 403. The cap bounds memory for very large guilds.
+    pub async fn fetch_members(&self, guild_id: &str) -> Result<Vec<User>> {
+        let mut members: Vec<User> = Vec::new();
+        let mut after: Option<String> = None;
+
+        loop {
+            let mut path = format!("/guilds/{guild_id}/members?limit={MEMBER_PAGE_LIMIT}");
+            if let Some(after) = &after {
+                path.push_str("&after=");
+                path.push_str(after);
+            }
+
+            let body = self.get_text(&path).await?;
+            let page = parse_members(&body)?;
+            let page_len = page.len();
+            // `after` pages by user id, so the cursor is the last id of this
+            // unsorted page, taken before any filtering.
+            let cursor = page.last().map(|user| user.id.clone());
+
+            for user in page {
+                if members.len() >= MEMBER_CAP {
+                    break;
+                }
+                if !members.iter().any(|known| known.id == user.id) {
+                    members.push(user);
+                }
+            }
+
+            if page_len < MEMBER_PAGE_LIMIT || members.len() >= MEMBER_CAP {
+                break;
+            }
+
+            after = cursor;
+            if after.is_none() {
+                break;
+            }
+        }
+
+        Ok(members)
+    }
+
     /// Add a reaction as the bot. Discord answers 204; reaction emoji are part
     /// of the path, so a Unicode glyph has to be percent-encoded.
     pub async fn add_reaction(
@@ -430,6 +473,43 @@ struct DiscordEmoji {
     id: Option<String>,
 }
 
+/// Discord's `limit` maximum for a member page, and the total this client keeps.
+pub const MEMBER_PAGE_LIMIT: usize = 1000;
+pub const MEMBER_CAP: usize = 5000;
+
+/// Parse a `GET /guilds/{id}/members` body. Order is preserved because the
+/// caller paginates with `after=<last user id>`; display sorting happens later.
+/// Duplicate and malformed entries are dropped.
+pub fn parse_members(body: &str) -> Result<Vec<User>> {
+    #[derive(Deserialize)]
+    struct Member {
+        // Absent on bot/partial entries; those are skipped rather than failing
+        // the whole page.
+        #[serde(default)]
+        user: Option<DiscordUser>,
+    }
+
+    let raw: Vec<Member> =
+        serde_json::from_str(body).context("could not decode Discord members")?;
+
+    let mut users: Vec<User> = Vec::with_capacity(raw.len());
+    let mut seen = std::collections::HashSet::new();
+    for member in raw {
+        let Some(raw_user) = member.user else {
+            continue;
+        };
+        let user: User = raw_user.into();
+        if user.id.is_empty() || user.username.is_empty() {
+            continue;
+        }
+        if seen.insert(user.id.clone()) {
+            users.push(user);
+        }
+    }
+
+    Ok(users)
+}
+
 /// Parse a `GET /channels/{id}/messages` body.
 ///
 /// Pure so pagination order, reaction mapping and malformed payloads are
@@ -498,6 +578,23 @@ impl TryFrom<DiscordMessage> for Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn members_parse_without_reordering() {
+        let body = r#"[
+            { "user": { "id": "3", "username": "carol", "avatar": null } },
+            { "user": { "id": "1", "username": "alice", "avatar": null } },
+            { "user": { "id": "3", "username": "carol", "avatar": null } },
+            { "user": { "id": "", "username": "ghost", "avatar": null } },
+            { "nick": "no user object" }
+        ]"#;
+
+        let members = parse_members(body).expect("members");
+        assert_eq!(members.len(), 2, "duplicates and malformed entries dropped");
+        // Pagination depends on this: `after` uses the last id as returned.
+        assert_eq!(members[0].id, "3");
+        assert_eq!(members[1].id, "1");
+    }
 
     #[test]
     fn failures_explain_the_token_problem() {

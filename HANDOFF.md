@@ -7,12 +7,25 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 210 lib + 5 bin tests passing
+- `cargo test --all-targets`: 212 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Guild member roster (`DECISIONS.md` D29):
+
+- `src/api/gateway.rs` — `GUILD_MEMBERS` in `DEFAULT_INTENTS`; 4014 close is
+  classified, the bit is dropped, `MemberIntentMissing` is emitted and the
+  session re-identifies; `is_disallowed_intents` tested.
+- `src/api/discord.rs` — `fetch_members` (paginated, 5000 cap), `parse_members`
+  (order preserved for the cursor, duplicates dropped), `MEMBER_PAGE_LIMIT`.
+- `src/app.rs` — roster cache per guild, one fetch per guild, `MemberResult`
+  applied on the UI thread, `member_intent_missing` to stop retries.
+- `src/ui/chat.rs` — panel shows the roster, falls back to message authors, or
+  explains the missing intent; scrolls.
+
 
 Token diagnostics (`DECISIONS.md` D28):
 

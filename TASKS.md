@@ -4,6 +4,11 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [~] Guild member roster (`DECISIONS.md` D29): `GUILD_MEMBERS` intent with a
+  4014 fallback, paginated `GET /guilds/{id}/members` (1000 per page, 5000 cap),
+  scrollable roster panel with a message-author fallback. Parsing and the 4014
+  classification are tested. **Not verified live**: the only token here is a user
+  token, which REST rejects (D28).
 - [x] Token failures are explained (`DECISIONS.md` D28): 401 says a user-account
   token cannot be used and points at the bot flow, 403 says the bot lacks
   permission. Verified live: the keyring held a user token, `/users/@me` was 200
