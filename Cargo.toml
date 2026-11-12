@@ -45,6 +45,7 @@ image = { version = "0.25.10", default-features = false, features = ["png", "jpe
 sha2 = "0.11.1"
 getrandom = "0.4.3"
 wasmi = { version = "2.0.0", default-features = false, features = ["std", "validate", "wat", "auto-dispatch"] }
+qrcode = "0.13"
 
 [profile.release]
 opt-level = "z"

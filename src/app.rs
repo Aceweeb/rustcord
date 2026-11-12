@@ -76,6 +76,9 @@ pub struct RustcordApp {
     pub(crate) runtime: Option<tokio::runtime::Runtime>,
     pub(crate) gateway_status: String,
     pub(crate) token_draft: String,
+    /// Whether `token_draft` is a bot token (`true`, `Authorization: Bot …`)
+    /// or a personal-account token (`false`, sent raw).
+    pub(crate) token_is_bot: bool,
     pub(crate) token_status: String,
     pub(crate) live_data: bool,
     pub(crate) login: crate::ui::login::LoginState,
@@ -351,18 +354,32 @@ impl RustcordApp {
 
         let messages = demo_messages(&current_user);
 
-        let token_draft = auth::load_discord_token().unwrap_or_default();
-        let token_status = if token_draft.is_empty() {
-            "No bot token stored in the system keyring".to_string()
+        let bot_token = auth::load_discord_token().unwrap_or_default();
+        let personal_token = auth::load_personal_token().unwrap_or_default();
+
+        // Prefer a bot token; fall back to a personal-account token if no bot
+        // token is stored. A personal token starts the gateway but REST calls
+        // need the raw token (no `Bot ` scheme) — handled in `api/discord.rs`.
+        let (token_draft, token_is_bot) = if !bot_token.trim().is_empty() {
+            (bot_token.clone(), true)
+        } else if !personal_token.trim().is_empty() {
+            (personal_token.clone(), false)
         } else {
+            (String::new(), true)
+        };
+        let token_status = if token_draft.is_empty() {
+            "No token stored in the system keyring".to_string()
+        } else if !bot_token.trim().is_empty() {
             "Bot token loaded from the system keyring".to_string()
+        } else {
+            "Personal-account token loaded from the system keyring".to_string()
         };
 
         let (runtime, gateway, gateway_status) = if token_draft.trim().is_empty() {
             (
                 None,
                 None,
-                "No bot token stored — using local demo data".to_string(),
+                "No token stored — using local demo data".to_string(),
             )
         } else {
             match start_gateway(&token_draft) {
@@ -411,6 +428,7 @@ impl RustcordApp {
             runtime,
             gateway_status,
             token_draft,
+            token_is_bot,
             token_status,
             live_data: false,
             login,
@@ -927,11 +945,12 @@ impl RustcordApp {
         };
 
         let token = self.token_draft.clone();
+        let token_is_bot = self.token_is_bot;
         let tx = self.member_tx.clone();
         self.members_loading.insert(guild_id.clone());
 
         runtime.spawn(async move {
-            let result = match DiscordClient::new(token) {
+            let result = match DiscordClient::new(token, token_is_bot) {
                 Ok(client) => client
                     .fetch_members(&guild_id)
                     .await
@@ -999,9 +1018,10 @@ impl RustcordApp {
         }
 
         let token = self.token_draft.clone();
+        let token_is_bot = self.token_is_bot;
         let tx = self.history_tx.clone();
         runtime.spawn(async move {
-            let result = match DiscordClient::new(token) {
+            let result = match DiscordClient::new(token, token_is_bot) {
                 Ok(client) => client
                     .fetch_messages(&channel_id, before.as_deref(), HISTORY_PAGE)
                     .await
@@ -1143,11 +1163,12 @@ impl RustcordApp {
         };
 
         let token = self.token_draft.clone();
+        let token_is_bot = self.token_is_bot;
         let tx = self.action_tx.clone();
         let id = message_id.clone();
         let reaction = emoji.clone();
         runtime.spawn(async move {
-            let result = match DiscordClient::new(token) {
+            let result = match DiscordClient::new(token, token_is_bot) {
                 Ok(client) if removing => client.remove_reaction(&channel_id, &id, &reaction).await,
                 Ok(client) => client.add_reaction(&channel_id, &id, &reaction).await,
                 Err(err) => Err(err),
@@ -1197,9 +1218,10 @@ impl RustcordApp {
         };
 
         let token = self.token_draft.clone();
+        let token_is_bot = self.token_is_bot;
         let tx = self.action_tx.clone();
         runtime.spawn(async move {
-            let result = match DiscordClient::new(token) {
+            let result = match DiscordClient::new(token, token_is_bot) {
                 Ok(client) => client
                     .edit_message(&channel_id, &message_id, &content)
                     .await
@@ -1236,10 +1258,11 @@ impl RustcordApp {
         };
 
         let token = self.token_draft.clone();
+        let token_is_bot = self.token_is_bot;
         let tx = self.action_tx.clone();
         let id = message_id.clone();
         runtime.spawn(async move {
-            let result = match DiscordClient::new(token) {
+            let result = match DiscordClient::new(token, token_is_bot) {
                 Ok(client) => client
                     .delete_message(&channel_id, &id)
                     .await
@@ -2052,11 +2075,80 @@ impl RustcordApp {
         };
 
         self.token_draft = token;
+        self.token_is_bot = true;
         self.login.token.clear();
         self.login.error = None;
         self.login.visible = false;
         self.status_line = Some("signing in…".to_string());
         self.restart_gateway();
+    }
+
+    /// Sign in with the currently selected login kind.
+    ///
+    /// Bot tokens are stored via `auth::store_discord_token`; personal-account
+    /// tokens via `auth::store_personal_token`. QR scanning lands on the
+    /// `Personal` kind after a successful scan.
+    pub(crate) fn sign_in_with_kind(&mut self, kind: crate::ui::login::LoginKind) {
+        match kind {
+            crate::ui::login::LoginKind::Bot => {
+                self.sign_in();
+            }
+            crate::ui::login::LoginKind::Personal => {
+                let raw = self.login.token.trim().to_string();
+                let token = raw.strip_prefix("Bot ").unwrap_or(&raw).trim().to_string();
+
+                if token.is_empty() {
+                    self.login.error =
+                        Some("Paste an account token to sign in.".to_string());
+                    return;
+                }
+
+                if !crate::ui::login::looks_like_personal_token(&token) {
+                    self.login.error =
+                        Some("That does not look like a valid token.".to_string());
+                    return;
+                }
+
+                self.token_status = match auth::store_personal_token(&token) {
+                    Ok(()) => "Personal token saved to keyring".to_string(),
+                    Err(err) => {
+                        format!("Keyring unavailable ({err:#}); the token will only last this session")
+                    }
+                };
+
+                self.token_draft = token;
+                self.token_is_bot = false;
+                self.login.token.clear();
+                self.login.error = None;
+                self.login.visible = false;
+                self.status_line = Some("signing in…".to_string());
+                self.restart_gateway();
+            }
+            crate::ui::login::LoginKind::Qr => {
+                self.toggle_qr();
+            }
+        }
+    }
+
+    /// Toggle the QR-code sign-in panel visibility.
+    pub(crate) fn toggle_qr(&mut self) {
+        self.login.qr.visible = !self.login.qr.visible;
+        if self.login.qr.visible {
+            self.login.qr.session_id = String::new();
+            self.login.qr.image = None;
+            self.login.qr.status = None;
+            self.login.qr.error = None;
+            self.login.qr.token = None;
+        }
+    }
+
+    /// Refresh the QR code (generate a new session ID and image).
+    pub(crate) fn refresh_qr(&mut self) {
+        self.login.qr.session_id = String::new();
+        self.login.qr.image = None;
+        self.login.qr.status = None;
+        self.login.qr.error = None;
+        self.login.qr.token = None;
     }
 
     /// Skip sign-in and stay on the local demo data.
@@ -2299,6 +2391,7 @@ impl RustcordApp {
         self.live_data = false;
         self.show_settings = false;
         self.token_draft.clear();
+        self.token_is_bot = true;
         self.history.clear();
         self.metrics.clear();
         self.metrics_channel = None;
@@ -2318,10 +2411,11 @@ impl RustcordApp {
         self.bot_user_id = None;
 
         let _ = auth::clear_discord_token();
-        // Signing out of the bot ends the session, so the identity goes too.
+        let _ = auth::clear_personal_token();
+        // Signing out ends the session, so the identity goes too.
         self.sign_out_identity();
         self.token_status = "Signed out; token removed from the keyring".to_string();
-        self.gateway_status = "No bot token stored".to_string();
+        self.gateway_status = "No token stored".to_string();
         self.login = crate::ui::login::LoginState::new(true);
     }
 
@@ -2333,7 +2427,7 @@ impl RustcordApp {
         self.live_data = false;
 
         if self.token_draft.trim().is_empty() {
-            self.gateway_status = "No bot token stored".to_string();
+            self.gateway_status = "No token stored".to_string();
             return;
         }
 
@@ -2389,9 +2483,10 @@ impl RustcordApp {
         };
 
         let token = self.token_draft.clone();
+        let token_is_bot = self.token_is_bot;
         let typing_channel = channel_id.clone();
         runtime.spawn(async move {
-            match DiscordClient::new(token) {
+            match DiscordClient::new(token, token_is_bot) {
                 Ok(client) => {
                     if let Err(err) = client.trigger_typing(&typing_channel).await {
                         log::debug!("typing indicator not sent: {err:#}");
@@ -2453,9 +2548,10 @@ impl RustcordApp {
                         .filter(|reply| reply.channel_id.as_deref() == Some(channel_id.as_str()))
                         .map(|reply| reply.message_id);
                     let token = self.token_draft.clone();
+                    let token_is_bot = self.token_is_bot;
                     let tx = self.send_tx.clone();
                     runtime.spawn(async move {
-                        let result = match DiscordClient::new(token) {
+                        let result = match DiscordClient::new(token, token_is_bot) {
                             Ok(client) => match reply_id {
                                 Some(target) => {
                                     client.send_reply(&channel_id, &content, &target).await
