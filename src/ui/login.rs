@@ -162,6 +162,63 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 });
 
             ui.add_space(12.0);
+            // The invite is the step that actually makes a token useful: a bot in
+            // no server has nothing to read, and that failure looks like a bug.
+            egui::Frame::group(ui.style())
+                .fill(theme.surface)
+                .inner_margin(16.0)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.label(RichText::new("Add the bot to a server").strong().color(theme.text));
+                    ui.label(
+                        RichText::new(
+                            "Invites the bot that the token above belongs to, asking only for what \
+                             Rustcord uses: view channels, read history, send messages, embed links, \
+                             attach files and add reactions.",
+                        )
+                        .small()
+                        .color(theme.muted),
+                    );
+
+                    if let Some(client_id) = app.settings.oauth_client_id.clone() {
+                        let url = crate::api::oauth::bot_invite_url(&client_id);
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            if ui.button("Open the invite page").clicked() {
+                                if let Err(err) = crate::api::oauth::open_browser(&url) {
+                                    app.oauth.error = Some(format!(
+                                        "{err:#} — open the link below yourself"
+                                    ));
+                                }
+                            }
+                            if ui.button("Copy invite link").clicked() {
+                                ui.ctx().copy_text(url.clone());
+                                app.status_line = Some("invite link copied".to_string());
+                            }
+                        });
+                        ui.label(RichText::new(&url).small().color(theme.muted));
+                    } else {
+                        ui.label(
+                            RichText::new(
+                                "Set the client ID in the identity card below first; the invite is \
+                                 built from it.",
+                            )
+                            .small()
+                            .color(theme.muted),
+                        );
+                    }
+
+                    ui.label(
+                        RichText::new(
+                            "A bot cannot read a server it has not joined, so this comes before the \
+                             token can do anything.",
+                        )
+                        .small()
+                        .color(theme.muted),
+                    );
+                });
+
+            ui.add_space(12.0);
             // Discord identity (OAuth2): shows who you are, nothing more. It is
             // deliberately separate from the token above, and the copy says so.
             egui::Frame::group(ui.style())

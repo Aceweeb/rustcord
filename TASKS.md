@@ -17,6 +17,13 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [x] Relative `theme_file` paths resolve against the config dir and the binary's
   directory before the working directory, so a launcher start does not silently
   lose the theme. 2 tests.
+- [x] Bot install flow on the login page (`DECISIONS.md` D21): builds the invite
+  URL from the configured client ID with only the six permissions the client
+  uses, plus copy-link and open-in-browser. 3 tests pin the permission bits.
+- [ ] Research: Discord Social SDK (`sdk.social_layer`) — the only sanctioned
+  route to user-level DMs/friends, and it needs Discord approval, separate terms
+  and a game SDK (C++/C#/Unity). Also `rpc`/`messages.read`, which only work
+  against a running official client. Both are gated; do not fake either.
 - [ ] Multiple bot accounts (`DECISIONS.md`, proposal section): designed, not
   started; needs per-account keyring entries, per-account sessions and per-token
   identify budgets.

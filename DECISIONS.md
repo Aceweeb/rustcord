@@ -394,6 +394,54 @@ the copy says so instead of implying a server-side search. A real index remains
 possible later, but it would have to stay inside the memory budget and be
 invalidated by the same events that mark the overlay stale today.
 
+## D21. "Log in as my Discord account" — what exists, what does not, and why
+
+**Context.** The request keeps coming back in the form "just make Discord login
+happen, find any way". It is worth answering with the actual state of Discord's
+platform rather than an opinion.
+
+**What Discord documents (checked 2026-11-12):**
+
+- *Self-bots are forbidden.* Discord's own help article on automated user
+  accounts says automating a normal user account outside the OAuth2/bot API "is
+  forbidden, and can result in an account termination if found". The OAuth2 topic
+  repeats it.
+- *`messages.read` is not a client scope.* It exists "for local rpc server api
+  access", i.e. talking to the official desktop client over its local RPC socket,
+  and is otherwise restricted to channels the app itself created.
+- *User-level DMs and friends need the Social SDK.* `dm_channels.read` and
+  `relationships.read` require Discord approval, and the Social SDK's
+  `sdk.social_layer` scope (which enables limited messaging) is approval-gated,
+  governed by separate terms, and shipped as a game SDK (C++/C#/Unity), not as an
+  API a Rust desktop client can simply call.
+- *Bots are the supported path.* Bot tokens authenticate as an application
+  account, connect to the gateway and use the REST API, with permissions granted
+  when the bot is invited to a server.
+
+**Decision.** Rustcord's login page offers every legitimate step and no
+illegitimate one:
+
+1. **Create an application** and copy its bot token (linked instructions).
+2. **Invite the bot to a server** — new in this session: the page builds
+   `…/oauth2/authorize?client_id=…&scope=bot applications.commands&permissions=…`
+   from the same client ID, asking only for the six permissions the client uses
+   (view channels, read history, send messages, embed links, attach files, add
+   reactions = 117824). A token whose bot is in no server can read nothing, and
+   that failure is indistinguishable from a broken app.
+3. **Paste the token**, which is stored in the OS keyring.
+4. Optionally **connect your identity** with OAuth2 `identify`, so the app can
+   show your name and avatar.
+
+Rustcord will not add a password form, will not read browser cookies or local
+storage, will not copy tokens out of the official client's files, and will not
+speak as a person on the gateway. Those are the "any way" shortcuts, and each of
+them is a ban risk for the user and a terms violation for the project.
+
+**Consequences.** If Discord ever opens user-level messaging to approved
+third-party clients, the honest route is the Social SDK with its approval
+process, and that is recorded in `TASKS.md` as research with its prerequisites
+rather than something to hack around.
+
 ## Proposal (not implemented): multiple bot accounts
 
 The request to connect several bot accounts at once conflicts with the current

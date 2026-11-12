@@ -36,6 +36,31 @@ pub const TOKEN_URL: &str = "https://discord.com/api/oauth2/token";
 pub const USER_URL: &str = "https://discord.com/api/v10/users/@me";
 pub const SCOPE: &str = "identify";
 
+/// Permissions the bot is invited with: what Rustcord actually uses today.
+///
+/// VIEW_CHANNEL | SEND_MESSAGES | ADD_REACTIONS | EMBED_LINKS | ATTACH_FILES |
+/// READ_MESSAGE_HISTORY. Nothing is requested that the client does not use, so
+/// the invite does not ask a server owner for more than it needs.
+pub const BOT_PERMISSIONS: u64 =
+    (1 << 10) | (1 << 11) | (1 << 6) | (1 << 14) | (1 << 15) | (1 << 16);
+
+/// The bot install flow is a different OAuth2 flow from the identity one above:
+/// `scope=bot` puts the application's bot user into the chosen server, and it is
+/// authorised with a token, not a user grant.
+pub const BOT_SCOPES: &str = "bot applications.commands";
+
+/// The invite URL for the bot belonging to `client_id`.
+///
+/// This is the step that makes a bot token able to read anything: a token whose
+/// bot is in no server has nothing to read. Building it here keeps the
+/// permissions in one place instead of in a wiki page nobody updates.
+pub fn bot_invite_url(client_id: &str) -> String {
+    format!(
+        "https://discord.com/oauth2/authorize?client_id={client_id}&scope=bot%20applications.commands\
+         &permissions={BOT_PERMISSIONS}"
+    )
+}
+
 /// Loopback port for the redirect. Must match the redirect URI registered on the
 /// Discord application exactly; the login page says so.
 pub const REDIRECT_PORT: u16 = 53134;
@@ -852,5 +877,27 @@ mod tests {
     fn the_scope_is_identify_only() {
         // A guard against widening this flow by accident: messaging needs a bot.
         assert_eq!(SCOPE, "identify");
+    }
+
+    #[test]
+    fn the_bot_invite_asks_only_for_permissions_the_client_uses() {
+        // VIEW_CHANNEL 1024 + SEND_MESSAGES 2048 + ADD_REACTIONS 64 +
+        // EMBED_LINKS 16384 + ATTACH_FILES 32768 + READ_MESSAGE_HISTORY 65536.
+        assert_eq!(BOT_PERMISSIONS, 117_824);
+
+        let url = bot_invite_url("123456789012345678");
+        assert!(url.starts_with("https://discord.com/oauth2/authorize?"));
+        assert!(url.contains("client_id=123456789012345678"));
+        assert!(url.contains("scope=bot%20applications.commands"));
+        assert!(url.contains("&permissions=117824"));
+        // The bot flow must not carry PKCE or state from the identity flow.
+        assert!(!url.contains("code_challenge"));
+        assert!(!url.contains("state="));
+    }
+
+    #[test]
+    fn the_bot_scopes_include_bot_and_commands() {
+        assert!(BOT_SCOPES.contains("bot"));
+        assert!(BOT_SCOPES.contains("applications.commands"));
     }
 }

@@ -6,7 +6,7 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **185 passed (180 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **187 passed (182 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -78,6 +78,24 @@ rebuild (driver and font warm-up), and later samples caught 5-second bursts of
 0.02% of a core and the frame counter showed 0.2 fps at idle, so the loader is
 innocent. See `DECISIONS.md` D14 — idle CPU is only meaningful next to a frame
 count.
+
+## Login page
+
+Four blocks, in the order a new user needs them (`src/ui/login.rs`):
+
+1. **Bot token** — shape-checked, keyring-stored, demo mode available.
+2. **Add the bot to a server** — the invite URL for the same application, with
+   exactly the six permissions the client uses (117824), copyable and openable.
+   A bot in no server can read nothing, so this is the step that makes a token
+   useful.
+3. **Discord identity** — optional OAuth2 `identify` + PKCE, its own keyring
+   entry, refresh on expiry. Read-only by design.
+4. **Help** — where to create the application.
+
+There is deliberately no password field and no user-token path: see
+`DECISIONS.md` D21 for Discord's documented position (self-bots are forbidden and
+can end an account; `messages.read` is RPC-only; user DMs/friends need the
+approval-gated Social SDK).
 
 ## Desktop install
 

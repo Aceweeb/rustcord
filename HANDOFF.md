@@ -56,6 +56,16 @@ neither history paging nor image rendering has been seen working:
    cache figures in **Settings → Memory** as you scroll past it repeatedly.
 4. Expect `429` under rapid paging — that is the next task, not a bug.
 
+## "Log in as me" requests
+
+Expect this again. `DECISIONS.md` D21 has the answer with sources: self-bots are
+forbidden and can terminate an account, `messages.read` is RPC-only, and user DMs
+need the approval-gated Social SDK. What the login page offers instead is the
+legitimate path — create app, invite the bot with exactly the six permissions the
+client uses, paste the token, optionally connect identity with `identify`.
+Do not add a password field, do not read the official client's files, and do not
+put a user token on the gateway.
+
 ## Installed for this user
 
 `scripts/install-local.sh` put the release binary at `~/.local/bin/rustcord`, the

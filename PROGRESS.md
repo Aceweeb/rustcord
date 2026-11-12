@@ -384,6 +384,12 @@ Priority order for the next session:
   50 results, char-safe snippets, click to open the channel. No index, no
   per-frame scan, and the overlay states that Discord's server-side search needs
   a user token. 12 tests. Test suite: 180.
+- Added the bot install flow to the login page (D21): the invite URL is built
+  from the configured client ID with only the permissions Rustcord uses, with
+  open-in-browser and copy-link. 3 tests. Test suite: 187.
+- Documented, with Discord's own sources, why there is no password/user-token
+  login: self-bots are forbidden and can terminate an account, `messages.read`
+  is RPC-only, and user-level DMs/friends need the approval-gated Social SDK.
 - Added desktop integration: an SVG icon, `scripts/install-local.sh` and a
   corrected launcher entry. Installed to `~/.local/bin` + the hicolor icon theme
   and verified live (`hyprctl` shows `class: Rustcord`). Relative theme paths now

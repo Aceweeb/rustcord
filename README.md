@@ -174,8 +174,12 @@ Copy or edit `settings.json`:
 
 ### Discord connection
 
-On first run Rustcord opens on a sign-in page; paste a **bot token** there. The
-token is stored in the Secret Service keyring under `rustcord` /
+On first run Rustcord opens on a sign-in page: create an application, use **Add
+the bot to a server** to invite it with only the permissions Rustcord uses, then
+paste the **bot token**. A bot that is in no server has nothing to read, which is
+the most common reason a correct token appears to do nothing.
+
+The token is stored in the Secret Service keyring under `rustcord` /
 `discord_bot_token` and the gateway starts immediately, with progress in the
 status bar. The field also lives in Settings → Privacy, next to `Connect gateway`
 and `Sign out`, which drops the keyring entry and returns to the sign-in page.
