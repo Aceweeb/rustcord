@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [~] Server channel peek on rail hover (`DECISIONS.md` D35): non-interactable
+  tooltip area with text/voice lists, unread brightening, mention counts and caps,
+  positioned from the hovered icon and clamped on screen. Compiles and tests pass;
+  placement not seen in a signed-in window.
 - [x] Folder renaming (`DECISIONS.md` D34): `Rename folder…` in the folder menu
   opens a small anchored dialog over a draft; Save/Enter persists, Esc/Cancel
   discards, blank names are refused with a reason. 2 model tests; dialog not typed

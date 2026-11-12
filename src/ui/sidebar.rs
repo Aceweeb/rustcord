@@ -91,6 +91,7 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
         focus,
     };
     let mut actions: Vec<RailAction> = Vec::new();
+    let mut hover: Option<(String, egui::Rect)> = None;
 
     egui::Panel::left("guild_rail")
         .exact_size(RAIL_WIDTH)
@@ -156,14 +157,16 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                             let mut member_actions = Vec::new();
                                             ui.horizontal(|ui| {
                                                 ui.add_space(6.0);
-                                                guild_row(
+                                                if let Some(rect) = guild_row(
                                                     ui,
                                                     &view,
                                                     guild,
                                                     true,
                                                     focused,
                                                     &mut member_actions,
-                                                );
+                                                ) {
+                                                    hover = Some((guild.id.clone(), rect));
+                                                }
                                             });
                                             actions.extend(member_actions);
                                         }
@@ -175,13 +178,19 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                     else {
                                         continue;
                                     };
-                                    guild_row(ui, &view, guild, false, focused, &mut actions);
+                                    if let Some(rect) =
+                                        guild_row(ui, &view, guild, false, focused, &mut actions)
+                                    {
+                                        hover = Some((guild.id.clone(), rect));
+                                    }
                                 }
                             }
                         }
                     });
                 });
         });
+
+    app.rail_hover = hover;
 
     let mut layout_changed = false;
     let mut selected_guild: Option<String> = None;
@@ -264,7 +273,7 @@ fn guild_row(
     in_folder: bool,
     focused: bool,
     actions: &mut Vec<RailAction>,
-) {
+) -> Option<egui::Rect> {
     let theme = view.theme;
     let folders = view.folders;
     let selected = view.selected == Some(guild.id.as_str());
@@ -356,6 +365,10 @@ fn guild_row(
     }
 
     ui.add_space(8.0);
+
+    // The caller turns a hovered icon into the channel peek, which has to be
+    // drawn outside this 72 px panel.
+    response.hovered().then_some(response.rect)
 }
 
 fn draw_badges(ui: &egui::Ui, rect: egui::Rect, mentions: u32, unread: bool) {
@@ -847,4 +860,133 @@ pub(crate) fn rename_dialog(app: &mut RustcordApp, ctx: &egui::Context) {
     } else if cancel {
         app.rail_rename = None;
     }
+}
+
+/// Discord's rail peek: hover a server icon and see its channels without
+/// switching to it.
+///
+/// It has to be drawn outside the 72 px rail panel, so it is an `Area` in the
+/// tooltip layer rather than a widget inside the rail. It is deliberately not
+/// interactable: the point is to look, and a click must still reach the icon.
+pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
+    let Some((guild_id, rect)) = app.rail_hover.clone() else {
+        return;
+    };
+    // Other modes already own the screen or the keyboard.
+    if app.navigator.active
+        || app.search.open
+        || app.switcher.open
+        || app.show_settings
+        || app.rail_rename.is_some()
+    {
+        return;
+    }
+
+    let Some(guild) = app
+        .guilds
+        .iter()
+        .find(|guild| guild.id == guild_id)
+        .cloned()
+    else {
+        return;
+    };
+    let theme = app.plugins.theme().clone();
+
+    const MAX_TEXT: usize = 8;
+    const MAX_VOICE: usize = 5;
+
+    let text_channels: Vec<(String, crate::models::Unread)> = app
+        .channels
+        .iter()
+        .filter(|channel| channel.guild_id == guild_id && channel.kind == ChannelKind::Text)
+        .map(|channel| (channel.name.clone(), app.unread.get(&channel.id)))
+        .collect();
+    let voice_channels: Vec<String> = app
+        .channels
+        .iter()
+        .filter(|channel| channel.guild_id == guild_id && channel.kind == ChannelKind::Voice)
+        .map(|channel| channel.name.clone())
+        .collect();
+
+    // Keep the panel on screen when the icon is near the bottom of the window.
+    let max_top = (ctx.content_rect().bottom() - 240.0).max(8.0);
+    let position = egui::pos2(rect.right() + 10.0, rect.top().min(max_top));
+
+    egui::Area::new(egui::Id::unique("rail_channel_peek"))
+        .order(egui::Order::Tooltip)
+        .fixed_pos(position)
+        .interactable(false)
+        .show(ctx, |ui| {
+            egui::Frame::new()
+                .fill(theme.surface)
+                .stroke(egui::Stroke::new(1.0, lift(theme.surface, 18)))
+                .corner_radius(8.0)
+                .inner_margin(egui::Margin::same(10))
+                .show(ui, |ui| {
+                    ui.set_min_width(188.0);
+                    ui.set_max_width(230.0);
+
+                    ui.label(
+                        RichText::new(&guild.name)
+                            .size(14.0)
+                            .strong()
+                            .color(theme.text),
+                    );
+                    ui.add_space(6.0);
+
+                    ui.label(
+                        RichText::new("TEXT CHANNELS")
+                            .size(10.0)
+                            .strong()
+                            .color(theme.muted),
+                    );
+                    if text_channels.is_empty() {
+                        ui.label(RichText::new("none").small().color(theme.muted));
+                    }
+                    for (name, unread) in text_channels.iter().take(MAX_TEXT) {
+                        let color = if unread.is_unread() {
+                            theme.text
+                        } else {
+                            theme.muted
+                        };
+                        let mut label = format!("#{name}");
+                        if let Some(badge) = unread.badge() {
+                            label.push_str(&format!("   {badge}"));
+                        }
+                        ui.label(RichText::new(label).size(13.0).color(color));
+                    }
+                    if text_channels.len() > MAX_TEXT {
+                        ui.label(
+                            RichText::new(format!("and {} more", text_channels.len() - MAX_TEXT))
+                                .size(11.0)
+                                .color(theme.muted),
+                        );
+                    }
+
+                    ui.add_space(6.0);
+                    ui.label(
+                        RichText::new("VOICE CHANNELS")
+                            .size(10.0)
+                            .strong()
+                            .color(theme.muted),
+                    );
+                    if voice_channels.is_empty() {
+                        ui.label(RichText::new("none").small().color(theme.muted));
+                    }
+                    for name in voice_channels.iter().take(MAX_VOICE) {
+                        ui.label(
+                            RichText::new(format!("\u{1F50A} {name}"))
+                                .size(13.0)
+                                .color(theme.muted),
+                        );
+                    }
+                    if voice_channels.len() > MAX_VOICE {
+                        ui.label(
+                            RichText::new(format!("and {} more", voice_channels.len() - MAX_VOICE))
+                                .size(11.0)
+                                .color(theme.muted),
+                        );
+                    }
+                });
+        });
 }

@@ -967,3 +967,32 @@ from `settings.guild_rail`.
 unknown id, draft initialisation) plus clean fmt/clippy/tests and a launch of the
 release binary; the dialog has not been typed into in a signed-in window, for the
 same credential reason as D31 and D33.
+
+## D35. The rail peek is a non-interactable tooltip area
+
+Discord shows a server's channels when you hover its icon, so you can look without
+switching. The rail is a 72 px panel and the peek must spill over the channel list,
+so it cannot be a widget inside the panel: `hover_peek` draws an `Area` in
+`Order::Tooltip`, positioned from the hovered icon's own rect. The icon reports
+hover back through `guild_row`'s return value rather than a shared field, which
+keeps the row helper free of yet another `&mut` parameter.
+
+**Content.** Server name, then `TEXT CHANNELS` and `VOICE CHANNELS` with `none` when
+a group is empty, unread names brightened and mention counts appended (D30), and
+`and N more` when a server has more than 8 text or 5 voice channels — the same cap
+that keeps the panel from running off screen. Position is clamped to the window
+bottom so a hover near the floor does not push the peek out of view.
+
+**Deliberately inert.** The area is `interactable(false)`: the point is to look, and
+a click or a context-menu right-click must still reach the icon underneath. The peek
+is suppressed while keyboard navigation, search, the switcher, settings or the
+rename dialog are up, because each of those is already the thing on screen.
+
+**Cost.** It clones the guild name and the two channel name lists for one frame only
+while hovering, and reads unread counters without cloning them. Nothing is cached,
+so a channel created or renamed elsewhere is current the next time you hover.
+
+**Not verified visually.** Compiles, clippy/tests clean (245 tests unchanged) and the
+release binary starts, but the peek's placement and legibility have not been seen in
+a signed-in window — the same credential blocker as D31/D33/D34. It is only drawn
+when a server icon is hovered, which requires a live session.

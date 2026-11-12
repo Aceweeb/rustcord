@@ -14,6 +14,14 @@ repository state before changing anything.
 
 ## What changed most recently
 
+Server channel peek (`DECISIONS.md` D35):
+
+- `src/ui/sidebar.rs` — `guild_row` returns the hovered icon rect; `hover_peek`
+  draws the peek as a tooltip-layer `Area` (server name, text and voice channels,
+  unread brightening, mention counts, caps at 8/5 with "and N more").
+- `src/app.rs` — `rail_hover` holds the hovered guild and rect for one frame.
+
+
 Folder renaming (`DECISIONS.md` D34):
 
 - `src/rail.rs` — `rename_folder` (trims, refuses blank, false on unknown id) and

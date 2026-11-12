@@ -8,8 +8,9 @@
 
 Last updated: 2026-11-12 (Europe/Berlin)
 
-Latest increment: folder renaming from the folder menu (D34); keyboard-only
-navigation with an in-place focus ring (D33);
+Latest increment: a hover peek of a server's channels beside the rail (D35);
+folder renaming from the folder menu (D34); keyboard-only navigation with an
+in-place focus ring (D33);
 guild folders and drag-free rail ordering persisted locally (D32);
 a Ctrl+K quick switcher over servers and channels (D31); local
 unread and mention badges on channels and guild icons (D30); guild member roster over the Members intent and REST (D29); load failures

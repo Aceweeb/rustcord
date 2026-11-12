@@ -93,6 +93,9 @@ pub struct RustcordApp {
     pub(crate) images: crate::images::ImageLoader,
     /// Pagination state per channel id, so switching back does not refetch.
     pub(crate) history: HashMap<String, ChannelHistory>,
+    /// Server icon under the pointer, with its rect, so the rail can draw a
+    /// channel peek beside it (the peek cannot live inside the 72 px panel).
+    pub(crate) rail_hover: Option<(String, egui::Rect)>,
     /// Folder being renamed right now, if the dialog is open.
     pub(crate) rail_rename: Option<crate::rail::FolderRename>,
     /// Arrow-key focus over the rail and channel list (no overlay).
@@ -353,6 +356,7 @@ impl RustcordApp {
             rail_expanded: std::collections::BTreeSet::new(),
             navigator: crate::nav::Navigator::default(),
             rail_rename: None,
+            rail_hover: None,
             voice: crate::models::VoiceTracker::default(),
             editing: None,
             replying_to: None,
@@ -2046,6 +2050,7 @@ impl eframe::App for RustcordApp {
         ui::search::show(self, &ctx);
         ui::switcher::show(self, &ctx);
         ui::sidebar::rename_dialog(self, &ctx);
+        ui::sidebar::hover_peek(self, &ctx);
     }
 }
 

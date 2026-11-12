@@ -35,6 +35,8 @@ half-implemented stubs that pretend to work.
   `settings.json`, since a bot cannot read a user's Discord folder settings.
 - Keyboard-only navigation (`Ctrl+Shift+K` by default): arrow through the rail and
   channel list with an in-place focus ring, Enter opens, Escape leaves.
+- Hover a server icon for a peek at its text and voice channels, with unread and
+  mention counts, without switching to it.
 - Nine-section settings window: Appearance, Themes, Performance, Memory,
   Notifications, Shortcuts, Privacy, Diagnostics, About (`Ctrl+,`).
 - 12 built-in theme presets across Dark, Light, Purple and AMOLED, plus custom
