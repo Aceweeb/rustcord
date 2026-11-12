@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Reaction chips toggle (`DECISIONS.md` D26): clicking your own chip sends
+  `DELETE …/reactions/{emoji}/@me`, clicking anyone else's sends the matching
+  `PUT`; both update optimistically and roll back the correct direction on
+  failure. Shared `reaction_path` keeps encoding and `@me` identical.
 - [x] Right-click message context menu (`DECISIONS.md` D25): quick reactions
   (optimistic, rolled back on failure), copy text, reply with a real
   `message_reference`, plus edit/delete on the bot's own messages. Inbound

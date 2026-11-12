@@ -8,8 +8,9 @@
 
 Last updated: 2026-11-12 (Europe/Berlin)
 
-Latest increment: right-click message menu with copy, reply, reactions, edit and
-delete (`DECISIONS.md` D25), on top of message actions and voice presence (D24).
+Latest increment: clickable reaction chips that toggle with PUT/DELETE
+(`DECISIONS.md` D26), on top of the right-click menu (D25), message actions and
+voice presence (D24).
 `HANDOFF.md` has the file-by-file detail; voice **audio** remains deliberately
 unimplemented.
 

@@ -132,6 +132,7 @@ enum MessageAction {
     ReactFailed {
         message_id: String,
         emoji: String,
+        removed: bool,
         error: String,
     },
     Failed(String),
@@ -592,7 +593,9 @@ impl RustcordApp {
         }
     }
 
-    /// React optimistically, then let the REST result confirm or undo it.
+    /// One click on a chip toggles our reaction: add it when we have not reacted,
+    /// remove it when we have. Both directions are optimistic and both roll back
+    /// if the request fails, so the chip never lies about the server state.
     pub(crate) fn react_to(&mut self, message_id: String, emoji: String) {
         let Some(message) = self
             .messages
@@ -602,13 +605,21 @@ impl RustcordApp {
             return;
         };
 
-        if !message.add_own_reaction(&emoji) {
-            self.status_line = Some(format!("already reacted with {emoji}"));
+        let removing = message
+            .reactions
+            .iter()
+            .any(|reaction| reaction.emoji == emoji && reaction.me);
+
+        if removing {
+            message.remove_own_reaction(&emoji);
+        } else if !message.add_own_reaction(&emoji) {
             return;
         }
 
+        let verb = if removing { "removed" } else { "reacted with" };
+
         if !self.live_data {
-            self.status_line = Some(format!("reacted with {emoji} (demo)"));
+            self.status_line = Some(format!("{verb} {emoji} (demo)"));
             return;
         }
 
@@ -623,23 +634,23 @@ impl RustcordApp {
         let reaction = emoji.clone();
         runtime.spawn(async move {
             let result = match DiscordClient::new(token) {
-                Ok(client) => client
-                    .add_reaction(&channel_id, &id, &reaction)
-                    .await
-                    .map_err(|err| format!("{err:#}")),
-                Err(err) => Err(format!("{err:#}")),
-            };
+                Ok(client) if removing => client.remove_reaction(&channel_id, &id, &reaction).await,
+                Ok(client) => client.add_reaction(&channel_id, &id, &reaction).await,
+                Err(err) => Err(err),
+            }
+            .map_err(|err| format!("{err:#}"));
 
             if let Err(error) = result {
                 let _ = tx.send(MessageAction::ReactFailed {
                     message_id: id,
                     emoji: reaction,
+                    removed: removing,
                     error,
                 });
             }
         });
 
-        self.status_line = Some(format!("reacted with {emoji}"));
+        self.status_line = Some(format!("{verb} {emoji}"));
     }
 
     pub(crate) fn request_delete(&mut self, message_id: String) {
@@ -755,6 +766,7 @@ impl RustcordApp {
                 MessageAction::ReactFailed {
                     message_id,
                     emoji,
+                    removed,
                     error,
                 } => {
                     if let Some(message) = self
@@ -762,7 +774,12 @@ impl RustcordApp {
                         .iter_mut()
                         .find(|message| message.id == message_id)
                     {
-                        message.remove_own_reaction(&emoji);
+                        // Undo whichever direction we optimistically applied.
+                        if removed {
+                            message.add_own_reaction(&emoji);
+                        } else {
+                            message.remove_own_reaction(&emoji);
+                        }
                     }
                     self.status_line = Some(format!("reaction failed: {error}"));
                 }

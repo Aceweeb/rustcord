@@ -16,6 +16,20 @@ pub const API_BASE: &str = "https://discord.com/api/v10";
 /// `%XX`, but a request line with raw bytes is fragile, and a custom emoji
 /// (`name:id`) contains a colon that would otherwise end the segment early.
 /// RFC 3986 unreserved characters stay literal.
+/// Both reaction calls address the bot's own reaction, so they share this path
+/// and differ only by verb.
+fn reaction_path(channel_id: &str, message_id: &str, emoji: &str) -> Result<String> {
+    let emoji = emoji.trim();
+    if emoji.is_empty() {
+        anyhow::bail!("a reaction needs an emoji");
+    }
+
+    Ok(format!(
+        "/channels/{channel_id}/messages/{message_id}/reactions/{}/@me",
+        encode_path_segment(emoji)
+    ))
+}
+
 pub fn encode_path_segment(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for byte in input.bytes() {
@@ -260,17 +274,26 @@ impl DiscordClient {
         message_id: &str,
         emoji: &str,
     ) -> Result<()> {
-        let emoji = emoji.trim();
-        if emoji.is_empty() {
-            anyhow::bail!("a reaction needs an emoji");
-        }
-
         self.request(
             reqwest::Method::PUT,
-            &format!(
-                "/channels/{channel_id}/messages/{message_id}/reactions/{}/@me",
-                encode_path_segment(emoji)
-            ),
+            &reaction_path(channel_id, message_id, emoji)?,
+            None,
+        )
+        .await?;
+        Ok(())
+    }
+
+    /// Remove the bot's own reaction. Same `@me` path as adding, different verb;
+    /// Discord answers 204.
+    pub async fn remove_reaction(
+        &self,
+        channel_id: &str,
+        message_id: &str,
+        emoji: &str,
+    ) -> Result<()> {
+        self.request(
+            reqwest::Method::DELETE,
+            &reaction_path(channel_id, message_id, emoji)?,
             None,
         )
         .await?;
@@ -464,6 +487,19 @@ mod tests {
         // Custom emoji carry a colon, which must not end the segment.
         assert_eq!(encode_path_segment("blobcat:123"), "blobcat%3A123");
         assert_eq!(encode_path_segment("wave"), "wave");
+    }
+
+    #[test]
+    fn adding_and_removing_share_one_reaction_path() {
+        let path = reaction_path("10", "20", "\u{1f44d}").expect("path");
+        assert_eq!(path, "/channels/10/messages/20/reactions/%F0%9F%91%8D/@me");
+        // Trimming happens before encoding, and an empty emoji is refused so a
+        // DELETE cannot turn into a request for the whole reaction list.
+        assert_eq!(
+            reaction_path("10", "20", " \u{1f389} ").unwrap(),
+            "/channels/10/messages/20/reactions/%F0%9F%8E%89/@me"
+        );
+        assert!(reaction_path("10", "20", "   ").is_err());
     }
 
     #[test]

@@ -627,3 +627,36 @@ past clippy's variant-size threshold; `GatewayEvent::Message` is now
 purely local action, and it is the only one that cannot fail.
 
 **Voice is untouched by this**: no audio, per D24.
+
+## D26. Reaction chips toggle: PUT to add, DELETE to take ours back
+
+D25 rendered reactions as plain labels, so the only way to react was the context
+menu — which can only add, never remove. Discord's chips toggle, and the API for
+the other direction already exists: `DELETE` on the same `…/reactions/{emoji}/@me`
+path that `PUT` adds through. Both methods now share `reaction_path`, so the
+encoding and the `@me` suffix cannot drift apart, and an empty emoji is refused
+there rather than turning into a request for the whole reaction list.
+
+Behaviour:
+
+- Clicking a chip we are not part of adds our reaction (`PUT`).
+- Clicking a chip we **are** part of removes it (`DELETE`). When other people
+  reacted too, the chip stays with a count one lower and `me = false`; when we
+  were the only one, it disappears.
+- Both directions are optimistic and both have a rollback: `ReactFailed` carries
+  `removed: bool`, so a failed `DELETE` re-adds the reaction and a failed `PUT`
+  removes it. Without that flag the rollback would undo the wrong direction.
+- `remove_own_reaction` never decrements below zero and only touches chips where
+  `me` is true, so a failed removal cannot eat someone else's count.
+
+The chips are now real buttons inside the row's click-sensing container from
+D25, which raised the obvious risk: does the container swallow clicks meant for
+its children? That was checked with a temporary headless `egui` harness
+(`Context::run_ui` with synthetic pointer events); the child button received the
+click and the container did not, so chips are safe as ordinary widgets. The probe
+was deleted after it answered the question — it tested `egui`'s hit-testing, not
+this project.
+
+**Consequences.** A chip now means "click to toggle", as in Discord. The context
+menu's quick reactions remain the add path for messages with no chips yet
+(Discord hides the chip row until someone reacts, and so does this client).

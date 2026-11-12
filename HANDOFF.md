@@ -7,12 +7,23 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 207 lib + 5 bin tests passing
+- `cargo test --all-targets`: 208 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Reaction chips toggle (`DECISIONS.md` D26):
+
+- `src/api/discord.rs` — `remove_reaction` (DELETE), shared `reaction_path`
+  with the empty-emoji guard, one test covering both verbs' path.
+- `src/ui/chat.rs` — chips are frameless buttons; hover says add or remove;
+  clicking records `RowAction::React` (the handler decides direction).
+- `src/app.rs` — `react_to` inspects `me` to pick PUT or DELETE, applies the
+  change optimistically, and `ReactFailed { removed }` restores the exact
+  previous state.
+
 
 Right-click context menu, replies and reactions (`DECISIONS.md` D25):
 

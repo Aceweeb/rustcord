@@ -593,7 +593,23 @@ fn message_row_body(
                         if reaction.me {
                             rich = rich.color(theme.accent).strong();
                         }
-                        ui.label(rich);
+
+                        // A chip is a button: our own toggles off, anyone's adds
+                        // or removes ours on top of theirs.
+                        let response = ui.add(egui::Button::new(rich).frame(false));
+                        if response.clicked() {
+                            *action = Some(RowAction::React {
+                                message_id: message.id.clone(),
+                                emoji: reaction.emoji.clone(),
+                            });
+                        }
+
+                        let hint = if reaction.me {
+                            "Remove your reaction"
+                        } else {
+                            "Add reaction"
+                        };
+                        response.on_hover_text(hint);
                     }
                 });
             }
