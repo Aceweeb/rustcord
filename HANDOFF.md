@@ -7,12 +7,22 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 209 lib + 5 bin tests passing
+- `cargo test --all-targets`: 210 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Token diagnostics (`DECISIONS.md` D28):
+
+- `src/api/discord.rs` — `error_for_status` turns 401 into "this is a user token,
+  use a bot token" and 403 into the permission message; tested.
+- `src/ui/chat.rs` — the member panel explains why it is empty (members come from
+  loaded messages; the full roster needs the privileged Members intent).
+- Context: the keyring token on this machine is a user token. The gateway
+  accepts it, REST does not, and supporting it is out of scope by D2.
+
 
 Guild list fixed (`DECISIONS.md` D27):
 

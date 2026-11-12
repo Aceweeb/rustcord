@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Token failures are explained (`DECISIONS.md` D28): 401 says a user-account
+  token cannot be used and points at the bot flow, 403 says the bot lacks
+  permission. Verified live: the keyring held a user token, `/users/@me` was 200
+  raw and 401 with `Bot`, and every message fetch was 401.
 - [x] Guild list populated from READY (`DECISIONS.md` D27). The live gateway
   sends full guild objects in READY and no `GUILD_CREATE`; both are now parsed,
   deduplicated by id, and the rail scrolls. Verified against the real token:

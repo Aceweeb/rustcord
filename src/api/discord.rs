@@ -16,6 +16,25 @@ pub const API_BASE: &str = "https://discord.com/api/v10";
 /// `%XX`, but a request line with raw bytes is fragile, and a custom emoji
 /// (`name:id`) contains a colon that would otherwise end the segment early.
 /// RFC 3986 unreserved characters stay literal.
+/// Turn a failed status into something the status line can explain. A 401 is
+/// almost always the wrong kind of token: the REST API authenticates bots with
+/// `Authorization: Bot …`, and a user-account token sent that way is rejected
+/// even though the gateway may have accepted the same session. Rustcord does
+/// not send user tokens (D2), so this is a dead end to report, not to work
+/// around.
+fn error_for_status(status: reqwest::StatusCode, path: &str) -> String {
+    match status {
+        reqwest::StatusCode::UNAUTHORIZED => format!(
+            "Discord rejected the token (401 Unauthorized) for {path}: a user-account \
+             token cannot be used here — install a bot token instead (see DECISIONS.md D2)"
+        ),
+        reqwest::StatusCode::FORBIDDEN => format!(
+            "Discord refused {path} (403 Forbidden): the bot lacks permission in that channel"
+        ),
+        other => format!("Discord returned an error for {path}: HTTP {other}"),
+    }
+}
+
 /// Both reaction calls address the bot's own reaction, so they share this path
 /// and differ only by verb.
 fn reaction_path(channel_id: &str, message_id: &str, emoji: &str) -> Result<String> {
@@ -180,7 +199,7 @@ impl DiscordClient {
             self.limits().observe(&route, &headers, self.now());
 
             if !status.is_success() {
-                anyhow::bail!("Discord returned an error for {path}: HTTP {status}");
+                anyhow::bail!(error_for_status(status, path));
             }
 
             return response
@@ -479,6 +498,24 @@ impl TryFrom<DiscordMessage> for Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn failures_explain_the_token_problem() {
+        let unauthorized =
+            error_for_status(reqwest::StatusCode::UNAUTHORIZED, "/channels/1/messages");
+        assert!(unauthorized.contains("401"));
+        assert!(unauthorized.contains("user-account token"));
+
+        let forbidden = error_for_status(reqwest::StatusCode::FORBIDDEN, "/guilds/1/members");
+        assert!(forbidden.contains("403"));
+        assert!(forbidden.contains("permission"));
+
+        let other = error_for_status(reqwest::StatusCode::INTERNAL_SERVER_ERROR, "/x");
+        assert_eq!(
+            other,
+            "Discord returned an error for /x: HTTP 500 Internal Server Error"
+        );
+    }
 
     #[test]
     fn a_reaction_emoji_is_encoded_for_the_path() {

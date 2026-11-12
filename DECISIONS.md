@@ -697,3 +697,46 @@ total. The first version cloned READY's `guilds` array before iterating it, whic
 cost 110 MB of transient RSS for this account (270 MB against the 250 MB target);
 borrowing the array instead measured **156 MB** in the same 12-second run. The probe was deleted afterwards; the regression test is
 `ready_carries_whole_guilds`, built from the observed payload shape.
+
+## D28. The stored credential is a user token; REST stays bot-only, and the 401 says so
+
+**Report.** "Works, but I don't see messages and members." The guild rail was
+populated and the channel list rendered, yet every channel was empty and the
+member panel showed nothing.
+
+**Investigation.** A probe read the token from the keyring and sent
+`GET /users/@me` with three header shapes:
+
+| Header | Result |
+| --- | --- |
+| `Authorization: Bot <token>` | **401 Unauthorized** |
+| `Authorization: <token>` (raw) | **200 OK**, `"username":"rpent0055"` |
+| `Authorization: Bearer <token>` | 401 |
+
+That is the signature of a **user-account token**, not a bot token: bots
+authenticate with `Bot …` and are rejected without it, user tokens are the
+reverse. A follow-up probe confirmed the consequence — every message fetch
+returned `HTTP 401 Unauthorized` for all sampled channels, so `app.messages`
+stayed empty, and since the member panel is derived from message authors it was
+empty too. The gateway had accepted the session (which is why guilds appeared),
+but the REST API will not serve a user token through the bot scheme.
+
+**Decision: do not support it.** D2, D15 and D21 already forbid user-account
+tokens and self-bot behaviour: automating a user token is a ban risk for the
+account, a terms violation, and the reason those decisions exist. Making
+messages appear would mean sending the token raw — the self-bot path this
+project refuses. The correct fix is a bot token whose bot is in the guild, which
+is the documented install flow.
+
+**What changed instead.** A 401 no longer surfaces as an opaque "HTTP 401" in a
+mostly-empty window. `error_for_status` maps it to a sentence that names the
+cause ("a user-account token cannot be used here — install a bot token instead,
+see D2"), 403 to the missing-permission case, and everything else keeps the old
+text. The member panel now says when there is nothing to list and why: members
+come from message authors, and a full member list needs the privileged Members
+intent, which this client does not request.
+
+**Limits.** With a valid bot token, message history loads and the panel fills
+with the authors in that channel. It is not the full guild roster; that needs
+`GUILD_MEMBERS`, which is a privileged intent — a deliberate non-goal for now,
+recorded in `TASKS.md`.

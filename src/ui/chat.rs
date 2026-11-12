@@ -111,6 +111,17 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             );
             ui.add_space(6.0);
 
+            if app.messages.is_empty() {
+                ui.label(
+                    RichText::new(
+                        "Members appear as messages load; the guild member \
+                         list needs the privileged Members intent.",
+                    )
+                    .size(11.0)
+                    .color(app.plugins.theme().muted),
+                );
+            }
+
             let mut seen = std::collections::BTreeSet::new();
             for message in app.messages.iter().rev() {
                 if seen.insert(message.author.username.clone()) {
