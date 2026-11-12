@@ -740,3 +740,20 @@ intent, which this client does not request.
 with the authors in that channel. It is not the full guild roster; that needs
 `GUILD_MEMBERS`, which is a privileged intent — a deliberate non-goal for now,
 recorded in `TASKS.md`.
+
+### D28 addendum: the failure was invisible
+
+The 401 explanation never reached the screen. `chat::show` returned early for an
+empty channel — before the row that renders `ChannelHistory::error` — so a
+channel that failed to load drew exactly the same "No messages in this channel
+yet." as a quiet one. That is why the app looked half-working rather than
+broken: guilds came from the gateway, and the REST error that explained the rest
+was skipped by an early return.
+
+`history_controls` now runs before the empty check and returns the error, so an
+empty channel shows the 401 sentence (wrapped, on its own line) instead of the
+reassuring message. Errors for non-empty channels are unchanged but no longer
+clipped into a single row.
+
+This does not make a user token work, and is not meant to: it makes the refusal
+legible where the user is looking.

@@ -319,52 +319,23 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             app.metrics_channel = channel_id.clone();
         }
 
+        // History state first, even for an empty channel: a channel that failed
+        // to load must say why, not look like a channel nobody has posted in.
+        let load_error = history_controls(app, ui, channel_id.as_deref());
+
         if visible.is_empty() {
-            ui.centered_and_justified(|ui| {
-                ui.label(
-                    RichText::new("No messages in this channel yet.")
-                        .color(app.plugins.theme().muted),
-                );
+            ui.centered_and_justified(|ui| match &load_error {
+                Some(error) => {
+                    ui.label(RichText::new(error).color(app.plugins.theme().danger));
+                }
+                None => {
+                    ui.label(
+                        RichText::new("No messages in this channel yet.")
+                            .color(app.plugins.theme().muted),
+                    );
+                }
             });
             return;
-        }
-
-        // Pagination controls for live channels only; demo data has no cursor.
-        if app.live_data {
-            if let Some(state) = channel_id
-                .as_deref()
-                .and_then(|id| app.channel_history(id))
-                .cloned()
-            {
-                ui.horizontal(|ui| {
-                    if state.loading {
-                        ui.label(
-                            RichText::new("loading messages…")
-                                .small()
-                                .color(app.plugins.theme().muted),
-                        );
-                    } else {
-                        if !state.exhausted && ui.button("Load older messages").clicked() {
-                            app.load_older();
-                        }
-                        if state.exhausted {
-                            ui.label(
-                                RichText::new("start of channel")
-                                    .small()
-                                    .color(app.plugins.theme().muted),
-                            );
-                        }
-                    }
-                    if let Some(error) = &state.error {
-                        ui.label(
-                            RichText::new(error)
-                                .small()
-                                .color(app.plugins.theme().danger),
-                        );
-                    }
-                });
-                ui.separator();
-            }
         }
 
         let gap = if app.settings.compact_mode { 4.0 } else { 10.0 };
@@ -434,6 +405,45 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             ui.ctx().request_repaint();
         }
     });
+}
+
+/// Pagination and load state for the open channel. Returns the last error so an
+/// empty channel can show it instead of a cheerful "no messages yet".
+fn history_controls(
+    app: &mut RustcordApp,
+    ui: &mut egui::Ui,
+    channel_id: Option<&str>,
+) -> Option<String> {
+    if !app.live_data {
+        return None;
+    }
+    let state = channel_id.and_then(|id| app.channel_history(id)).cloned()?;
+    let theme = app.plugins.theme().clone();
+
+    ui.horizontal(|ui| {
+        if state.loading {
+            ui.label(
+                RichText::new("loading messages…")
+                    .small()
+                    .color(theme.muted),
+            );
+        } else {
+            if !state.exhausted && ui.button("Load older messages").clicked() {
+                app.load_older();
+            }
+            if state.exhausted {
+                ui.label(RichText::new("start of channel").small().color(theme.muted));
+            }
+        }
+    });
+
+    if let Some(error) = &state.error {
+        // On its own line and wrapped: a 401 explanation is longer than a row.
+        ui.add(egui::Label::new(RichText::new(error).small().color(theme.danger)).wrap());
+    }
+
+    ui.separator();
+    state.error
 }
 
 /// What a row's menu asked for. Rows are drawn from `&RustcordApp`, so the

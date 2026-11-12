@@ -20,6 +20,8 @@ Token diagnostics (`DECISIONS.md` D28):
   use a bot token" and 403 into the permission message; tested.
 - `src/ui/chat.rs` — the member panel explains why it is empty (members come from
   loaded messages; the full roster needs the privileged Members intent).
+- `src/ui/chat.rs` — `history_controls` runs before the empty-channel return, so
+  a load failure (the 401) is visible instead of a bare "No messages yet".
 - Context: the keyring token on this machine is a user token. The gateway
   accepts it, REST does not, and supporting it is out of scope by D2.
 

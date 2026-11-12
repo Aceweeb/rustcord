@@ -8,9 +8,9 @@
 
 Last updated: 2026-11-12 (Europe/Berlin)
 
-Latest increment: the guild rail is populated from READY (D27); a 401 now
-explains that the stored credential is a user token and that only bot tokens are
-supported (D28). Reaction chips toggle (D26), on top of the right-click menu
+Latest increment: load failures are no longer hidden by the empty-channel view —
+a 401 now appears in the channel and says the stored credential is a user token
+(D28, addendum); the guild rail is populated from READY (D27). Reaction chips toggle (D26), on top of the right-click menu
 (D25), message actions and voice presence (D24).
 `HANDOFF.md` has the file-by-file detail; voice **audio** remains deliberately
 unimplemented.
