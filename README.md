@@ -154,6 +154,15 @@ rather than appearing as a second, unnamed app.
 Overridable for packaging or a different layout: `BIN_DIR=… APPS_DIR=…
 ICON_DIR=… scripts/install-local.sh`.
 
+## Look and feel
+
+The default theme is Discord's own palette (`#313338` chat, `#2b2d31` sidebars,
+`#1e1f22` rail, `#5865f2` blurple) and the layout uses Discord's measurements:
+a 72 px server rail with 48 px icons that round off when selected, a 240 px
+channel list with 34 px rows, a 48 px channel header, a 240 px member list and
+40 px message avatars. Twelve other presets and CSS theme files are still there
+in Settings → Appearance if you want something else.
+
 ## Where your data lives
 
 Rustcord is a local program talking to Discord. There is no server of ours, no

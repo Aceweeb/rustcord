@@ -384,6 +384,11 @@ Priority order for the next session:
   50 results, char-safe snippets, click to open the channel. No index, no
   per-frame scan, and the overlay states that Discord's server-side search needs
   a user token. 12 tests. Test suite: 180.
+- Restyled the workspace to Discord's own measurements and colours (D23): new
+  default **Discord** preset, 72/240/48/34 px rail, channel list, header/icons and
+  rows, painted channel rows with derived hover/selected fills, 40 px message
+  avatars, Discord type scale, 8 px window/menu rounding. All existing presets,
+  CSS themes and features preserved. Test suite: 194.
 - Made the local-only design enforceable and visible (D22, `src/privacy.rs`): a
   single exact-match host allowlist now guards every REST call, image fetch and
   the gateway socket, including resume URLs from payloads. Settings → Privacy

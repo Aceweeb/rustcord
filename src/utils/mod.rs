@@ -12,6 +12,19 @@ pub fn initial(name: &str) -> String {
         .unwrap_or_else(|| "?".to_string())
 }
 
+/// Lighten (or darken, with a negative delta) a colour by a flat amount per
+/// channel. Used for Discord's hover/selected rows, which are the surface colour
+/// lifted a little rather than a separate palette entry.
+pub fn lift(color: Color32, delta: i16) -> Color32 {
+    let channel = |value: u8| (i16::from(value) + delta).clamp(0, 255) as u8;
+    Color32::from_rgba_unmultiplied(
+        channel(color.r()),
+        channel(color.g()),
+        channel(color.b()),
+        color.a(),
+    )
+}
+
 /// Parse `#rgb`, `#rrggbb`, `#rrggbbaa`, `rgb(r,g,b)` and `rgba(r,g,b,a)`.
 pub fn parse_css_color(input: &str) -> Option<Color32> {
     let value = input.trim().trim_end_matches(';').trim();

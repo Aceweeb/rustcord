@@ -10,6 +10,12 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   loaded history of the open channel, `from:`/`@` author filter, 50 results,
   char-safe snippets, click-to-open. 12 tests. Server-side search is not
   available with a bot token and the UI says so.
+- [x] Discord-accurate UI pass (`DECISIONS.md` D23): new default **Discord**
+  preset with Discord's exact colours, and Discord's metrics as constants —
+  72 px rail, 240 px channel list, 48 px guild header/icons, 34 px channel rows,
+  40 px avatars, rounded-square selected guild with the white pill, painted
+  channel rows with hover/selected fills derived by `utils::lift`, and Discord's
+  type scale. Existing presets, CSS themes and every feature preserved.
 - [x] Local-only guarantees enforced (`DECISIONS.md` D22, `src/privacy.rs`): one
   exact-match host allowlist behind every REST call, image fetch and the gateway
   socket (including resume URLs); no database, no telemetry crate, no endpoint in

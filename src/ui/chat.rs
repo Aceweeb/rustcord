@@ -4,14 +4,26 @@ use crate::utils::initial;
 use egui::RichText;
 
 pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
+    // Discord's 48 px channel header: a muted #, the name, then the icons.
     egui::Panel::top("chat_top").show(ui, |ui| {
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
+        ui.set_height(48.0);
+        ui.horizontal_centered(|ui| {
+            ui.add_space(8.0);
             let channel = app
                 .selected_channel_name()
-                .map(|name| format!("# {name}"))
+                .map(str::to_string)
                 .unwrap_or_else(|| "No channel selected".to_string());
-            ui.heading(RichText::new(channel).size(18.0));
+            ui.label(
+                RichText::new("#")
+                    .size(20.0)
+                    .color(app.plugins.theme().muted),
+            );
+            ui.label(
+                RichText::new(channel)
+                    .size(16.0)
+                    .strong()
+                    .color(app.plugins.theme().text),
+            );
 
             let streaming = app.plugins.streaming_state();
             if streaming.active {
@@ -32,12 +44,24 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             }
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(RichText::new("🔍").color(app.plugins.theme().muted));
-                ui.label(RichText::new("☰").color(app.plugins.theme().muted));
+                ui.add_space(8.0);
+                ui.label(
+                    RichText::new("🔍")
+                        .size(16.0)
+                        .color(app.plugins.theme().muted),
+                );
+                ui.label(
+                    RichText::new("☰")
+                        .size(16.0)
+                        .color(app.plugins.theme().muted),
+                );
             });
         });
-        ui.add_space(4.0);
-        ui.separator();
+        ui.painter().hline(
+            ui.max_rect().x_range(),
+            ui.max_rect().bottom(),
+            egui::Stroke::new(1.0, crate::utils::lift(app.plugins.theme().background, -10)),
+        );
     });
 
     // In-app alert banner (memory budget, test alerts). Dismissal mutates app
@@ -64,36 +88,52 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     }
 
     egui::Panel::right("member_list")
-        .default_size(200.0)
-        .resizable(true)
+        .exact_size(240.0)
+        .resizable(false)
+        .frame(
+            egui::Frame::new()
+                .fill(app.plugins.theme().surface)
+                .inner_margin(egui::Margin::symmetric(8, 0)),
+        )
         .show(ui, |ui| {
-            ui.add_space(8.0);
+            ui.add_space(12.0);
+            let online = app
+                .messages
+                .iter()
+                .map(|message| message.author.username.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+                .len();
             ui.label(
-                RichText::new("ONLINE — MOCK DATA")
-                    .small()
+                RichText::new(format!("ONLINE — {online}"))
+                    .size(11.0)
+                    .strong()
                     .color(app.plugins.theme().muted),
             );
-            ui.add_space(4.0);
+            ui.add_space(6.0);
 
             let mut seen = std::collections::BTreeSet::new();
             for message in app.messages.iter().rev() {
                 if seen.insert(message.author.username.clone()) {
                     ui.horizontal(|ui| {
                         let (rect, _) =
-                            ui.allocate_exact_size(egui::vec2(24.0, 24.0), egui::Sense::hover());
+                            ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
                         ui.painter().circle_filled(
                             rect.center(),
-                            12.0,
-                            app.plugins.theme().surface_alt,
+                            16.0,
+                            crate::utils::lift(app.plugins.theme().surface, 18),
                         );
                         ui.painter().text(
                             rect.center(),
                             egui::Align2::CENTER_CENTER,
                             initial(&message.author.username),
-                            egui::FontId::proportional(11.0),
+                            egui::FontId::proportional(12.0),
                             app.plugins.theme().text,
                         );
-                        ui.label(&message.author.username);
+                        ui.label(
+                            RichText::new(&message.author.username)
+                                .size(14.0)
+                                .color(app.plugins.theme().text),
+                        );
                     });
                 }
             }
@@ -141,38 +181,43 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             .request_repaint_after(std::time::Duration::from_millis(500));
     }
 
+    // Discord's composer: a lifted, rounded field spanning the channel area.
     egui::Panel::bottom("composer").show(ui, |ui| {
-        ui.add_space(8.0);
+        ui.add_space(6.0);
         if let Some(typing) = &typing {
             ui.label(
                 RichText::new(typing)
-                    .small()
+                    .size(12.0)
                     .italics()
                     .color(app.plugins.theme().muted),
             );
             ui.add_space(2.0);
         }
-        ui.horizontal(|ui| {
-            let hint = app
-                .selected_channel_name()
-                .map(|name| format!("Message #{name}"))
-                .unwrap_or_else(|| "Select a channel".to_string());
 
-            let width = (ui.available_width() - 90.0).max(120.0);
-            let response = ui.add_sized(
-                egui::vec2(width, 34.0),
-                egui::TextEdit::singleline(&mut app.draft).hint_text(hint),
-            );
+        let theme = app.plugins.theme().clone();
+        let hint = app
+            .selected_channel_name()
+            .map(|name| format!("Message #{name}"))
+            .unwrap_or_else(|| "Select a channel".to_string());
 
-            if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                app.send_current_draft();
-                response.request_focus();
-            }
+        egui::Frame::new()
+            .fill(crate::utils::lift(theme.background, 12))
+            .corner_radius(8.0)
+            .inner_margin(egui::Margin::symmetric(12, 10))
+            .show(ui, |ui| {
+                let response = ui.add_sized(
+                    egui::vec2(ui.available_width(), 22.0),
+                    egui::TextEdit::singleline(&mut app.draft)
+                        .hint_text(hint)
+                        .frame(egui::Frame::new())
+                        .text_color(theme.text),
+                );
 
-            if ui.button("Send").clicked() {
-                app.send_current_draft();
-            }
-        });
+                if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+                    app.send_current_draft();
+                    response.request_focus();
+                }
+            });
         ui.add_space(8.0);
     });
 
@@ -293,14 +338,18 @@ fn message_row(app: &RustcordApp, ui: &mut egui::Ui, message: &Message) {
     let theme = app.plugins.theme();
 
     ui.horizontal_top(|ui| {
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
-        ui.painter()
-            .circle_filled(rect.center(), 18.0, theme.surface_alt);
+        // Discord's message row: 40 px avatar, 16 px name line, 12 px timestamp.
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(40.0, 40.0), egui::Sense::hover());
+        ui.painter().circle_filled(
+            rect.center(),
+            20.0,
+            crate::utils::lift(theme.background, 20),
+        );
         ui.painter().text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
             initial(&message.author.username),
-            egui::FontId::proportional(14.0),
+            egui::FontId::proportional(15.0),
             theme.text,
         );
 
@@ -308,16 +357,17 @@ fn message_row(app: &RustcordApp, ui: &mut egui::Ui, message: &Message) {
             ui.horizontal(|ui| {
                 ui.label(
                     RichText::new(&message.author.username)
+                        .size(15.0)
                         .strong()
                         .color(theme.text),
                 );
                 ui.label(
                     RichText::new(message.timestamp.format("%H:%M").to_string())
-                        .small()
+                        .size(11.0)
                         .color(theme.muted),
                 );
             });
-            ui.label(RichText::new(&message.content).color(theme.text));
+            ui.label(RichText::new(&message.content).size(15.0).color(theme.text));
 
             for attachment in &message.attachments {
                 if attachment.is_image() {

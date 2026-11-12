@@ -83,9 +83,28 @@ const fn c(r: u8, g: u8, b: u8) -> Color32 {
     Color32::from_rgb(r, g, b)
 }
 
-pub const DEFAULT_THEME_ID: &str = "midnight";
+pub const DEFAULT_THEME_ID: &str = "discord";
 
 pub const PRESETS: &[ThemePreset] = &[
+    // Discord's own colours: #313338 chat, #2b2d31 sidebars, #1e1f22 rail,
+    // #5865f2 blurple, #dbdee1 text, #949ba4 muted, #f23f43 danger,
+    // #23a55a online. The default, because the point of this client is to feel
+    // like Discord without the browser.
+    ThemePreset {
+        id: "discord",
+        name: "Discord",
+        category: ThemeCategory::Dark,
+        palette: Palette {
+            background: c(0x31, 0x33, 0x38),
+            surface: c(0x2b, 0x2d, 0x31),
+            surface_alt: c(0x1e, 0x1f, 0x22),
+            accent: c(0x58, 0x65, 0xf2),
+            text: c(0xdb, 0xde, 0xe1),
+            muted: c(0x94, 0x9b, 0xa4),
+            danger: c(0xf2, 0x3f, 0x43),
+            success: c(0x23, 0xa5, 0x5a),
+        },
+    },
     ThemePreset {
         id: "midnight",
         name: "Midnight",
@@ -354,6 +373,18 @@ impl AppTheme {
         visuals.selection.bg_fill = self.accent.gamma_multiply(0.55);
         visuals.selection.stroke = Stroke::new(1.0, self.text);
         visuals.window_stroke = Stroke::new(1.0, self.surface_alt);
+
+        // Discord's rounding: 8 px windows and menus, 4 px controls.
+        visuals.window_corner_radius = egui::CornerRadius::same(8);
+        visuals.menu_corner_radius = egui::CornerRadius::same(8);
+        for widget in [
+            &mut visuals.widgets.inactive,
+            &mut visuals.widgets.hovered,
+            &mut visuals.widgets.active,
+            &mut visuals.widgets.noninteractive,
+        ] {
+            widget.corner_radius = egui::CornerRadius::same(4);
+        }
 
         ctx.set_visuals(visuals);
     }

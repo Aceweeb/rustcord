@@ -394,6 +394,36 @@ the copy says so instead of implying a server-side search. A real index remains
 possible later, but it would have to stay inside the memory budget and be
 invalidated by the same events that mark the overlay stale today.
 
+## D23. The default look is Discord's, measured rather than approximated
+
+**Context.** "Make it look like Discord" is easy to do badly: rounded corners and
+blurple on an otherwise arbitrary layout reads as a knock-off. Discord's density
+comes from a specific set of numbers and a three-step surface scale.
+
+**Decision.**
+
+- A new **Discord** preset is the default: `#313338` chat, `#2b2d31` sidebars,
+  `#1e1f22` rail, `#5865f2` blurple, `#dbdee1` text, `#949ba4` muted, `#f23f43`
+  danger, `#23a55a` online. The other twelve presets are untouched, so anyone who
+  picked one keeps it.
+- Discord's **metrics**, as named constants rather than magic numbers:
+  `RAIL_WIDTH` 72, `CHANNEL_LIST_WIDTH` 240, `GUILD_ICON` 48,
+  `CHANNEL_ROW_HEIGHT` 34, member list 240, channel header 48, message avatar 40.
+- Guild icons are circles that become 16 px rounded squares when selected, with
+  the white pill beside them, and channels are painted rows (inset 8 px, 4 px
+  radius) instead of widget labels, because widget padding cannot hit 34 px
+  exactly.
+- Hover and selected fills are **derived** from the surface with
+  `utils::lift`, not extra palette fields: adding two colours to every preset and
+to the CSS theme mapping would be a wider change for no gain.
+- Type scale follows Discord: 15 px names and body, 11–12 px timestamps and
+  category headers, 16 px channel header.
+
+**Consequences.** A CSS theme file still wins over the preset (D3-era behaviour),
+so a user's `theme_file` keeps overriding these colours — the metrics and
+structure apply regardless, which is why the layout change is worth more than the
+palette change. Contrast tests cover the new preset like the others.
+
 ## D22. Local-only: no database, no telemetry, one allowlist
 
 **Context.** The client is meant to run entirely on the user's machine and talk

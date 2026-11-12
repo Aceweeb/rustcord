@@ -79,6 +79,21 @@ rebuild (driver and font warm-up), and later samples caught 5-second bursts of
 innocent. See `DECISIONS.md` D14 — idle CPU is only meaningful next to a frame
 count.
 
+## Look and feel
+
+Default preset **Discord** (`#313338` chat, `#2b2d31` sidebars, `#1e1f22` rail,
+`#5865f2` blurple, D23), with Discord's measurements as constants in
+`src/ui/sidebar.rs`: 72 px rail, 240 px channel list, 48 px guild header,
+48 px guild icons, 34 px channel rows, 240 px member list, 40 px message avatars.
+
+Guild icons are circles that become rounded squares when active, with the white
+selection pill; channel rows are painted (8 px inset, 4 px radius, hover and
+selected fills derived from the surface) so they hit 34 px exactly. Type scale is
+Discord's: 15 px names/body, 11–12 px meta, 16 px channel header.
+
+The other twelve presets and CSS theme files still work and still win when
+chosen; the layout improvements apply to all of them.
+
 ## Local-only guarantees
 
 `src/privacy.rs` (D22) holds the one exact-match allowlist and it is enforced at
