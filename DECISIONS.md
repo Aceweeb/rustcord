@@ -108,3 +108,24 @@ Cargo builds and local command execution.
 
 **Consequences.** Build output lives on the roomy volume. `CARGO_HOME` remains on
 `/` and is the next space risk (see `docs/TROUBLESHOOTING.md`).
+
+## D11. Report PSS alongside RSS; pin the EGL vendor on NVIDIA
+
+**Context.** Idle RSS was 190 MB against a historical 134 MB claim. Building the
+pre-change commit in a worktree and measuring it identically gave the same
+190 MB, so there was no regression. Per-library RSS showed 126 MB of shared GPU
+driver mappings (`libnvidia-gpucomp`, `libnvidia-eglcore`, and Mesa's
+`libLLVM`), against ~23 MB of anonymous application memory.
+
+**Decision.** Two changes rather than architectural surgery:
+
+1. `main.rs` sets `__EGL_VENDOR_LIBRARY_FILENAMES` to the NVIDIA vendor file when
+   an NVIDIA device and vendor description exist and the user has not set it.
+   libglvnd then never initialises Mesa, so `libLLVM` and gallium are not mapped.
+2. Measurements report PSS next to RSS, because RSS counts shared library pages
+   in full and overstates a GL application's real cost.
+
+**Consequences.** 190 MB → 157 MB RSS and 64.6 MB → 54 MB PSS, with the same
+2 threads and ~0.0% idle CPU. The override is skipped on AMD/Intel systems and
+whenever the user set the variable, so no non-NVIDIA setup is affected. The
+remaining RSS is the proprietary driver and is not reducible from app code.

@@ -29,10 +29,14 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Next, in priority order
 
-- [ ] Reduce idle RSS toward the 100–200 MB band's lower half. Hypothesis:
-  emoji glyphs in the settings nav and sidebar pull a large font atlas into
-  memory. Test by replacing emoji with ASCII glyphs and re-measuring with
-  `scripts/measure-memory.sh`.
+- [x] Investigate the 190–195 MB idle RSS. Outcome: no code regression (the
+  pre-change build measured identically); ~126 MB was shared GPU driver
+  mappings. Fixed by pinning libglvnd to the NVIDIA EGL vendor, which stops
+  Mesa/`libLLVM` from loading: **190 → 157 MB RSS, 64.6 → 54 MB PSS**. Recorded
+  in `CURRENT_STATE.md` and `DECISIONS.md` D11.
+- [ ] Optional further trim: `system_fonts` pulls ~8 MB of fonts
+  (wqy-zenhei, NotoColorEmoji, GoogleSansFlex). Dropping the feature would save
+  that at the cost of falling back to bundled typography.
 - [ ] Fetch real channel history (`GET /channels/{id}/messages`) with
   pagination, and virtualise the message list before loading thousands of rows.
 - [ ] Handle `MESSAGE_UPDATE`, `MESSAGE_DELETE`, `MESSAGE_REACTION_*`,

@@ -50,13 +50,17 @@ Measured on the development machine (Arch, Wayland, release build):
 | Metric | Result |
 | --- | --- |
 | Binary size | ~11 MB stripped |
-| Idle RSS (after 8 s, release) | 195 MB (`VmRSS`) |
-| Peak RSS | 196 MB (`VmHWM`) |
+| Idle RSS (release, 1280×800) | 157 MB (`VmRSS`) |
+| Idle PSS (fair per-process figure) | 54 MB (`smaps_rollup`) |
+| Peak RSS | 157 MB (`VmHWM`) |
 | Steady-state CPU (6 s sample while idle) | ~0.0% |
 | Threads (no gateway token) | 2 |
 
-Earlier builds documented ~134 MB. The current measurement is 195 MB; the cause
-is not yet confirmed and is the top item in `TASKS.md`. Reproduce with
+RSS for a GL application counts shared library pages in full, and on this machine
+~100 MB of it is the proprietary NVIDIA driver stack (`libnvidia-gpucomp`,
+`libnvidia-eglcore`). Rustcord also pins libglvnd to the NVIDIA EGL vendor, which
+avoids mapping Mesa's `libLLVM` and gallium driver entirely—worth ~33 MB. The
+application's own allocations are ~23 MB anonymous. Reproduce every figure with
 `scripts/measure-memory.sh 20`.
 
 ## What is deliberately not implemented

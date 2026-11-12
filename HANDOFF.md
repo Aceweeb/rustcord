@@ -7,25 +7,13 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 61 passing
+- `cargo test --all-targets`: 66 passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 190–195 MB RSS, 191–196 MB peak, 2 threads, ~0.0% idle CPU
+- Runtime: 157 MB RSS, 54 MB PSS, 157 MB peak, 2 threads, ~0.0% idle CPU
+- RSS investigation is closed: see `CURRENT_STATE.md` and `DECISIONS.md` D11
 
 ## Immediate next task (highest value)
-
-**Explain and reduce the idle RSS delta (195 MB now vs 134 MB documented).**
-
-1. Reproduce: `scripts/measure-memory.sh 20`.
-2. Test the font-atlas hypothesis: temporarily replace the emoji glyphs in
-   `SettingsSection::glyph()` (`src/ui/settings.rs`) and the sidebar's `🔊`/`🎵`
-   with ASCII (`*`, `>`, `~`), rebuild, re-measure.
-3. If RSS drops materially, keep ASCII glyphs and record the numbers in
-   `CURRENT_STATE.md`. If not, profile allocations (e.g. `heaptrack`) before
-   changing architecture.
-4. Do not edit the documented figure until a measurement backs it.
-
-## Then, in order
 
 1. Real channel history: `GET /channels/{id}/messages` with pagination, plus a
    virtualised list. Guard with the existing `history_cap`.

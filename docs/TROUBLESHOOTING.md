@@ -27,6 +27,17 @@ Symptoms first, then the fix. Commands assume the repository is checked out at
    WAYLAND_DISPLAY= ./target/release/rustcord
    ```
 
+4. On a hybrid or unusual GPU setup, the app pins libglvnd to the NVIDIA EGL
+   vendor to avoid loading Mesa. If you get a blank window or a GL error, undo
+   that by choosing the vendors yourself:
+
+   ```bash
+   __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json \
+     ./target/release/rustcord
+   ```
+
+   Setting the variable at all disables Rustcord's automatic choice.
+
 ## "Could not save token" / keyring errors
 
 Rustcord stores the bot token in the OS Secret Service keyring and never in
