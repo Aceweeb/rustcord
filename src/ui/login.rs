@@ -179,20 +179,34 @@ fn render_qr_code(data: &str) -> Option<egui::ColorImage> {
 
 pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     // Copy theme fields into locals to avoid holding a borrow of `app`
-    // across the CentralPanel closure, which also captures `app`.
-    let (theme_background, theme_surface, theme_accent, theme_text, theme_muted, theme_danger) =
-        (
-            app.plugins.theme().background,
-            app.plugins.theme().surface,
-            app.plugins.theme().accent,
-            app.plugins.theme().text,
-            app.plugins.theme().muted,
-            app.plugins.theme().danger,
-        );
+    // across the CentralPanel closure, which captures `app`.
+    let theme_background = app.plugins.theme().background;
+    let theme_surface = app.plugins.theme().surface;
+    let theme_accent = app.plugins.theme().accent;
+    let theme_text = app.plugins.theme().text;
+    let theme_muted = app.plugins.theme().muted;
+    let theme_danger = app.plugins.theme().danger;
     let mut submit = false;
     let mut demo = false;
     let mut qr_toggle = false;
     let mut qr_refresh = false;
+
+    // Copy login state into a local to avoid holding a borrow of `app`
+    // across the CentralPanel closure.
+    let mut login = LoginState {
+        visible: app.login.visible,
+        kind: app.login.kind,
+        token: app.login.token.clone(),
+        error: app.login.error.clone(),
+        qr: QrState {
+            visible: app.login.qr.visible,
+            session_id: app.login.qr.session_id.clone(),
+            image: app.login.qr.image.clone(),
+            status: app.login.qr.status.clone(),
+            error: app.login.qr.error.clone(),
+            token: app.login.qr.token.clone(),
+        },
+    };
 
     egui::CentralPanel::default().show(ui, |ui| {
         ui.add_space((ui.available_height() * 0.14).max(16.0));
@@ -380,7 +394,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             );
                         }
                         LoginKind::Qr => {
-                            show_qr_panel(app, ui, theme, &mut qr_toggle, &mut qr_refresh);
+                            show_qr_panel(&mut login, ui, app.plugins.theme(), &mut qr_toggle, &mut qr_refresh);
                         }
                     }
                 });
@@ -621,38 +635,38 @@ enum QrPanelAction {
 
 /// Render the QR-code sign-in panel: code, refresh button, status.
 fn show_qr_panel(
-    app: &mut RustcordApp,
+    login: &mut LoginState,
     ui: &mut egui::Ui,
     theme: &crate::ui::theme::AppTheme,
     qr_toggle: &mut bool,
     qr_refresh: &mut bool,
 ) -> QrPanelAction {
     // Lazy-generate a session ID on first display.
-    if app.login.qr.session_id.is_empty() {
-        app.login.qr.session_id = format!(
+    if login.qr.session_id.is_empty() {
+        login.qr.session_id = format!(
             "rustcord-qr-{:x}",
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_nanos())
                 .unwrap_or(0)
         );
-        app.login.qr.image = render_qr_code(&app.login.qr.session_id);
+        login.qr.image = render_qr_code(&login.qr.session_id);
     }
 
     ui.label(
         RichText::new("Scan with the Discord mobile app")
             .strong()
-            .color(theme_text),
+            .color(theme.text),
     );
     ui.label(
         RichText::new("Account → Scan QR Code, then confirm on your phone.")
             .small()
-            .color(theme_muted),
+            .color(theme.muted),
     );
     ui.add_space(8.0);
 
     // QR code image.
-    if let Some(image) = &app.login.qr.image {
+    if let Some(image) = &login.qr.image {
         let size = ui.available_width().min(280.0);
         let texture = ui.ctx().load_texture(
             "qr_code",
@@ -684,22 +698,22 @@ fn show_qr_panel(
         }
     });
 
-    if let Some(status) = &app.login.qr.status {
+    if let Some(status) = &login.qr.status {
         ui.add_space(6.0);
-        ui.label(RichText::new(status).small().color(theme_muted));
+        ui.label(RichText::new(status).small().color(theme.muted));
     }
-    if let Some(error) = &app.login.qr.error {
+    if let Some(error) = &login.qr.error {
         ui.add_space(6.0);
-        ui.label(RichText::new(error).small().color(theme_danger));
+        ui.label(RichText::new(error).small().color(theme.danger));
     }
 
     // If a token was obtained from QR scanning, offer to use it.
-    if let Some(token) = &app.login.qr.token {
+    if let Some(token) = &login.qr.token {
         ui.add_space(10.0);
         ui.label(
             RichText::new("QR scan succeeded — token received.")
                 .small()
-                .color(theme_text),
+                .color(theme.text),
         );
         if ui
             .add(
