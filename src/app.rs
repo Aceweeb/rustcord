@@ -93,6 +93,8 @@ pub struct RustcordApp {
     pub(crate) images: crate::images::ImageLoader,
     /// Pagination state per channel id, so switching back does not refetch.
     pub(crate) history: HashMap<String, ChannelHistory>,
+    /// Folder being renamed right now, if the dialog is open.
+    pub(crate) rail_rename: Option<crate::rail::FolderRename>,
     /// Arrow-key focus over the rail and channel list (no overlay).
     pub(crate) navigator: crate::nav::Navigator,
     /// Folders currently expanded in the rail. Session-only; a folder opens
@@ -350,6 +352,7 @@ impl RustcordApp {
             switcher: crate::switcher::SwitcherState::default(),
             rail_expanded: std::collections::BTreeSet::new(),
             navigator: crate::nav::Navigator::default(),
+            rail_rename: None,
             voice: crate::models::VoiceTracker::default(),
             editing: None,
             replying_to: None,
@@ -1002,7 +1005,12 @@ impl RustcordApp {
 
     fn handle_navigation(&mut self, ctx: &egui::Context) {
         // Palettes and settings own the keyboard while they are up.
-        if !self.navigator.active || self.search.open || self.switcher.open || self.show_settings {
+        if !self.navigator.active
+            || self.search.open
+            || self.switcher.open
+            || self.show_settings
+            || self.rail_rename.is_some()
+        {
             return;
         }
         // A focused text field owns Enter, the arrows and Escape (the composer
@@ -2037,6 +2045,7 @@ impl eframe::App for RustcordApp {
         ui::settings::show(self, &ctx);
         ui::search::show(self, &ctx);
         ui::switcher::show(self, &ctx);
+        ui::sidebar::rename_dialog(self, &ctx);
     }
 }
 

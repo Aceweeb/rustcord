@@ -28,6 +28,26 @@ impl GuildFolder {
     }
 }
 
+/// An in-progress rename in the UI. Session-only: the draft never reaches
+/// `settings.json` unless it is saved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FolderRename {
+    pub folder_id: String,
+    pub draft: String,
+    /// Ask for keyboard focus on the frame the dialog first appears.
+    pub focus: bool,
+}
+
+impl FolderRename {
+    pub fn new(folder: &GuildFolder) -> Self {
+        Self {
+            folder_id: folder.id.clone(),
+            draft: folder.name.clone(),
+            focus: true,
+        }
+    }
+}
+
 /// One tile in the rail: a guild, or a folder standing in for its members.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RailItem {
@@ -200,6 +220,24 @@ impl GuildRail {
         held || self.folders.len() != before
     }
 
+    /// Rename a folder. Blank names are refused rather than silently defaulted,
+    /// so the dialog can keep the field open and explain itself.
+    pub fn rename_folder(&mut self, folder_id: &str, name: &str) -> bool {
+        let name = name.trim();
+        if name.is_empty() {
+            return false;
+        }
+        let Some(folder) = self
+            .folders
+            .iter_mut()
+            .find(|folder| folder.id == folder_id)
+        else {
+            return false;
+        };
+        folder.name = name.to_string();
+        true
+    }
+
     /// Ungroup: members return to the rail as individual servers in place.
     pub fn delete_folder(&mut self, folder_id: &str) -> bool {
         let before = self.folders.len();
@@ -290,6 +328,34 @@ mod tests {
 
         assert!(!rail.move_guild(&guilds, "2", -1), "already at the top");
         assert!(!rail.move_guild(&guilds, "1", 1), "1 is last");
+    }
+
+    #[test]
+    fn folders_can_be_renamed_but_not_blanked() {
+        let mut rail = GuildRail::default();
+        let folder = rail.new_folder("1", "Old");
+
+        assert!(rail.rename_folder(&folder, "  New name  "));
+        assert_eq!(rail.folder_of("1").unwrap().name, "New name");
+
+        assert!(!rail.rename_folder(&folder, "   "), "blank is refused");
+        assert_eq!(rail.folder_of("1").unwrap().name, "New name");
+
+        assert!(!rail.rename_folder("missing", "x"));
+        assert_eq!(
+            rail.items(&guilds(&["1"]))[0],
+            RailItem::Folder(rail.folders[0].clone())
+        );
+    }
+
+    #[test]
+    fn a_rename_draft_starts_from_the_current_name() {
+        let mut rail = GuildRail::default();
+        rail.new_folder("1", "Games");
+        let draft = FolderRename::new(&rail.folders[0]);
+        assert_eq!(draft.folder_id, "f0");
+        assert_eq!(draft.draft, "Games");
+        assert!(draft.focus);
     }
 
     #[test]

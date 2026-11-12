@@ -42,6 +42,7 @@ enum RailAction {
     AddToFolder(String, String),
     RemoveFromFolder(String),
     DeleteFolder(String),
+    RenameFolder(String),
 }
 
 fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
@@ -133,6 +134,11 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                             ui.close();
                                         }
                                         ui.separator();
+                                        if ui.button("Rename folder…").clicked() {
+                                            actions
+                                                .push(RailAction::RenameFolder(folder.id.clone()));
+                                            ui.close();
+                                        }
                                         if ui.button("Ungroup folder").clicked() {
                                             actions
                                                 .push(RailAction::DeleteFolder(folder.id.clone()));
@@ -219,6 +225,17 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
             RailAction::DeleteFolder(id) => {
                 layout_changed |= app.settings.guild_rail.delete_folder(&id);
                 app.rail_expanded.remove(&id);
+            }
+            RailAction::RenameFolder(id) => {
+                if let Some(folder) = app
+                    .settings
+                    .guild_rail
+                    .folders
+                    .iter()
+                    .find(|folder| folder.id == id)
+                {
+                    app.rail_rename = Some(crate::rail::FolderRename::new(folder));
+                }
             }
         }
     }
@@ -742,4 +759,92 @@ fn channel_row(
     }
 
     response.clicked()
+}
+
+/// Rename dialog for a folder.
+///
+/// The rail is 72 px wide, so a name cannot be edited in place there; a small
+/// dialog is the honest place for a text field. The draft lives in the app only
+/// until it is saved, and a blank name keeps the dialog open with a reason.
+pub(crate) fn rename_dialog(app: &mut RustcordApp, ctx: &egui::Context) {
+    let Some(mut state) = app.rail_rename.clone() else {
+        return;
+    };
+    let theme = app.plugins.theme().clone();
+    let mut save = false;
+    let mut cancel = false;
+
+    egui::Window::new("Rename folder")
+        .title_bar(false)
+        .resizable(false)
+        .collapsible(false)
+        .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 72.0))
+        .fixed_size(egui::vec2(360.0, 132.0))
+        .show(ctx, |ui| {
+            ui.label(
+                RichText::new("Rename folder")
+                    .size(15.0)
+                    .strong()
+                    .color(theme.text),
+            );
+            ui.add_space(4.0);
+
+            let response = ui.add(
+                egui::TextEdit::singleline(&mut state.draft)
+                    .hint_text("Folder name")
+                    .desired_width(ui.available_width()),
+            );
+            if state.focus {
+                response.request_focus();
+                state.focus = false;
+            }
+
+            ui.add_space(6.0);
+            let valid = !state.draft.trim().is_empty();
+            ui.horizontal(|ui| {
+                if ui.add_enabled(valid, egui::Button::new("Save")).clicked() {
+                    save = true;
+                }
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+                ui.label(
+                    RichText::new("Enter saves · Esc cancels")
+                        .small()
+                        .color(theme.muted),
+                );
+            });
+            if !valid {
+                ui.label(
+                    RichText::new("A folder needs a name.")
+                        .small()
+                        .color(theme.muted),
+                );
+            }
+
+            if ui.input(|input| input.key_pressed(egui::Key::Enter)) && valid {
+                save = true;
+            }
+            if ui.input(|input| input.key_pressed(egui::Key::Escape)) {
+                cancel = true;
+            }
+        });
+
+    app.rail_rename = Some(state);
+
+    if save {
+        if let Some(state) = app.rail_rename.take() {
+            let name = state.draft.trim().to_string();
+            if app
+                .settings
+                .guild_rail
+                .rename_folder(&state.folder_id, &name)
+            {
+                app.settings_changed();
+                app.status_line = Some(format!("folder renamed to {name}"));
+            }
+        }
+    } else if cancel {
+        app.rail_rename = None;
+    }
 }

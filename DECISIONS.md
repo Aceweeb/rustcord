@@ -936,3 +936,34 @@ stop and its expanded members are none — matching what is on screen.
 tests (6) and the code compiles/clippy/tests clean, and the release binary starts;
 the rings themselves have not been seen in a signed-in window, for the same reason
 as the switcher (D31): the only credential here is a user token REST rejects.
+
+## D34. Folder names are edited in a small dialog, not inline
+
+A folder is created named after the server that started it (D32), which is a
+sensible default but not always the name you want. Renaming therefore has to be
+possible without dragging, and the rail is 72 px wide: an inline text field there
+would be unreadable and would fight the click-to-expand tile. So `Rename folder…`
+in the folder's context menu opens a small anchored dialog instead.
+
+**Draft, not live edits.** `FolderRename` holds the folder id, the draft and a
+one-shot focus flag; nothing is written to `settings.json` until Save (or Enter).
+Cancel and Escape drop the draft. This matters because `settings_changed()`
+rebuilds the theme and writes the file — doing that per keystroke would be both
+wasteful and, if the name were later abandoned, wrong.
+
+**Validation is honest.** `GuildRail::rename_folder` trims the name and refuses a
+blank one rather than substituting a default, so the dialog can keep the field
+open, disable Save and say "A folder needs a name." rather than silently turning a
+deliberate blank into "Folder". Renaming an unknown folder id returns false and
+changes nothing.
+
+**Interaction with the other modes.** Arrow-key navigation (D33) stands down while
+this dialog is open, and the dialog's own field takes keyboard focus, so Enter
+saves the name instead of activating a rail item behind it. The folder tile's
+tooltip and the item list pick the new name up on the next frame because both read
+from `settings.guild_rail`.
+
+**Not verified live.** Covered by model tests (rename, trimming, blank refusal,
+unknown id, draft initialisation) plus clean fmt/clippy/tests and a launch of the
+release binary; the dialog has not been typed into in a signed-in window, for the
+same credential reason as D31 and D33.

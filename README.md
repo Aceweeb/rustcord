@@ -31,8 +31,8 @@ half-implemented stubs that pretend to work.
 - Ctrl+K quick switcher over servers and channels, with prefix-first ranking,
   arrow/Enter navigation and a rebindable shortcut.
 - Guild folders and drag-free ordering: right-click a server to move it, group it
-  into a folder or ungroup it. Stored in `settings.json`, since a bot cannot read
-  a user's Discord folder settings.
+  into a folder or ungroup it, and rename a folder from its own menu. Stored in
+  `settings.json`, since a bot cannot read a user's Discord folder settings.
 - Keyboard-only navigation (`Ctrl+Shift+K` by default): arrow through the rail and
   channel list with an in-place focus ring, Enter opens, Escape leaves.
 - Nine-section settings window: Appearance, Themes, Performance, Memory,

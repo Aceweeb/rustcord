@@ -7,12 +7,22 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 238 lib + 5 bin tests passing
+- `cargo test --all-targets`: 240 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Folder renaming (`DECISIONS.md` D34):
+
+- `src/rail.rs` — `rename_folder` (trims, refuses blank, false on unknown id) and
+  `FolderRename` (folder id, draft, one-shot focus); 2 tests.
+- `src/ui/sidebar.rs` — `Rename folder…` in the folder context menu and
+  `rename_dialog`, which saves through `settings_changed()`; `RailAction::RenameFolder`.
+- `src/app.rs` — `rail_rename` state; arrow-key navigation stands down while the
+  dialog is open.
+
 
 Keyboard-only navigation (`DECISIONS.md` D33):
 

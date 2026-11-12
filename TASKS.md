@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Folder renaming (`DECISIONS.md` D34): `Rename folder…` in the folder menu
+  opens a small anchored dialog over a draft; Save/Enter persists, Esc/Cancel
+  discards, blank names are refused with a reason. 2 model tests; dialog not typed
+  into in a signed-in window.
 - [x] Keyboard-only navigation (`DECISIONS.md` D33): pure `Navigator` with area
   switching, wrapping and clamping, rebindable `Ctrl+Shift+K` toggle, in-place
   focus rings on rail items/folders/channel rows, guards against palettes and
