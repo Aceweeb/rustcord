@@ -36,7 +36,7 @@ half-implemented stubs that pretend to work.
 - Keyboard-only navigation (`Ctrl+Shift+K` by default): arrow through the rail and
   channel list with an in-place focus ring, Enter opens, Escape leaves.
 - Hover a server icon for a peek at its text and voice channels, with unread and
-  mention counts, without switching to it.
+  mention counts; clicking a channel in the peek opens it directly.
 - A native message log (`Ctrl+Shift+L`) of edits and deletions seen this session,
   filterable, capped at 500 entries and never written to disk. Vencord's plugins
   patch Discord's own client and cannot load here; this is the same feature built

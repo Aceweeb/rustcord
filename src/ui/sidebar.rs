@@ -862,25 +862,52 @@ pub(crate) fn rename_dialog(app: &mut RustcordApp, ctx: &egui::Context) {
     }
 }
 
-/// Discord's rail peek: hover a server icon and see its channels without
-/// switching to it.
+/// The peek as it was drawn last frame.
 ///
-/// It has to be drawn outside the 72 px rail panel, so it is an `Area` in the
-/// tooltip layer rather than a widget inside the rail. It is deliberately not
-/// interactable: the point is to look, and a click must still reach the icon.
+/// The flyout sits beside the icon and overlaps the channel list, so the pointer
+/// necessarily leaves the icon to reach it. Keeping the last icon and flyout
+/// rects lets the peek survive that trip (and the small gap between the two).
+#[derive(Debug, Clone)]
+pub struct Peek {
+    pub guild_id: String,
+    pub icon: egui::Rect,
+    pub area: egui::Rect,
+}
+
+/// Extra slop around the flyout so crossing the gap between icon and panel does
+/// not close it.
+const PEEK_REACH: f32 = 14.0;
+
+/// Discord's rail peek: hover a server icon and see its channels without
+/// switching to it. The rows are clickable, so the peek is also a faster way to
+/// reach a channel than switching servers first.
+///
+/// It has to be drawn outside the 72 px rail panel, so it is an `Area` rather than
+/// a widget inside the rail, and it uses the foreground layer so its rows can
+/// receive clicks (`DECISIONS.md` D37).
 pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
-    let Some((guild_id, rect)) = app.rail_hover.clone() else {
-        return;
-    };
     // Other modes already own the screen or the keyboard.
     if app.navigator.active
         || app.search.open
         || app.switcher.open
         || app.show_settings
         || app.rail_rename.is_some()
+        || app.message_log_open
     {
+        app.rail_peek = None;
         return;
     }
+
+    let hover = app
+        .rail_hover
+        .as_ref()
+        .map(|(id, rect)| (id.as_str(), *rect));
+    let candidate = peek_target(hover, app.rail_peek.as_ref(), ctx.pointer_hover_pos());
+
+    let Some((guild_id, icon)) = candidate else {
+        app.rail_peek = None;
+        return;
+    };
 
     let Some(guild) = app
         .guilds
@@ -888,6 +915,7 @@ pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
         .find(|guild| guild.id == guild_id)
         .cloned()
     else {
+        app.rail_peek = None;
         return;
     };
     let theme = app.plugins.theme().clone();
@@ -895,27 +923,33 @@ pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
     const MAX_TEXT: usize = 8;
     const MAX_VOICE: usize = 5;
 
-    let text_channels: Vec<(String, crate::models::Unread)> = app
+    let text_channels: Vec<(String, String, crate::models::Unread)> = app
         .channels
         .iter()
         .filter(|channel| channel.guild_id == guild_id && channel.kind == ChannelKind::Text)
-        .map(|channel| (channel.name.clone(), app.unread.get(&channel.id)))
+        .map(|channel| {
+            (
+                channel.id.clone(),
+                channel.name.clone(),
+                app.unread.get(&channel.id),
+            )
+        })
         .collect();
-    let voice_channels: Vec<String> = app
+    let voice_channels: Vec<(String, String)> = app
         .channels
         .iter()
         .filter(|channel| channel.guild_id == guild_id && channel.kind == ChannelKind::Voice)
-        .map(|channel| channel.name.clone())
+        .map(|channel| (channel.id.clone(), channel.name.clone()))
         .collect();
 
     // Keep the panel on screen when the icon is near the bottom of the window.
     let max_top = (ctx.content_rect().bottom() - 240.0).max(8.0);
-    let position = egui::pos2(rect.right() + 10.0, rect.top().min(max_top));
+    let position = egui::pos2(icon.right() + 10.0, icon.top().min(max_top));
+    let mut clicked: Option<String> = None;
 
-    egui::Area::new(egui::Id::unique("rail_channel_peek"))
-        .order(egui::Order::Tooltip)
+    let area = egui::Area::new(egui::Id::unique("rail_channel_peek"))
+        .order(egui::Order::Foreground)
         .fixed_pos(position)
-        .interactable(false)
         .show(ctx, |ui| {
             egui::Frame::new()
                 .fill(theme.surface)
@@ -943,7 +977,7 @@ pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
                     if text_channels.is_empty() {
                         ui.label(RichText::new("none").small().color(theme.muted));
                     }
-                    for (name, unread) in text_channels.iter().take(MAX_TEXT) {
+                    for (id, name, unread) in text_channels.iter().take(MAX_TEXT) {
                         let color = if unread.is_unread() {
                             theme.text
                         } else {
@@ -953,7 +987,16 @@ pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
                         if let Some(badge) = unread.badge() {
                             label.push_str(&format!("   {badge}"));
                         }
-                        ui.label(RichText::new(label).size(13.0).color(color));
+                        let row = ui
+                            .add(
+                                egui::Label::new(RichText::new(label).size(13.0).color(color))
+                                    .sense(egui::Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text("Open this channel");
+                        if row.clicked() {
+                            clicked = Some(id.clone());
+                        }
                     }
                     if text_channels.len() > MAX_TEXT {
                         ui.label(
@@ -973,12 +1016,21 @@ pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
                     if voice_channels.is_empty() {
                         ui.label(RichText::new("none").small().color(theme.muted));
                     }
-                    for name in voice_channels.iter().take(MAX_VOICE) {
-                        ui.label(
-                            RichText::new(format!("\u{1F50A} {name}"))
-                                .size(13.0)
-                                .color(theme.muted),
-                        );
+                    for (id, name) in voice_channels.iter().take(MAX_VOICE) {
+                        let row = ui
+                            .add(
+                                egui::Label::new(
+                                    RichText::new(format!("\u{1F50A} {name}"))
+                                        .size(13.0)
+                                        .color(theme.muted),
+                                )
+                                .sense(egui::Sense::click()),
+                            )
+                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                            .on_hover_text("Open this channel");
+                        if row.clicked() {
+                            clicked = Some(id.clone());
+                        }
                     }
                     if voice_channels.len() > MAX_VOICE {
                         ui.label(
@@ -988,5 +1040,94 @@ pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
                         );
                     }
                 });
-        });
+        })
+        .response
+        .rect;
+
+    app.rail_peek = Some(Peek {
+        guild_id: guild_id.clone(),
+        icon,
+        area,
+    });
+
+    if let Some(channel_id) = clicked {
+        // Same path as clicking the channel in the sidebar: selects the server,
+        // opens the channel and marks it read (D30).
+        app.navigator.stop();
+        app.selected_guild = Some(guild_id);
+        app.select_channel(channel_id);
+    }
+}
+
+/// Which server the peek should show, and where its icon is.
+///
+/// An icon under the pointer always wins; otherwise the flyout stays open only
+/// while the pointer is inside it (plus a little slop for the gap), which is what
+/// makes its rows clickable at all: reaching them means leaving the icon.
+fn peek_target(
+    hover: Option<(&str, egui::Rect)>,
+    last: Option<&Peek>,
+    pointer: Option<egui::Pos2>,
+) -> Option<(String, egui::Rect)> {
+    if let Some((id, rect)) = hover {
+        return Some((id.to_string(), rect));
+    }
+    let (last, pointer) = (last?, pointer?);
+    if last
+        .area
+        .expand2(egui::vec2(PEEK_REACH, 4.0))
+        .contains(pointer)
+    {
+        Some((last.guild_id.clone(), last.icon))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect(x: f32, y: f32) -> egui::Rect {
+        egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(48.0, 48.0))
+    }
+
+    fn peek() -> Peek {
+        Peek {
+            guild_id: "7".to_string(),
+            icon: rect(12.0, 100.0),
+            area: rect(80.0, 100.0),
+        }
+    }
+
+    #[test]
+    fn a_hovered_icon_always_wins() {
+        let last = peek();
+        let target = peek_target(
+            Some(("9", rect(12.0, 200.0))),
+            Some(&last),
+            Some(egui::pos2(90.0, 110.0)),
+        );
+        assert_eq!(target.expect("target").0, "9");
+    }
+
+    #[test]
+    fn the_peek_stays_open_while_the_pointer_is_on_it() {
+        let last = peek();
+        let target = peek_target(None, Some(&last), Some(egui::pos2(120.0, 120.0)));
+        let (id, icon) = target.expect("kept open");
+        assert_eq!(id, "7");
+        assert_eq!(icon, last.icon, "the flyout stays anchored to its icon");
+
+        // The gap between icon and flyout is part of the reach.
+        assert!(peek_target(None, Some(&last), Some(egui::pos2(78.0, 120.0))).is_some());
+    }
+
+    #[test]
+    fn leaving_the_peek_closes_it() {
+        let last = peek();
+        assert!(peek_target(None, Some(&last), Some(egui::pos2(300.0, 300.0))).is_none());
+        assert!(peek_target(None, Some(&last), None).is_none());
+        assert!(peek_target(None, None, Some(egui::pos2(90.0, 110.0))).is_none());
+    }
 }

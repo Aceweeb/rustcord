@@ -7,12 +7,20 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 246 lib + 5 bin tests passing
+- `cargo test --all-targets`: 249 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Clickable channel peek (`DECISIONS.md` D37):
+
+- `src/ui/sidebar.rs` — `Peek { guild_id, icon, area }` and pure `peek_target`;
+  foreground-layer area, clickable channel rows that open the channel, 14 px reach
+  so the pointer can cross from the icon to the flyout; 3 tests.
+- `src/app.rs` — `rail_peek` state (the flyout as drawn last frame).
+
 
 Native message log (`DECISIONS.md` D36):
 

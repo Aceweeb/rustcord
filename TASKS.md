@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Clickable channel peek (`DECISIONS.md` D37): rows open the channel through
+  `select_channel`; the flyout survives the pointer leaving the icon via a stored
+  icon+flyout rect and a 14 px reach, on the foreground layer so clicks land. 3
+  tests on the pure target decision; a live click not observed.
 - [x] Native message log (`DECISIONS.md` D36): edits keep old and new text,
   deletions keep the vanished text, newest first, 500-entry cap, filter and clear,
   `Ctrl+Shift+L` panel, cleared on sign-out, session-only by design. 6 model tests;

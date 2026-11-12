@@ -1038,3 +1038,35 @@ oldest, filtering and clearing, and the log is cleared on sign-out in code. The
 panel itself has not been looked at in a signed-in window, and no live edit or
 delete has been observed because Discord rejects this environment's credential
 (D28); the wiring is compile-, clippy- and test-verified only.
+
+## D37. The peek's rows are clickable, which means it must survive losing hover
+
+D35 drew the peek as an inert tooltip precisely so it could not steal input. Making
+its channels openable changes that: the rows need clicks, and, more subtly, the
+peek has to stay alive while the pointer travels from the server icon onto the
+flyout. Hovering the icon ends the moment the pointer leaves it, so a purely
+hover-driven flyout would vanish in the gap — the click could never land.
+
+**Two rects, not one flag.** `Peek` records the server, its icon rect and the
+flyout's own rect for the frame it was drawn. `peek_target` decides what to show:
+an icon under the pointer always wins (hovering another server switches the peek
+immediately), otherwise the previous flyout is kept only while the pointer is
+inside its rect expanded by `PEEK_REACH` (14 px, enough to cover the gap). Drop
+outside that and the state is cleared, so nothing lingers after the pointer leaves.
+
+**Layer and inputs.** The area moved from `Order::Tooltip` to `Order::Foreground`
+so its rows can receive clicks; tooltip-order areas are not meant to be
+interactable. Rows are labels with `Sense::click()` and a pointing-hand cursor,
+with "Open this channel" on hover. Clicking one selects the parent server, opens
+the channel through `select_channel` (so it is read, D30), and stops keyboard
+navigation. The peek covers the part of the channel list it overlaps, which is
+expected: it is a deliberate flyout, and leaving it closes it.
+
+**Guards unchanged.** Search, the switcher, settings, the rename dialog, keyboard
+navigation and the message log all still suppress the peek and clear its state.
+
+**Tested without a pointer.** `peek_target` is pure and covered by three tests: a
+hovered icon wins, the flyout stays open (with its original icon anchor) while the
+pointer is on it including the gap, and leaving closes it. Actually clicking a row
+in a live window has not been observed — this environment's credential is rejected
+by Discord (D28), so the panel is not reachable signed in.
