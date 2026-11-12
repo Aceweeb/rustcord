@@ -1407,3 +1407,35 @@ connection.
 installs the binary, desktop entry, SVG/PNG icons and licence). AppImage and
 Flatpak remain open; they need a clean-VM build that this environment cannot
 provide.
+
+## D47. The typing indicator animates, and the header shows it too
+
+The inbound indicator was a static label above the composer, which meant the only
+sign that somebody was still typing was the text itself disappearing. It now
+animates and appears in the channel header as well.
+
+**Dots are a pure function of the clock.** `models::typing_dots(now)` returns `.`,
+`..`, `...` on a 400 ms cycle (`TYPING_FRAME_SECONDS`). `TypingTracker::summary`
+no longer bakes an ellipsis into its sentence, so the same string feeds both
+places and the animation lives in one tested function instead of in widget state.
+The phase is computed with `floor`, not a cast: a cast truncates toward zero, so a
+negative frame time would land in the wrong frame (caught by a test).
+
+**One computation, two places.** `ui/chat.rs` resolves the selected channel's
+summary and dots once at the top of the frame, then uses that string in the header
+(next to the `#name`, prefixed by a small pencil glyph) and above the composer.
+While somebody is typing the UI asks for a repaint every 120 ms — enough for a
+400 ms cycle, and only while an indicator is actually on screen. Expiry still
+needs no timer: `summary` prunes against the same clock, so the label disappears
+when `TYPING_TTL` passes.
+
+**Why the header.** The composer sits at the bottom of a tall message list; with
+the input scrolled away or the window short, a typing notice there is easy to
+miss. The header is always visible and already the place where channel-scoped
+state (the LIVE badge) is shown. Both labels are the same muted italic style, and
+the header one carries a tooltip so the glyph is not a mystery.
+
+**Scope.** Display-only: outgoing notices still follow D44's eight-second throttle,
+and nothing here makes a network call or adds a thread. `typing_dots` is covered
+for all three frames, the cycle boundary and a negative clock; the existing
+summary tests were updated for the removed ellipsis rather than loosened.

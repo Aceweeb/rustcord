@@ -625,6 +625,26 @@ struct TypingEntry {
 /// without ever being the reason a call is refused.
 pub const TYPING_REFRESH: std::time::Duration = std::time::Duration::from_secs(8);
 
+/// How long one frame of the animated trailing dots is shown.
+pub const TYPING_FRAME_SECONDS: f64 = 0.4;
+
+/// The trailing dots for a given moment: `.`, `..`, `...`, then round again.
+///
+/// Pure and monotonic-clock friendly: callers pass egui's frame time, so the
+/// animation is a function of time rather than mutable widgets. When a typing
+/// label is on screen the UI asks for a repaint every 120 ms, which is enough
+/// granularity for a 400 ms cycle without pinning a core.
+pub fn typing_dots(now: f64) -> &'static str {
+    // `floor`, not a cast: a cast truncates toward zero, so a clock at -1 s would
+    // land in the wrong frame.
+    let phase = (now / TYPING_FRAME_SECONDS).floor() as i64;
+    match phase.rem_euclid(3) {
+        0 => ".",
+        1 => "..",
+        _ => "...",
+    }
+}
+
 /// Whether a typing notice is due: the first keystroke always sends one, a
 /// different channel sends one, and the same channel waits out `TYPING_REFRESH`.
 pub fn typing_due(
@@ -686,7 +706,10 @@ impl TypingTracker {
         self.entries.retain(|entry| entry.expires > now);
     }
 
-    /// A sentence for the composer, or `None` when nobody is typing.
+    /// The names typing in a channel, or `None` when nobody is.
+    ///
+    /// No trailing ellipsis: the dot animation is appended by the UI from
+    /// [`typing_dots`], so the same sentence serves the composer and the header.
     pub fn summary(&mut self, channel_id: &str, now: f64) -> Option<String> {
         self.prune(now);
 
@@ -699,9 +722,9 @@ impl TypingTracker {
 
         match names.len() {
             0 => None,
-            1 => Some(format!("{} is typing…", names[0])),
-            2 => Some(format!("{} and {} are typing…", names[0], names[1])),
-            _ => Some("several people are typing…".to_string()),
+            1 => Some(format!("{} is typing", names[0])),
+            2 => Some(format!("{} and {} are typing", names[0], names[1])),
+            _ => Some("several people are typing".to_string()),
         }
     }
 
@@ -1139,19 +1162,19 @@ mod tests {
         typing.record("c1", "u1", "alice", 0.0);
         assert_eq!(
             typing.summary("c1", 0.0).as_deref(),
-            Some("alice is typing…")
+            Some("alice is typing")
         );
 
         typing.record("c1", "u2", "bob", 0.0);
         assert_eq!(
             typing.summary("c1", 0.0).as_deref(),
-            Some("alice and bob are typing…")
+            Some("alice and bob are typing")
         );
 
         typing.record("c1", "u3", "carol", 0.0);
         assert_eq!(
             typing.summary("c1", 0.0).as_deref(),
-            Some("several people are typing…")
+            Some("several people are typing")
         );
     }
 
@@ -1195,6 +1218,17 @@ mod tests {
 
         // The oldest expire first, and the tracker drains back to empty.
         assert!(typing.summary("c1", TYPING_TTL + 0.1).is_none());
+    }
+
+    #[test]
+    fn the_typing_dots_cycle_through_three_frames() {
+        assert_eq!(typing_dots(0.0), ".");
+        assert_eq!(typing_dots(TYPING_FRAME_SECONDS * 1.2), "..");
+        assert_eq!(typing_dots(TYPING_FRAME_SECONDS * 2.2), "...");
+        // The cycle repeats, and a clock that starts before zero still lands on
+        // a frame rather than panicking or indexing out of range.
+        assert_eq!(typing_dots(TYPING_FRAME_SECONDS * 3.5), ".");
+        assert_eq!(typing_dots(-1.0), ".");
     }
 
     #[test]

@@ -38,6 +38,21 @@ pub(crate) fn message_timestamp(
 }
 
 pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
+    // Typing is tracked per channel and expires by itself, so this only reads
+    // state. The sentence is built once and shared by the header and composer;
+    // the dots are a pure function of the frame clock. While somebody types, a
+    // bounded repaint drives the animation and keeps expiry honest.
+    let typing_now = ui.input(|input| input.time);
+    let typing_text = app
+        .selected_channel
+        .as_deref()
+        .and_then(|channel| app.typing.summary(channel, typing_now))
+        .map(|sentence| format!("{sentence}{}", crate::models::typing_dots(typing_now)));
+    if typing_text.is_some() {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(120));
+    }
+
     // Discord's 48 px channel header: a muted #, the name, then the icons.
     egui::Panel::top("chat_top").show(ui, |ui| {
         ui.set_height(48.0);
@@ -58,6 +73,23 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     .strong()
                     .color(app.plugins.theme().text),
             );
+
+            // The same live indicator as the composer, so a glance at the header
+            // is enough when the input field is scrolled out of view.
+            if let Some(text) = &typing_text {
+                ui.label(
+                    RichText::new("\u{270e}")
+                        .small()
+                        .color(app.plugins.theme().accent),
+                );
+                ui.label(
+                    RichText::new(text)
+                        .size(12.0)
+                        .italics()
+                        .color(app.plugins.theme().muted),
+                )
+                .on_hover_text("Live typing indicator for this channel");
+            }
 
             let streaming = app.plugins.streaming_state();
             if streaming.active {
@@ -229,18 +261,6 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         );
     });
 
-    // Typing is tracked per channel and expires by itself, so this only reads
-    // state; while somebody types, a bounded repaint keeps the line honest.
-    let typing_now = ui.input(|input| input.time);
-    let typing = app
-        .selected_channel
-        .as_deref()
-        .and_then(|channel| app.typing.summary(channel, typing_now));
-    if typing.is_some() {
-        ui.ctx()
-            .request_repaint_after(std::time::Duration::from_millis(500));
-    }
-
     // A delete is confirmed rather than done on the click that asked for it.
     if let Some(id) = app.pending_delete.clone() {
         egui::Panel::top("delete_confirm").show(ui, |ui| {
@@ -315,7 +335,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             }
         }
 
-        if let Some(typing) = &typing {
+        if let Some(typing) = &typing_text {
             ui.label(
                 RichText::new(typing)
                     .size(12.0)

@@ -9,6 +9,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   `channel:name` / `#name` filters, channel names on rows, cached-channel count and
   a parsed-filter line; clicking a result opens its channel. Parsing and narrowing
   tested; the overlay has not been typed into in a signed-in window (D28).
+- [x] Animated typing indicator in the composer **and** channel header
+  (`DECISIONS.md` D47): pure `typing_dots` 400 ms cycle, one shared label, 120 ms
+  repaint only while visible, expiry still timer-free. 1 new test; rendering not
+  seen in a signed-in window.
 - [~] Outgoing typing indicator (`DECISIONS.md` D44): `POST
   /channels/{id}/typing` on the first keystroke and then at most every eight
   seconds per channel, skipped for empty drafts, non-text channels and demo mode,

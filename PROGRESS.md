@@ -498,6 +498,11 @@ Priority order for the next session:
   `docs/VOICE_AND_STREAMING.md` explaining why items 6–7 are blocked on DAVE.
   Suite now 300.
 
+- Animated the typing indicator and mirrored it in the channel header (D47):
+  `models::typing_dots` is a pure 400 ms three-frame cycle, `summary` no longer
+  embeds an ellipsis, `ui/chat.rs` computes the label once and draws it in both
+  places, and repaints every 120 ms only while somebody is typing. One new test.
+
 ---
 
 ## 7. Notes for the next agent

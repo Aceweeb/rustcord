@@ -7,12 +7,21 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 295 lib + 5 bin tests passing (300)
+- `cargo test --all-targets`: 296 lib + 5 bin tests passing (301)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Animated typing indicator in the header and composer (`DECISIONS.md` D47):
+
+- `src/models.rs` — `typing_dots(now)` (400 ms `.`/`..`/`...`, `floor`-based
+  phase) and `TYPING_FRAME_SECONDS`; `TypingTracker::summary` no longer appends an
+  ellipsis; one new test.
+- `src/ui/chat.rs` — label computed once at the top of the frame, drawn after the
+  header's channel name (pencil glyph + tooltip) and above the composer; repaint
+  every 120 ms only while somebody is typing.
 
 Roadmap item 8 (WASM sandbox, `DECISIONS.md` D46) and item 10 (PKGBUILD):
 
