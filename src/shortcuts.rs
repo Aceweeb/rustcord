@@ -10,6 +10,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ShortcutAction {
     Search,
+    QuickSwitcher,
     ToggleSettings,
     NextChannel,
     PrevChannel,
@@ -21,8 +22,9 @@ pub enum ShortcutAction {
 }
 
 impl ShortcutAction {
-    pub const ALL: [ShortcutAction; 9] = [
+    pub const ALL: [ShortcutAction; 10] = [
         ShortcutAction::Search,
+        ShortcutAction::QuickSwitcher,
         ShortcutAction::ToggleSettings,
         ShortcutAction::NextChannel,
         ShortcutAction::PrevChannel,
@@ -36,6 +38,7 @@ impl ShortcutAction {
     pub fn id(self) -> &'static str {
         match self {
             Self::Search => "search",
+            Self::QuickSwitcher => "quick_switcher",
             Self::ToggleSettings => "toggle_settings",
             Self::NextChannel => "next_channel",
             Self::PrevChannel => "prev_channel",
@@ -50,6 +53,7 @@ impl ShortcutAction {
     pub fn label(self) -> &'static str {
         match self {
             Self::Search => "Search loaded messages",
+            Self::QuickSwitcher => "Quick switcher (servers and channels)",
             Self::ToggleSettings => "Open / close settings",
             Self::NextChannel => "Next channel",
             Self::PrevChannel => "Previous channel",
@@ -68,6 +72,7 @@ impl ShortcutAction {
     pub fn default_chord(self) -> KeyChord {
         match self {
             Self::Search => KeyChord::new(true, false, false, "F"),
+            Self::QuickSwitcher => KeyChord::new(true, false, false, "K"),
             Self::ToggleSettings => KeyChord::new(true, false, false, "Comma"),
             Self::NextChannel => KeyChord::new(true, false, false, "ArrowDown"),
             Self::PrevChannel => KeyChord::new(true, false, false, "ArrowUp"),

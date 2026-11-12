@@ -93,6 +93,8 @@ pub struct RustcordApp {
     pub(crate) images: crate::images::ImageLoader,
     /// Pagination state per channel id, so switching back does not refetch.
     pub(crate) history: HashMap<String, ChannelHistory>,
+    /// Ctrl+K overlay state (query, cursor).
+    pub(crate) switcher: crate::switcher::SwitcherState,
     /// Locally tracked unread/mention counters; bots get no server read state.
     pub(crate) unread: crate::models::UnreadTracker,
     /// Guild rosters, fetched over REST with the Members intent. Keyed by guild.
@@ -340,6 +342,7 @@ impl RustcordApp {
             identity_expired,
             oauth: OAuthFlow::default(),
             search: crate::search::SearchState::default(),
+            switcher: crate::switcher::SwitcherState::default(),
             voice: crate::models::VoiceTracker::default(),
             editing: None,
             replying_to: None,
@@ -885,6 +888,8 @@ impl RustcordApp {
     // -----------------------------------------------------------------------
 
     pub(crate) fn open_search(&mut self) {
+        // One palette at a time: the switcher sits on top of the same screen.
+        self.switcher.close();
         self.search.open = true;
         self.search.just_opened = true;
         self.refresh_search();
@@ -892,6 +897,49 @@ impl RustcordApp {
 
     pub(crate) fn close_search(&mut self) {
         self.search.open = false;
+    }
+
+    // -----------------------------------------------------------------------
+    // Quick switcher
+    // -----------------------------------------------------------------------
+
+    pub(crate) fn open_switcher(&mut self) {
+        self.close_search();
+        self.switcher.open_now();
+    }
+
+    pub(crate) fn close_switcher(&mut self) {
+        self.switcher.close();
+    }
+
+    /// A server row opens its first text channel; a channel row opens itself and
+    /// its parent server. Either way the overlay closes and the channel is read.
+    pub(crate) fn activate_switcher(&mut self, entry: crate::switcher::Entry) {
+        self.switcher.close();
+        self.selected_guild = Some(entry.guild_id.clone());
+
+        match entry.kind {
+            crate::switcher::EntryKind::Channel => {
+                self.select_channel(entry.id.clone());
+                self.status_line = Some(format!(
+                    "jumped to {} in {}",
+                    entry.primary, entry.secondary
+                ));
+            }
+            crate::switcher::EntryKind::Guild => {
+                if let Some(channel) = self
+                    .channels
+                    .iter()
+                    .find(|channel| {
+                        channel.guild_id == entry.id && channel.kind == ChannelKind::Text
+                    })
+                    .map(|channel| channel.id.clone())
+                {
+                    self.select_channel(channel);
+                }
+                self.status_line = Some(format!("switched to {}", entry.primary));
+            }
+        }
     }
 
     /// Recompute results from the messages currently held.
@@ -983,6 +1031,13 @@ impl RustcordApp {
                     self.close_search();
                 } else {
                     self.open_search();
+                }
+            }
+            ShortcutAction::QuickSwitcher => {
+                if self.switcher.open {
+                    self.close_switcher();
+                } else {
+                    self.open_switcher();
                 }
             }
             ShortcutAction::ToggleSettings => self.show_settings = !self.show_settings,
@@ -1822,6 +1877,7 @@ impl eframe::App for RustcordApp {
         ui::chat::show(self, ui);
         ui::settings::show(self, &ctx);
         ui::search::show(self, &ctx);
+        ui::switcher::show(self, &ctx);
     }
 }
 

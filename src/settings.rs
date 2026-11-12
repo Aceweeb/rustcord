@@ -540,7 +540,8 @@ mod tests {
     #[test]
     fn duplicate_shortcuts_are_reported() {
         let mut settings = Settings::default();
-        let clash = KeyChord::new(true, false, false, "K");
+        // Ctrl+J is unbound by default, so the only conflict is the one made here.
+        let clash = KeyChord::new(true, false, false, "J");
         settings.set_chord(ShortcutAction::ToggleSettings, clash.clone());
         settings.set_chord(ShortcutAction::NextChannel, clash);
 

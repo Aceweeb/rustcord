@@ -13,6 +13,7 @@ pub mod privacy;
 pub mod search;
 pub mod settings;
 pub mod shortcuts;
+pub mod switcher;
 pub mod sysinfo;
 pub mod ui;
 pub mod utils;

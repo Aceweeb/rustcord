@@ -830,3 +830,35 @@ Mentions are only detectable when `MESSAGE_CONTENT` is enabled for the bot
 verification was not possible: the only credential here is a user token, and a
 25-second gateway probe saw no `MESSAGE_CREATE` at all, so the badges are tested
 through `UnreadTracker` and not observed on screen.
+
+## D31. Ctrl+K is a local switcher, not Discord's
+
+Discord's quick switcher is a client feature, not an endpoint, so there is nothing
+to call: it jumps between the guilds and channels the client already holds. That is
+exactly what this one does, which also makes it cheap — a few thousand rows scored
+per frame, no index, no network, no memory held after the overlay closes.
+
+**Model** (`switcher.rs`, pure and tested): `build_entries` emits servers first and
+then each server's text and voice channels in the order received (categories are
+not jump targets, since you cannot read one). `filter` requires every
+whitespace-separated query token to appear in `"#name guild"`, ranked prefix match,
+then substring, then the rest, breaking ties alphabetically; an empty query lists
+the first 12, which is what a switcher shows before you type. `SwitcherState`
+owns open/query/cursor, wraps the cursor at both ends, and clamps it whenever the
+result list shrinks under a narrowing query.
+
+**Binding.** `QuickSwitcher` is a normal `ShortcutAction` (default `Ctrl+K`), so it
+appears in the shortcuts page and can be rebound. Opening it closes the message
+search and vice versa — one palette at a time. The duplicate-shortcut test used
+`Ctrl+K` as its arbitrary clash; it now uses the unbound `Ctrl+J`, so the test
+still checks conflict reporting rather than colliding with a real default.
+
+**Activation.** A channel row opens it and selects its server; a server row opens
+that server's first text channel. Both go through `select_channel`, so a jump also
+clears the channel's unread badge (D30). Enter takes the highlighted row, a click
+takes the row clicked, `Esc` or `Ctrl+K` again closes.
+
+**Not verified on screen.** The overlay only appears after sign-in, and the only
+credential here is a user token whose REST calls are rejected (D28), so I checked
+that the binary launches and stays up, plus the filtering/cursor tests — not the
+overlay drawn over a live session.

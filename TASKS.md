@@ -4,6 +4,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 
 ## Verified working
 
+- [x] Ctrl+K quick switcher (`DECISIONS.md` D31): pure entry building and
+  filtering, cursor wrapping/clamping, rebindable `QuickSwitcher` action, Enter /
+  click activation through `select_channel`. 6 tests. Overlay itself not seen
+  running: it only renders after sign-in and the available credential is rejected.
 - [~] Unread/mention badges (`DECISIONS.md` D30): pure `UnreadTracker`, brighter
   channel labels with a dot, red pills on channels and guild icons, marks read
   through `select_channel`. 5 tests. **Not observed live**: no `MESSAGE_CREATE`

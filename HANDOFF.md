@@ -7,12 +7,24 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 217 lib + 5 bin tests passing
+- `cargo test --all-targets`: 223 lib + 5 bin tests passing
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Ctrl+K quick switcher (`DECISIONS.md` D31):
+
+- `src/switcher.rs` — `Entry`/`build_entries` (servers, then text and voice
+  channels), `filter` (all tokens, prefix-first ranking, 12-row cap) and
+  `SwitcherState` (open/query/cursor, wrapping and clamping); 6 tests.
+- `src/ui/switcher.rs` — floating overlay with a focused field, arrow keys,
+  Enter/click activation and an accent outline on the highlighted row.
+- `src/shortcuts.rs` — `QuickSwitcher` action, default `Ctrl+K`, rebindable like
+  every other shortcut; `src/app.rs` toggles it, closes search, and jumps via
+  `select_channel`.
+
 
 Unread and mention badges (`DECISIONS.md` D30):
 

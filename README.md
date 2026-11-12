@@ -28,6 +28,8 @@ half-implemented stubs that pretend to work.
   authors and says which toggle to enable.
 - Unread and mention badges on channels and guild icons, tracked locally (bots
   have no server read state) and capped at 99+.
+- Ctrl+K quick switcher over servers and channels, with prefix-first ranking,
+  arrow/Enter navigation and a rebindable shortcut.
 - Nine-section settings window: Appearance, Themes, Performance, Memory,
   Notifications, Shortcuts, Privacy, Diagnostics, About (`Ctrl+,`).
 - 12 built-in theme presets across Dark, Light, Purple and AMOLED, plus custom

@@ -3,5 +3,6 @@ pub mod login;
 pub mod search;
 pub mod settings;
 pub mod sidebar;
+pub mod switcher;
 pub mod theme;
 pub mod virtual_list;
