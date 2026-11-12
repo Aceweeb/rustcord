@@ -7,12 +7,23 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 280 lib + 5 bin tests passing (285)
+- `cargo test --all-targets`: 295 lib + 5 bin tests passing (300)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Roadmap item 8 (WASM sandbox, `DECISIONS.md` D46) and item 10 (PKGBUILD):
+
+- `src/plugins/wasm.rs` — `wasmi` loader, manifest/permissions, fuel + memory +
+  I/O caps, no host imports, path-traversal checks, fail-closed calls, 15 tests.
+- `src/plugins/mod.rs` — `load_wasm_plugins(dir)` scans folders, skips broken
+  ones, `external_count()`; `load_wasm_plugin` is now real.
+- `src/app.rs` — loads plugins at startup when `settings.wasm_plugins` is on.
+- `src/settings.rs` / `src/ui/settings.rs` — opt-in toggle in Extras with the
+  loaded count and folder path.
+- `packaging/PKGBUILD`, `docs/VOICE_AND_STREAMING.md` (DAVE gate for items 6–7).
 
 Session-wide search with channel filters (`DECISIONS.md` D45):
 

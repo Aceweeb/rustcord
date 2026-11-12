@@ -137,9 +137,11 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [x] Bot install flow on the login page (`DECISIONS.md` D21): builds the invite
   URL from the configured client ID with only the six permissions the client
   uses, plus copy-link and open-in-browser. 3 tests pin the permission bits.
-- [ ] Voice **audio**: voice-server WebSocket handshake, UDP/RTP, Opus encode and
-  decode, jitter buffer, and DAVE/E2EE. Presence is done; audio is a separate
-  project and has no UI controls until it works.
+- [ ] Voice **audio** and Go Live: **blocked on DAVE** — Discord has required
+  E2EE (MLS + frame-level encryption) for third-party voice since 1 March 2026 and
+  rejects clients without it (close code `4017`). Requirement chain, libdave
+  option and build order are recorded in `docs/VOICE_AND_STREAMING.md`. Presence
+  is done and unaffected; no half-working join UI is shipped.
 - [ ] Research: Discord Social SDK (`sdk.social_layer`) — the only sanctioned
   route to user-level DMs/friends, and it needs Discord approval, separate terms
   and a game SDK (C++/C#/Unity). Also `rpc`/`messages.read`, which only work
@@ -219,9 +221,17 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
-- [ ] WASM plugin sandbox (`wasmi` + manifest + permissions), currently
-  fail-closed.
+- [x] WASM plugin sandbox (`DECISIONS.md` D46): `wasmi` interpreter, manifest with
+  `deny_unknown_fields`, permission gate (`transform_messages`), no host imports,
+  no `start` function, path-traversal checks, fuel (5 M default / 20 M ceiling),
+  16 MiB memory and 8 KiB I/O caps, bounds-checked pointers, UTF-8 validation,
+  fail-closed calls, opt-in Extras toggle, silent skip of broken folders. 15 tests.
+- [~] WASM plugins on screen: load a real third-party module and see its transform
+  in a sent message; only WAT fixtures and a temp-folder load test exist here.
+- [x] Arch `PKGBUILD` (`packaging/PKGBUILD`): `--frozen` release build, binary,
+  desktop entry, SVG/PNG icons and licence. Syntax-checked; not run through
+  `makepkg`/`namcap` in this environment.
+- [ ] AppImage and Flatpak: need a clean-VM build and runtime bundling.
 - [ ] Packaging: PKGBUILD, AppImage, icon asset (`.desktop` entry exists in
   `packaging/`).
-- [ ] Voice: explicitly out of scope until a compliant signalling path is
-  chosen; UI affordances only.
+- [ ] Voice/Go Live: blocked on DAVE; see `docs/VOICE_AND_STREAMING.md`.

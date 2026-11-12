@@ -253,6 +253,13 @@ impl RustcordApp {
     pub fn new(cc: &eframe::CreationContext<'_>, mut settings: Settings) -> Self {
         let mut plugins = PluginManager::new();
         plugins.init_all(&mut settings);
+        if settings.wasm_plugins {
+            let root = Settings::config_dir().join("plugins");
+            let loaded = plugins.load_wasm_plugins(&root);
+            if loaded > 0 {
+                log::info!("wasm plugins: {loaded} loaded from {}", root.display());
+            }
+        }
 
         let theme = plugins.theme().clone();
         theme.apply(&cc.egui_ctx);

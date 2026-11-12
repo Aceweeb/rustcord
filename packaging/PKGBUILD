@@ -1,0 +1,54 @@
+# Maintainer: Jason <maintainer@example.invalid>
+# Build from the git repository. Binary packages from a tag should switch
+# `source` to the tagged tarball and set a real sha256sums entry.
+pkgname=rustcord-git
+pkgver=r1.0000000
+pkgrel=1
+pkgdesc="Lightweight native Discord client for bot accounts (Rust + egui)"
+arch=('x86_64' 'aarch64')
+url="https://github.com/Aceweeb/rustcord"
+license=('MIT')
+depends=(
+  'glibc'
+  'gcc-libs'
+  'libx11'
+  'libxcursor'
+  'libxrandr'
+  'libxi'
+  'libxkbcommon'
+  'wayland'
+  'fontconfig'
+  'freetype2'
+  'libglvnd'
+  'libsecret'
+  'dbus'
+)
+makedepends=('cargo' 'rust')
+provides=('rustcord')
+conflicts=('rustcord')
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd rustcord
+  printf 'r%s.%s' "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cd rustcord
+  # `--locked` keeps the build on the committed dependency set; Cargo.lock is in
+  # the repository, so a packaging build never drifts from a tested graph.
+  cargo build --frozen --release
+}
+
+package() {
+  cd rustcord
+  install -Dm755 target/release/rustcord "$pkgdir/usr/bin/rustcord"
+  install -Dm644 packaging/rustcord.desktop \
+    "$pkgdir/usr/share/applications/rustcord.desktop"
+  install -Dm644 assets/rustcord.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/rustcord.svg"
+  install -Dm644 assets/rustcord.png \
+    "$pkgdir/usr/share/icons/hicolor/256x256/apps/rustcord.png"
+  install -Dm644 LICENSE-MIT "$pkgdir/usr/share/licenses/$pkgname/LICENSE-MIT"
+}

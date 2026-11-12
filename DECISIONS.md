@@ -1362,3 +1362,48 @@ substring narrowing, unknown channels matching nothing, channel names on hits an
 orphan messages with no resolvable name are covered by two new tests. The ceiling is
 unchanged: 50 results, cached messages only, no index and no network — Discord's
 guild search remains a user-API endpoint this client cannot call (D20).
+
+## D46. WASM plugins run under wasmi with no host imports; voice stays gated on DAVE
+
+Roadmap items 6–8 were requested together. Item 8 (the WASM sandbox) was the one
+that could be delivered honestly in this environment, because it needs no Discord
+session and every guarantee is testable locally. Items 6 and 7 cannot be finished
+without DAVE (see below), so they are documented instead of stubbed.
+
+**Sandbox.** `src/plugins/wasm.rs` implements the loader the old
+`load_wasm_plugin` stub refused to fake:
+
+- `plugin.json` is parsed with `deny_unknown_fields`; unknown permissions fail
+  deserialization, and the only capability today is `transform_messages`. A
+  manifest without it is refused, so a plugin can never be loaded and then simply
+  not run.
+- The module path is rejected if absolute or containing `..`, then canonicalized
+  and required to stay inside the plugin folder.
+- Modules are capped at 1 MiB, must start with `\0asm`, may **not import anything**
+  (there is no host function to call), may not have a `start` function, and must
+  export `memory`, `alloc`, `run` and `result_len`.
+- Each transform gets a fresh `Store` with fuel metering (default 5 M, manifest
+  ceiling 20 M), a 16 MiB memory limit, a recursion limit and 8 KiB input/output
+  caps. Pointers are bounds-checked, output must be UTF-8, and every failure is
+  fail-closed: the message is sent unchanged and the error is logged at debug.
+- Loading is opt-in (`Settings::wasm_plugins`, off by default) and scans
+  `~/.config/rustcord/plugins/*/`; a broken folder is logged and skipped so it
+  cannot stop startup or other plugins.
+
+`wasmi` was chosen over `wasmtime` for size and a pure-Rust build; the cost is an
+interpreter, which is the right trade for short text transforms.
+
+**Voice and Go Live (items 6–7) are blocked on DAVE.** Discord has required
+end-to-end encryption via the DAVE protocol for third-party voice clients since
+1 March 2026 (voice close code `4017`). DAVE needs an MLS group, epoch transitions
+and frame-level encryption, and Discord's own guidance is to use libdave (C++).
+Implementing capture, signalling or Go Live UI before that would produce a client
+that joins and is immediately disconnected — the half-built feature D21 forbids.
+`docs/VOICE_AND_STREAMING.md` records the full requirement chain and the order to
+build it in. Existing voice *presence* is unaffected because it uses no voice
+connection.
+
+**Packaging.** Item 10 gained `packaging/PKGBUILD` (builds with `--frozen`,
+installs the binary, desktop entry, SVG/PNG icons and licence). AppImage and
+Flatpak remain open; they need a clean-VM build that this environment cannot
+provide.

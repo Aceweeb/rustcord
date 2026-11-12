@@ -44,6 +44,7 @@ chrono = { version = "0.4", features = ["serde"] }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 sha2 = "0.11.1"
 getrandom = "0.4.3"
+wasmi = { version = "2.0.0", default-features = false, features = ["std", "validate", "wat", "auto-dispatch"] }
 
 [profile.release]
 opt-level = "z"
@@ -55,3 +56,4 @@ strip = true
 [dev-dependencies]
 png = "0.18.1"
 tempfile = "3.27.0"
+wat = "1.263.0"

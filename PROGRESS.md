@@ -339,24 +339,23 @@ Priority order for the next session:
    - OAuth2 PKCE or a manually supplied access token
    - poll `currently_playing` every ~5 s
    - update `SpotifyStatusPlugin` instead of the demo track
-6. **Streaming / screen share**
-   - Linux capture via PipeWire/X11
-   - Discord GoLive gateway/voice state wiring
-   - UI controls and viewer state
-7. **Voice**
-   - Opus codec + UDP/RTP/DAVE or a library abstraction
-   - mute/deafen/volume UI sync
-8. **WASM plugin sandbox**
-   - manifest + permissions
-   - `wasmi`/`wasmtime`
-   - fuel/memory limits
-   - fail closed on load errors
+6. **Streaming / screen share** — **blocked on DAVE**, see
+   `docs/VOICE_AND_STREAMING.md`; Go Live reuses the voice media path.
+   - Linux capture via PipeWire/X11 (not started)
+   - Discord GoLive gateway/voice state wiring (not started)
+   - UI controls and viewer state (not started)
+7. **Voice** — **blocked on DAVE** (mandatory since 1 March 2026); presence only.
+   - Opus codec + UDP/RTP/DAVE or a library abstraction (not started)
+   - mute/deafen/volume UI sync (not started)
+8. **WASM plugin sandbox** — **done** (`DECISIONS.md` D46,
+   `src/plugins/wasm.rs`): manifest + permissions, `wasmi`, fuel/memory/output
+   limits, no host imports, fail-closed load and call, settings toggle, 15 tests.
 9. **Secure OAuth2**
    - PKCE, local redirect, refresh token storage in keyring
-10. **Packaging**
-    - `.desktop` file
-    - AppImage / Flatpak / Arch PKGBUILD
-    - icon and WM class
+10. **Packaging** — partially done
+    - `.desktop` file and icon (done, verified WM class)
+    - Arch `PKGBUILD` (done, `packaging/PKGBUILD`)
+    - AppImage / Flatpak (open; needs a clean-VM build)
 
 ---
 
@@ -490,6 +489,14 @@ Priority order for the next session:
   after renames; hits carry their channel name and the overlay leads each row with
   `#channel`, reports how many channels are cached, and prints the parsed filter.
   Two new tests; suite now 285.
+
+- Finished roadmap item 8, the WASM sandbox (D46): `src/plugins/wasm.rs` loads
+  `plugins/<name>/plugin.json` + `.wasm` through `wasmi` with no host imports,
+  permission gating (`transform_messages`), fuel (5 M default / 20 M ceiling),
+  16 MiB memory and 8 KiB I/O caps, path-traversal checks, fail-closed calls, and
+  an opt-in Extras toggle; 15 tests. Added `packaging/PKGBUILD` for item 10 and
+  `docs/VOICE_AND_STREAMING.md` explaining why items 6–7 are blocked on DAVE.
+  Suite now 300.
 
 ---
 

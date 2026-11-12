@@ -142,6 +142,11 @@ pub struct Settings {
     #[serde(default)]
     pub spotify_client_id: Option<String>,
 
+    /// Load sandboxed WASM plugins from `plugins/` in the config directory.
+    /// Off by default: running third-party code is an explicit choice.
+    #[serde(default)]
+    pub wasm_plugins: bool,
+
     // --- memory / notifications -------------------------------------------
     #[serde(default = "default_memory_budget")]
     pub memory_budget_mb: u32,
@@ -224,6 +229,7 @@ impl Default for Settings {
             rpc_client_id: None,
             rpc_show_channel: true,
             spotify_client_id: None,
+            wasm_plugins: false,
             memory_budget_mb: default_memory_budget(),
             memory_alerts: true,
             remember_history: true,

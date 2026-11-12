@@ -12,9 +12,11 @@ theme parser, Spotify "now playing" presentation state, streaming indicators,
 and typed Discord/Spotify REST clients. A real Discord Gateway transport is
 included (connect, Hello, Identify, heartbeat, READY/MESSAGE_CREATE parsing).
 Message editing and deletion are implemented, and voice-channel **presence** (who
-is in which channel) comes from the gateway. Voice **audio**, screen capture and
-the WASM loader are intentionally left as explicit next steps rather than
-half-implemented stubs that pretend to work.
+is in which channel) comes from the gateway. Sandboxed WebAssembly plugins load
+from the config folder behind an opt-in toggle. Voice **audio** and screen capture
+are intentionally left as explicit next steps rather than half-implemented stubs:
+Discord requires DAVE end-to-end encryption for all media sessions since March
+2026, and `docs/VOICE_AND_STREAMING.md` records what a compliant path involves.
 
 ## What works today
 
@@ -144,8 +146,9 @@ application's own allocations are ~23 MB anonymous. Reproduce every figure with
   to OAuth2 flows that produce a user token for messaging: that is a self-bot by
   another name. Use a bot token (stored in the keyring) or an approved OAuth2 app
   instead.
-- WASM plugin execution. `load_wasm_plugin` fails closed on purpose; see
-  `src/plugins/mod.rs` for the intended permission model.
+- Voice audio, video and Go Live. Presence is shown, but joining a voice channel
+  requires DAVE (MLS-based E2EE), which Discord now enforces for third-party
+  clients; see `docs/VOICE_AND_STREAMING.md` for the gate and the build order.
 
 ## Build on Arch Linux
 
@@ -400,10 +403,35 @@ The manager calls `init`, `on_message`, `on_react`, `on_settings`,
 The built-ins are held concretely so the UI can query typed state without
 downcasting.
 
-WASM plugins are the intended extension path, but the loader is a fail-closed
-placeholder. A production loader must validate a manifest, enforce a permission
-list, and run the module in a sandbox (`wasmi`/`wasmtime`) before exposing it as
-a `Plugin`.
+### Sandboxed WebAssembly plugins
+
+Enable **Settings → Extras → Sandboxed WebAssembly plugins**, then drop a folder
+into `~/.config/rustcord/plugins/` (restart to load it):
+
+```text
+~/.config/rustcord/plugins/uppercase/
+├── plugin.json
+└── plugin.wasm
+```
+
+```json
+{
+  "name": "Uppercase",
+  "version": "1.0.0",
+  "module": "plugin.wasm",
+  "permissions": ["transform_messages"],
+  "fuel": 500000
+}
+```
+
+The module runs under `wasmi` with no host imports at all, a fuel budget per call,
+a 16 MiB linear-memory ceiling and 8 KiB caps on input and output. It must export
+`memory`, `alloc(len) -> ptr`, `run(ptr, len) -> ptr` and `result_len() -> i32`;
+`run` receives UTF-8 message text and returns UTF-8 replacement text. A plugin
+without `transform_messages`, with an unknown permission or manifest key, with a
+`start` function, with imports, or whose path escapes its folder is refused at
+load. Any trap, out-of-fuel, bad pointer or invalid UTF-8 leaves the message
+exactly as typed. The loader lives in `src/plugins/wasm.rs`.
 
 ## Performance notes
 

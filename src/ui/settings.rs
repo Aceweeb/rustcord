@@ -513,6 +513,34 @@ impl RustcordApp {
             .color(theme.muted),
         );
 
+        ui.add_space(10.0);
+        ui.separator();
+        ui.label(RichText::new("Sandboxed WebAssembly plugins").strong());
+        dirty |= ui
+            .checkbox(
+                &mut self.settings.wasm_plugins,
+                "Load WASM plugins from the config folder",
+            )
+            .changed();
+
+        let plugin_dir = crate::settings::Settings::config_dir().join("plugins");
+        let loaded = self.plugins.external_count();
+        ui.label(
+            RichText::new(format!(
+                "{loaded} plugin(s) loaded · {}",
+                plugin_dir.display()
+            ))
+            .small()
+            .color(theme.muted),
+        );
+        ui.label(
+            RichText::new(
+                "Takes effect next launch. Each folder needs plugin.json and a .wasm module; modules get no host functions, a fuel budget, a 16 MiB memory ceiling and can only rewrite message text if they declare transform_messages. Takes effect next launch.",
+            )
+            .small()
+            .color(theme.muted),
+        );
+
         dirty
     }
 

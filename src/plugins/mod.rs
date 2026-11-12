@@ -6,6 +6,7 @@ pub mod blyat;
 pub mod spotify_status;
 pub mod streaming_indicator;
 pub mod vencord_compat;
+pub mod wasm;
 
 pub struct PluginContext<'a> {
     pub settings: &'a mut Settings,
@@ -127,6 +128,43 @@ impl PluginManager {
         }
     }
 
+    /// Load every folder under `root` that has a valid `plugin.json` and a
+    /// sandboxed module. Bad plugins are logged and skipped: one broken folder
+    /// must not stop the app or the other plugins. Returns how many loaded.
+    pub fn load_wasm_plugins(&mut self, root: &std::path::Path) -> usize {
+        let entries = match std::fs::read_dir(root) {
+            Ok(entries) => entries,
+            Err(err) => {
+                log::debug!("wasm plugins: {} is not readable ({err})", root.display());
+                return 0;
+            }
+        };
+
+        let mut dirs: Vec<std::path::PathBuf> = entries
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.path())
+            .filter(|path| path.is_dir())
+            .collect();
+        dirs.sort();
+
+        let mut loaded = 0;
+        for dir in dirs {
+            match wasm::WasmPlugin::load(&dir) {
+                Ok(plugin) => {
+                    self.register(Box::new(plugin));
+                    loaded += 1;
+                }
+                Err(err) => log::warn!("wasm plugin in {} was not loaded: {err:#}", dir.display()),
+            }
+        }
+        loaded
+    }
+
+    /// Number of currently registered external (non-built-in) plugins.
+    pub fn external_count(&self) -> usize {
+        self.external.len()
+    }
+
     /// Translucent-background alpha for the active theme; see
     /// `VencordCompatPlugin::set_veil`.
     pub fn set_veil(&mut self, settings: &Settings, alpha: Option<u8>) {
@@ -184,16 +222,8 @@ fn init_one<P: Plugin>(plugin: &mut P, settings: &mut Settings) {
     }
 }
 
-/// Placeholder for the sandboxed WASM loader. The intended pipeline is:
-///   1. read `plugins/<name>/plugin.json`
-///   2. validate permissions (`read_messages`, `theme_injection`, ...)
-///   3. instantiate the `.wasm` module with `wasmi` or `wasmtime`
-///   4. wrap the instance in a `Plugin` adapter
-///
-/// The scaffold deliberately fails closed instead of pretending to sandbox
-/// arbitrary code. Native plugins in this crate are registered explicitly.
-pub fn load_wasm_plugin(_path: &std::path::Path) -> anyhow::Result<Box<dyn Plugin>> {
-    anyhow::bail!(
-        "WASM plugin loading is not wired up in this scaffold; register a native plugin instead"
-    )
+/// Load one plugin folder. Kept as the single-plugin entry point; the app uses
+/// [`PluginManager::load_wasm_plugins`] to scan a directory.
+pub fn load_wasm_plugin(path: &std::path::Path) -> anyhow::Result<Box<dyn Plugin>> {
+    Ok(Box::new(wasm::WasmPlugin::load(path)?))
 }
