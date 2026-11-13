@@ -533,6 +533,10 @@ Priority order for the next session:
   appears only after the Spotify poller reports an actually-playing track, and
   `clear_spotify` on idle/pause hides it. 1 new test; suite 308.
 
+- Sidebar account avatar (D53): READY now forwards the signed-in user's avatar,
+  display name and decoration; the account panel reuses `ui::chat::avatar` and its
+  profile card. Gateway test extended; suite 308.
+
 ---
 
 ## 7. Notes for the next agent

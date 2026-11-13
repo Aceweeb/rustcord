@@ -14,6 +14,14 @@ repository state before changing anything.
 
 ## What changed most recently
 
+Sidebar account avatar (`DECISIONS.md` D53):
+
+- `src/api/gateway.rs` — READY carries `avatar`, `global_name`,
+  `avatar_decoration`; test updated.
+- `src/app.rs` — stores the READY user id and cosmetics on `current_user`.
+- `src/ui/chat.rs` — `avatar` is `pub(crate)`.
+- `src/ui/sidebar.rs` — account panel uses the shared avatar and profile card.
+
 Now-playing strip starts empty (`DECISIONS.md` D52):
 
 - `src/plugins/spotify_status.rs` — removed the seeded Sade track from `init`,

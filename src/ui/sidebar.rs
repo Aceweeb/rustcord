@@ -674,17 +674,13 @@ fn bottom_panels(app: &mut RustcordApp, ui: &mut egui::Ui, theme: &AppTheme) {
         }
 
         ui.separator();
+        // The signed-in account's avatar (or its initial while loading), with the
+        // same profile card the message rows use.
+        if let Some(url) = app.current_user.avatar_url() {
+            app.images.prepare(&[url]);
+        }
         ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
-            ui.painter()
-                .circle_filled(rect.center(), 16.0, theme.accent);
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                initial(&app.current_user.username),
-                egui::FontId::proportional(13.0),
-                Color32::WHITE,
-            );
+            let _ = crate::ui::chat::avatar(app, ui, &app.current_user, 32.0);
 
             ui.vertical(|ui| {
                 ui.label(

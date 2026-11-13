@@ -845,7 +845,12 @@ fn message_row_body(
 /// is not loaded yet (or the user has none). Hovering opens the profile card,
 /// which is where Discord's Nitro cosmetics — banner, accent colour and avatar
 /// decoration — are shown.
-fn avatar(app: &RustcordApp, ui: &mut egui::Ui, user: &User, size: f32) -> egui::Response {
+pub(crate) fn avatar(
+    app: &RustcordApp,
+    ui: &mut egui::Ui,
+    user: &User,
+    size: f32,
+) -> egui::Response {
     let response = avatar_visual(app, ui, user, size);
     response.on_hover_ui(|ui| profile_card(app, ui, user))
 }

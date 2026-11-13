@@ -1838,10 +1838,17 @@ impl RustcordApp {
                 GatewayEvent::Ready {
                     username,
                     user_id,
+                    avatar,
+                    global_name,
+                    avatar_decoration,
                     guild_count,
                 } => {
                     self.gateway_status = format!("Ready as {username} · {guild_count} guild(s)");
                     self.current_user.username = username;
+                    self.current_user.id = user_id.clone();
+                    self.current_user.avatar = avatar;
+                    self.current_user.global_name = global_name;
+                    self.current_user.avatar_decoration = avatar_decoration;
                     self.current_user.status = Presence::Online;
                     self.bot_user_id = Some(user_id);
                 }

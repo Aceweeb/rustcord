@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Signed-in avatar and profile card in the sidebar (`DECISIONS.md` D53):
+  READY forwards avatar/global name/decoration, app stores the READY user id, panel
+  reuses the message-row avatar helper. Visual check pending (D28).
 - [x] Now-playing strip only for real playback (`DECISIONS.md` D52): removed the
   demo track seeded at plugin init; 1 test. Visual check pending (D28).
 - [x] Profile pictures and Nitro cosmetics (`DECISIONS.md` D51): custom avatars and

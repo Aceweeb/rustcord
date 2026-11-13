@@ -1583,3 +1583,17 @@ Spotify reports `is_playing: false`, which the app maps to `clear_spotify`, so
 pausing hides the strip as well; a failed poll leaves the last known track alone
 rather than blanking it on a transient network error. A test initialises the plugin
 with default settings and asserts there is no current track.
+
+## D53. The sidebar account uses the same avatar and profile card as message rows
+
+The account panel drew a flat accent circle with the account's initial even after
+message rows gained real avatars. READY already carries the bot user's object, but
+the event only forwarded the username, so the avatar hash was discarded.
+
+`GatewayEvent::Ready` now also carries `avatar`, `global_name` and
+`avatar_decoration` from `d.user`, and the app stores the READY user id as well as
+the name. The sidebar calls `ui::chat::avatar` — the same helper the rows use, with
+the same hover profile card — and asks `ImageLoader` for the URL each frame (the
+loader deduplicates, so this starts at most one download). Until the texture lands,
+the old initial is still the fallback. No new request, field or storage: the data was
+already in the gateway payload.

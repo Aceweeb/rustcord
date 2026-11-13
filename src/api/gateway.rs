@@ -32,6 +32,10 @@ pub enum GatewayEvent {
         /// The bot's own user id, so reaction events can tell whether the bot
         /// is the one reacting.
         user_id: String,
+        /// The signed-in account's own cosmetics, from READY's user object.
+        avatar: Option<String>,
+        global_name: Option<String>,
+        avatar_decoration: Option<String>,
         guild_count: usize,
     },
     GuildCreate {
@@ -524,6 +528,13 @@ fn handle_payload(payload: &Value, tx: &mpsc::UnboundedSender<GatewayEvent>) {
                 .as_str()
                 .unwrap_or_default()
                 .to_string();
+            let avatar = payload["d"]["user"]["avatar"].as_str().map(str::to_string);
+            let global_name = payload["d"]["user"]["global_name"]
+                .as_str()
+                .map(str::to_string);
+            let avatar_decoration = payload["d"]["user"]["avatar_decoration_data"]["asset"]
+                .as_str()
+                .map(str::to_string);
             // Borrowed, not cloned: READY can be tens of megabytes of guild
             // objects and a copy of it is pure transient RSS.
             let guilds = payload["d"]["guilds"].as_array().map(Vec::as_slice);
@@ -531,6 +542,9 @@ fn handle_payload(payload: &Value, tx: &mpsc::UnboundedSender<GatewayEvent>) {
             tx.send(GatewayEvent::Ready {
                 username,
                 user_id,
+                avatar,
+                global_name,
+                avatar_decoration,
                 guild_count,
             })
             .ok();
@@ -1206,7 +1220,13 @@ mod tests {
             "s": 1,
             "t": "READY",
             "d": {
-                "user": { "id": "900", "username": "rustcord-bot" },
+                "user": {
+                    "id": "900",
+                    "username": "rustcord-bot",
+                    "global_name": "Rustcord",
+                    "avatar": "hash",
+                    "avatar_decoration_data": { "asset": "deco" }
+                },
                 "guilds": [{}, {}, {}]
             }
         });
@@ -1218,10 +1238,16 @@ mod tests {
             GatewayEvent::Ready {
                 username,
                 user_id,
+                avatar,
+                global_name,
+                avatar_decoration,
                 guild_count,
             } => {
                 assert_eq!(username, "rustcord-bot");
                 assert_eq!(user_id, "900");
+                assert_eq!(avatar.as_deref(), Some("hash"));
+                assert_eq!(global_name.as_deref(), Some("Rustcord"));
+                assert_eq!(avatar_decoration.as_deref(), Some("deco"));
                 assert_eq!(guild_count, 3);
             }
             other => panic!("expected Ready event, got {other:?}"),
