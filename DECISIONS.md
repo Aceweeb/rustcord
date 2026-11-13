@@ -1772,3 +1772,25 @@ gateway does not subscribe to the privileged `GUILD_PRESENCES` intent, so withou
 members default to offline; the section split and the approximate active count from
 D60 remain the reliable aggregate. Enabling the intent later only requires filling
 each member's `status`, which this dot already reads.
+
+## D62. The member panel is scoped to the open channel
+
+The roster described the whole guild, which is not what "who is here" means when a
+channel is open. Discord itself has no endpoint that lists everyone who can read a
+text channel, so the panel now uses the evidence the client actually has: the
+authors of the loaded messages in the selected channel, plus the voice-state members
+when the selected channel is a voice channel.
+
+Roster records are kept when their id is one of those participants, which preserves
+avatars, display names and cosmetics; recent authors missing from a capped or
+unavailable roster are merged in from the message itself, and voice members not in
+either source are synthesised from the gateway's voice-state name with an online
+status. Duplicate ids are dropped and the result is sorted by name. The header still
+shows the guild's approximate total/active counts, with an `IN CHANNEL — n` line so
+the scoped list is not mistaken for the whole server.
+
+The panel therefore grows as history is paged: a participant whose only messages
+are older than the loaded page appears after "Load older messages". A text channel
+with no loaded messages has nobody to list, and says so rather than falling back to
+the full roster. Presence dots and message/member row hover fills complete the
+Discord-like presentation; all fills keep the veiled theme's alpha.

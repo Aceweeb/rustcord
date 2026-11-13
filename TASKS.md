@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Channel-scoped member list (`DECISIONS.md` D62): authors from the open
+  channel plus its voice members, roster records merged in, `IN CHANNEL — n`, and
+  hover fills on message/member rows. Appearance not visually checked.
 - [x] Presence dots on member-list avatars (`DECISIONS.md` D61): online/idle/DND/
   offline colours, panel-coloured ring, scaled to the 32 px avatar. 1 new test;
   live statuses need the privileged presence intent and remain offline for now.

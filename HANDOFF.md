@@ -14,6 +14,11 @@ repository state before changing anything.
 
 ## What changed most recently
 
+Channel-scoped member panel (`DECISIONS.md` D62):
+
+- `src/ui/chat.rs` — member rows filtered to channel authors/voice members,
+  `IN CHANNEL — n`, hover fills for messages and member rows.
+
 Presence dots (`DECISIONS.md` D61):
 
 - `src/ui/chat.rs` — `presence_dot_color`, `avatar_with_status`, member rows use it,

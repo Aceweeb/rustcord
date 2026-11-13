@@ -572,6 +572,10 @@ Priority order for the next session:
   green/amber/red/grey, member list only; 1 new test; suite 318. Live presence data
   still depends on the privileged intent, so live rosters default to offline dots.
 
+- Channel-scoped member panel (D62): only message authors in the open channel plus
+  its voice members, merged with roster data, `IN CHANNEL — n`; Discord-style hover
+  fills on message and member rows. Suite unchanged at 318; UI not visually checked.
+
 ---
 
 ## 7. Notes for the next agent

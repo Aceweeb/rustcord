@@ -185,20 +185,64 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             let theme = app.plugins.theme().clone();
             ui.add_space(12.0);
 
-            // The real roster when the Members intent is available; otherwise
-            // the authors of loaded messages, so the panel is never useless.
+            // Only people who appear in the open channel: its message authors
+            // and, for a voice channel, its current voice members. Discord has no
+            // endpoint that lists everyone who can read a text channel, so the
+            // loaded history is the honest source for "in this channel".
+            let channel_id = app.selected_channel.clone();
+            let mut participant_ids: std::collections::BTreeSet<String> = app
+                .messages
+                .iter()
+                .filter(|message| message.channel_id.as_deref() == channel_id.as_deref())
+                .map(|message| message.author.id.clone())
+                .collect();
+            let mut voice_members: Vec<crate::models::VoiceMember> = channel_id
+                .as_deref()
+                .map(|id| app.voice.members(id).to_vec())
+                .unwrap_or_default();
+            for member in &voice_members {
+                participant_ids.insert(member.user_id.clone());
+            }
+            voice_members.sort_by(|a, b| a.username.to_lowercase().cmp(&b.username.to_lowercase()));
+
             let roster = app.roster();
-            let mut members: Vec<crate::models::User> = if roster.is_empty() {
-                let mut seen = std::collections::BTreeSet::new();
-                app.messages
-                    .iter()
-                    .rev()
-                    .filter(|message| seen.insert(message.author.id.clone()))
-                    .map(|message| message.author.clone())
-                    .collect()
-            } else {
-                roster.to_vec()
-            };
+            let mut authors: Vec<crate::models::User> = Vec::new();
+            let mut seen_authors = std::collections::BTreeSet::new();
+            for message in app.messages.iter().rev() {
+                if message.channel_id.as_deref() != channel_id.as_deref() {
+                    continue;
+                }
+                if seen_authors.insert(message.author.id.clone()) {
+                    authors.push(message.author.clone());
+                }
+            }
+
+            let mut members: Vec<crate::models::User> = roster
+                .iter()
+                .filter(|member| participant_ids.contains(&member.id))
+                .cloned()
+                .collect();
+            // The roster can be unavailable (privileged intent), still loading,
+            // or capped before a recent author; the authors are always valid
+            // participants, so merge them in rather than showing an empty panel.
+            for author in authors {
+                if !members.iter().any(|known| known.id == author.id) {
+                    members.push(author);
+                }
+            }
+            // Voice members are not necessarily in the loaded history, and their
+            // User record may not be in the capped roster; synthesise the row
+            // from the voice-state name the gateway already sent.
+            for member in voice_members {
+                if !members.iter().any(|known| known.id == member.user_id) {
+                    members.push(crate::models::User {
+                        id: member.user_id,
+                        username: member.username,
+                        status: Presence::Online,
+                        ..crate::models::User::default()
+                    });
+                }
+            }
             members.sort_by(|a, b| {
                 a.username
                     .to_lowercase()
@@ -207,12 +251,20 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             });
 
             if members.is_empty() {
-                let hint = if app.member_intent_missing {
-                    "Enable the Server Members Intent in the Developer Portal to load the roster."
-                } else if app.live_data {
-                    "Loading members\u{2026}"
-                } else {
+                let hint = if channel_id.is_none() {
+                    "Open a channel to see who is in it."
+                } else if !app.live_data {
                     "Members appear once a bot token is connected."
+                } else if app.member_intent_missing {
+                    "Enable the Server Members Intent to load the roster."
+                } else if !app
+                    .messages
+                    .iter()
+                    .any(|message| message.channel_id.as_deref() == channel_id.as_deref())
+                {
+                    "No one in this channel has spoken yet."
+                } else {
+                    "No channel members to show."
                 };
                 ui.add_space(4.0);
                 ui.add(egui::Label::new(RichText::new(hint).size(11.0).color(theme.muted)).wrap());
@@ -261,6 +313,12 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 });
             });
 
+            ui.label(
+                RichText::new(format!("IN CHANNEL \u{2014} {}", members.len()))
+                    .size(10.0)
+                    .color(theme.muted),
+            );
+
             ui.add_space(6.0);
             // The roster is capped and the loader deduplicates, so each avatar
             // starts downloading once; the textures share the attachment budget.
@@ -293,21 +351,36 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                         );
                         ui.add_space(2.0);
                         for member in group {
-                            ui.horizontal(|ui| {
-                                let _ = avatar_with_status(app, ui, member, 32.0);
-                                ui.label(
-                                    RichText::new(&member.username).size(14.0).color(theme.text),
-                                );
-                                if app.live_data && member.id != app.current_user.id {
-                                    if ui
-                                        .small_button("DM")
-                                        .on_hover_text("Open a direct message")
-                                        .clicked()
-                                    {
-                                        dm_target = Some(member.clone());
+                            let hover = ui.painter().add(egui::Shape::Noop);
+                            let response = ui
+                                .horizontal(|ui| {
+                                    let _ = avatar_with_status(app, ui, member, 32.0);
+                                    ui.label(
+                                        RichText::new(&member.username)
+                                            .size(14.0)
+                                            .color(theme.text),
+                                    );
+                                    if app.live_data && member.id != app.current_user.id {
+                                        if ui
+                                            .small_button("DM")
+                                            .on_hover_text("Open a direct message")
+                                            .clicked()
+                                        {
+                                            dm_target = Some(member.clone());
+                                        }
                                     }
-                                }
-                            });
+                                })
+                                .response;
+                            if response.hovered() {
+                                ui.painter().set(
+                                    hover,
+                                    egui::Shape::rect_filled(
+                                        response.rect.expand2(egui::vec2(4.0, 1.0)),
+                                        egui::CornerRadius::same(4),
+                                        crate::utils::lift(theme.surface, 10),
+                                    ),
+                                );
+                            }
                         }
                     }
                 });
@@ -788,6 +861,9 @@ fn message_row(
     action: &mut Option<RowAction>,
     grouped: bool,
 ) {
+    // Reserve a shape before the row content so the hover fill paints behind it
+    // instead of covering the text (Discord highlights the whole message row).
+    let hover = ui.painter().add(egui::Shape::Noop);
     let response = ui
         // A clickable container so a right-click anywhere on the row opens the
         // context menu; the widgets inside still get their own clicks first.
@@ -795,6 +871,16 @@ fn message_row(
             message_row_body(app, ui, message, action, grouped);
         })
         .response;
+    if response.hovered() {
+        ui.painter().set(
+            hover,
+            egui::Shape::rect_filled(
+                response.rect.expand2(egui::vec2(6.0, 2.0)),
+                egui::CornerRadius::same(4),
+                crate::utils::lift(app.plugins.theme().background, -8),
+            ),
+        );
+    }
 
     response.context_menu(|ui| {
         ui.set_min_width(190.0);
