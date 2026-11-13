@@ -20,6 +20,11 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 
 pub const MAX_DOWNLOAD_BYTES: u64 = 12 * 1024 * 1024;
 pub const MAX_DIMENSION: u32 = 4096;
+/// GIFs are stopped at this many frames / decoded RGBA bytes. Guild icons are
+/// 96 px, so these caps are generous for them while keeping a hostile upload
+/// from allocating without bound.
+const MAX_ANIMATION_FRAMES: usize = 64;
+const MAX_ANIMATION_BYTES: usize = 64 * 1024 * 1024;
 
 /// Discord's six numbered default avatars, embedded so a missing or still-loading
 /// custom avatar can draw the real fallback on the first frame instead of an
@@ -185,7 +190,12 @@ struct Job {
 pub struct Decoded {
     pub width: u32,
     pub height: u32,
+    pub frames: Vec<DecodedFrame>,
+}
+
+pub struct DecodedFrame {
     pub rgba: Vec<u8>,
+    pub delay_ms: u32,
 }
 
 struct Loaded {
@@ -197,6 +207,7 @@ struct Loaded {
 pub struct ImageLoader {
     cache: ByteCache<String>,
     textures: HashMap<String, egui::TextureHandle>,
+    animations: HashMap<String, AnimatedTexture>,
     pending: HashSet<String>,
     failed: HashMap<String, String>,
     /// Created on the first image request, not at startup. A text-only session
@@ -215,6 +226,7 @@ impl ImageLoader {
         Self {
             cache: ByteCache::new(budget_bytes),
             textures: HashMap::new(),
+            animations: HashMap::new(),
             pending: HashSet::new(),
             failed: HashMap::new(),
             worker: None,
@@ -321,8 +333,23 @@ impl ImageLoader {
         !self.pending.is_empty()
     }
 
+    /// The static texture, or the first frame of an animation. Callers that
+    /// draw motion use [`Self::frame`] instead.
     pub fn peek(&self, url: &str) -> Option<&egui::TextureHandle> {
+        self.frame(url, 0.0)
+    }
+
+    /// The texture for `url` at `time` seconds. Animations loop on their own GIF
+    /// delays; static images ignore the clock.
+    pub fn frame(&self, url: &str, time: f64) -> Option<&egui::TextureHandle> {
+        if let Some(animation) = self.animations.get(url) {
+            return animation.frame(time);
+        }
         self.textures.get(url)
+    }
+
+    pub fn is_animated(&self, url: &str) -> bool {
+        self.animations.contains_key(url)
     }
 
     pub fn is_pending(&self, url: &str) -> bool {
@@ -351,21 +378,30 @@ impl ImageLoader {
             self.pending.remove(&loaded.url);
             match loaded.result {
                 Ok(decoded) => {
-                    let bytes = decoded.rgba.len();
-                    let image = egui::ColorImage::from_rgba_unmultiplied(
-                        [decoded.width as usize, decoded.height as usize],
-                        &decoded.rgba,
-                    );
-                    let texture = ctx.load_texture(
-                        format!("img:{}", loaded.url),
-                        image,
-                        egui::TextureOptions::LINEAR,
-                    );
+                    let size = [decoded.width as usize, decoded.height as usize];
+                    let mut bytes = 0usize;
+                    let mut frames = Vec::with_capacity(decoded.frames.len());
+                    let mut delays = Vec::with_capacity(decoded.frames.len());
+                    for (index, frame) in decoded.frames.into_iter().enumerate() {
+                        bytes += frame.rgba.len();
+                        delays.push(frame.delay_ms);
+                        frames.push(ctx.load_texture(
+                            format!("img:{}:{}", loaded.url, index),
+                            egui::ColorImage::from_rgba_unmultiplied(size, &frame.rgba),
+                            egui::TextureOptions::LINEAR,
+                        ));
+                    }
 
                     for evicted in self.cache.insert(loaded.url.clone(), bytes) {
                         self.textures.remove(&evicted);
+                        self.animations.remove(&evicted);
                     }
-                    self.textures.insert(loaded.url, texture);
+                    if frames.len() > 1 {
+                        self.animations
+                            .insert(loaded.url, AnimatedTexture::new(frames, delays));
+                    } else if let Some(texture) = frames.pop() {
+                        self.textures.insert(loaded.url, texture);
+                    }
                     self.uploads += 1;
                     uploaded += 1;
                 }
@@ -384,9 +420,56 @@ impl ImageLoader {
 
     pub fn clear(&mut self) {
         self.textures.clear();
+        self.animations.clear();
         self.cache.clear();
         self.failed.clear();
     }
+}
+
+/// A decoded GIF held as one texture per frame. Total GPU bytes are charged to
+/// the same byte cache as static images, so an animation cannot bypass the cap.
+struct AnimatedTexture {
+    frames: Vec<egui::TextureHandle>,
+    delays_ms: Vec<u32>,
+    total_ms: u64,
+}
+
+impl AnimatedTexture {
+    fn new(frames: Vec<egui::TextureHandle>, delays_ms: Vec<u32>) -> Self {
+        let delays_ms: Vec<u32> = delays_ms
+            .into_iter()
+            .map(|delay| delay.clamp(20, 10_000))
+            .collect();
+        let total_ms = delays_ms.iter().map(|delay| u64::from(*delay)).sum();
+        Self {
+            frames,
+            delays_ms,
+            total_ms,
+        }
+    }
+
+    fn frame(&self, time: f64) -> Option<&egui::TextureHandle> {
+        let elapsed = (time.max(0.0) * 1000.0) as u64;
+        let index = frame_index(&self.delays_ms, self.total_ms, elapsed);
+        self.frames.get(index).or_else(|| self.frames.first())
+    }
+}
+
+/// Which frame is showing after `elapsed_ms`. GIF delays are per-frame, not a
+/// fixed frame rate, and the animation wraps at the total duration.
+fn frame_index(delays_ms: &[u32], total_ms: u64, elapsed_ms: u64) -> usize {
+    if delays_ms.is_empty() || total_ms == 0 {
+        return 0;
+    }
+    let mut remaining = elapsed_ms % total_ms;
+    for (index, delay) in delays_ms.iter().enumerate() {
+        let delay = u64::from(*delay);
+        if remaining < delay {
+            return index;
+        }
+        remaining -= delay;
+    }
+    delays_ms.len() - 1
 }
 
 /// Spawn the decode thread and return its two channel ends.
@@ -446,23 +529,87 @@ fn download(client: &reqwest::blocking::Client, url: &str) -> Result<Decoded, St
         return Err("image exceeded the download cap".to_string());
     }
 
-    let image = image::load_from_memory(&bytes).map_err(|err| format!("decode failed: {err}"))?;
-    if image.width() > MAX_DIMENSION || image.height() > MAX_DIMENSION {
-        return Err(format!(
-            "image is {}×{}, above the {MAX_DIMENSION} px limit",
-            image.width(),
-            image.height()
-        ));
+    if is_animated_icon_url(url) {
+        decode_gif(&bytes)
+    } else {
+        let image =
+            image::load_from_memory(&bytes).map_err(|err| format!("decode failed: {err}"))?;
+        check_dimensions(image.width(), image.height())?;
+        let rgba = image.to_rgba8();
+        Ok(Decoded {
+            width: rgba.width(),
+            height: rgba.height(),
+            frames: vec![DecodedFrame {
+                rgba: rgba.into_raw(),
+                delay_ms: 0,
+            }],
+        })
     }
-
-    let rgba = image.to_rgba8();
-    Ok(Decoded {
-        width: rgba.width(),
-        height: rgba.height(),
-        rgba: rgba.into_raw(),
-    })
 }
 
+fn is_gif_url(url: &str) -> bool {
+    url.split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .to_ascii_lowercase()
+        .ends_with(".gif")
+}
+
+/// Only guild icons are animated. Other GIFs (attachments, embeds) keep their
+/// existing first-frame treatment so a large animation cannot fill the texture
+/// cache with frames the UI never draws.
+fn is_animated_icon_url(url: &str) -> bool {
+    is_gif_url(url) && url.contains("/icons/")
+}
+
+fn check_dimensions(width: u32, height: u32) -> Result<(), String> {
+    if width > MAX_DIMENSION || height > MAX_DIMENSION {
+        return Err(format!(
+            "image is {width}×{height}, above the {MAX_DIMENSION} px limit"
+        ));
+    }
+    Ok(())
+}
+
+fn decode_gif(bytes: &[u8]) -> Result<Decoded, String> {
+    use image::AnimationDecoder;
+
+    let decoder = image::codecs::gif::GifDecoder::new(std::io::Cursor::new(bytes))
+        .map_err(|err| format!("decode failed: {err}"))?;
+    let mut decoded = Vec::new();
+    let mut bytes_used = 0usize;
+    let mut size: Option<(u32, u32)> = None;
+    for frame in decoder.into_frames().take(MAX_ANIMATION_FRAMES) {
+        let frame = frame.map_err(|err| format!("decode failed: {err}"))?;
+        let delay: std::time::Duration = frame.delay().into();
+        let rgba = frame.into_buffer();
+        check_dimensions(rgba.width(), rgba.height())?;
+        match size {
+            None => size = Some((rgba.width(), rgba.height())),
+            Some(expected) if expected != (rgba.width(), rgba.height()) => {
+                return Err("animation frames changed size".to_string());
+            }
+            Some(_) => {}
+        }
+        bytes_used = bytes_used.saturating_add(rgba.as_raw().len());
+        if bytes_used > MAX_ANIMATION_BYTES {
+            break;
+        }
+        decoded.push(DecodedFrame {
+            rgba: rgba.into_raw(),
+            delay_ms: u32::try_from(delay.as_millis()).unwrap_or(u32::MAX),
+        });
+    }
+
+    let Some((width, height)) = size else {
+        return Err("animation had no frames".to_string());
+    };
+    Ok(Decoded {
+        width,
+        height,
+        frames: decoded,
+    })
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -618,5 +765,62 @@ mod tests {
         // A rejected URL is never retried.
         assert_eq!(loader.prepare(&rejected), 0);
         assert_eq!(loader.rejected(), 1);
+    }
+
+    #[test]
+    fn gif_frames_advance_by_their_own_delays_and_loop() {
+        let delays = [100, 50, 250];
+        let total: u64 = delays.iter().map(|delay| u64::from(*delay)).sum();
+        assert_eq!(frame_index(&delays, total, 0), 0);
+        assert_eq!(frame_index(&delays, total, 99), 0);
+        assert_eq!(frame_index(&delays, total, 100), 1);
+        assert_eq!(frame_index(&delays, total, 149), 1);
+        assert_eq!(frame_index(&delays, total, 150), 2);
+        assert_eq!(frame_index(&delays, total, 399), 2);
+        // 400 ms is the loop point again.
+        assert_eq!(frame_index(&delays, total, 400), 0);
+        assert_eq!(frame_index(&delays, total, 1_001), 2);
+    }
+
+    #[test]
+    fn gif_decoding_keeps_every_frame_and_its_delay() {
+        use image::codecs::gif::{GifEncoder, Repeat};
+        use image::{Delay, Frame, RgbaImage};
+
+        let mut bytes = Vec::new();
+        {
+            let mut encoder = GifEncoder::new(&mut bytes);
+            encoder.set_repeat(Repeat::Infinite).expect("repeat");
+            for (color, delay) in [([255, 0, 0, 255], 100), ([0, 0, 255, 255], 40)] {
+                let buffer = RgbaImage::from_pixel(3, 2, image::Rgba(color));
+                encoder
+                    .encode_frame(Frame::from_parts(
+                        buffer,
+                        0,
+                        0,
+                        Delay::from_numer_denom_ms(delay, 1),
+                    ))
+                    .expect("frame");
+            }
+        }
+
+        let decoded = decode_gif(&bytes).expect("decode");
+        assert_eq!((decoded.width, decoded.height), (3, 2));
+        assert_eq!(decoded.frames.len(), 2);
+        assert_eq!(decoded.frames[0].delay_ms, 100);
+        assert_eq!(decoded.frames[1].delay_ms, 40);
+        assert_eq!(decoded.frames[0].rgba[..4], [255, 0, 0, 255]);
+        assert_eq!(decoded.frames[1].rgba[..4], [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn gif_urls_are_recognised_before_the_query_string() {
+        assert!(is_gif_url(
+            "https://cdn.discordapp.com/icons/1/a_x.gif?size=96"
+        ));
+        assert!(is_gif_url("https://cdn.discordapp.com/icons/1/a_x.GIF"));
+        assert!(!is_gif_url(
+            "https://cdn.discordapp.com/icons/1/x.png?format=gif"
+        ));
     }
 }

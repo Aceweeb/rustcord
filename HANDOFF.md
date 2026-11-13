@@ -7,12 +7,20 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 315 lib + 5 bin tests passing (320)
+- `cargo test --all-targets`: 319 lib + 5 bin tests passing (324)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Animated guild icons (`DECISIONS.md` D66):
+
+- `src/models.rs` — `a_` icon hashes use the `.gif` endpoint.
+- `src/images.rs` — multi-frame `Decoded`, `AnimatedTexture`, shared byte cache,
+  `frame(url, time)`, 3 tests.
+- `src/ui/sidebar.rs` — rail picks the current frame and repaints only while an
+  animation is present.
 
 Channel categories (`DECISIONS.md` D65):
 

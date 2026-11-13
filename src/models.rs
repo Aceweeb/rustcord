@@ -111,8 +111,10 @@ impl Guild {
     /// CDN URL for the guild's icon, when it has one.
     pub fn icon_url(&self) -> Option<String> {
         self.icon.as_ref().map(|hash| {
+            // Animated guild icons use an `a_` hash and Discord serves them as GIF.
+            let extension = if hash.starts_with("a_") { "gif" } else { "png" };
             format!(
-                "https://cdn.discordapp.com/icons/{}/{hash}.png?size=96",
+                "https://cdn.discordapp.com/icons/{}/{hash}.{extension}?size=96",
                 self.id
             )
         })
@@ -1413,6 +1415,23 @@ mod tests {
         typing.forget_channel("c1");
         assert!(typing.summary("c1", 0.0).is_none());
         assert!(typing.summary("c2", 0.0).is_some());
+    }
+
+    #[test]
+    fn animated_guild_icons_use_the_gif_endpoint() {
+        let mut guild = Guild {
+            id: "1".to_string(),
+            name: "test".to_string(),
+            icon: Some("a_animated".to_string()),
+            member_count: None,
+        };
+        assert!(guild
+            .icon_url()
+            .as_deref()
+            .unwrap()
+            .contains("/a_animated.gif"));
+        guild.icon = Some("static".to_string());
+        assert!(guild.icon_url().as_deref().unwrap().contains("/static.png"));
     }
 }
 

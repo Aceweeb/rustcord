@@ -1854,3 +1854,23 @@ Keyboard navigation uses the same ordering, including skipping collapsed childre
 so the highlighted row and the activated channel cannot drift apart. The demo guild
 now includes a `COMMUNITY` category covering `#general` and `#dev`; DMs stay a flat
 `DIRECT MESSAGES` list because Discord's DM rail has no categories.
+
+## D66. Animated guild icons decode every GIF frame into a bounded texture set
+
+Discord marks animated guild icons with an `a_` icon hash, but `Guild::icon_url`
+always asked for `.png`, so the CDN returned a still first frame. The image worker
+also decoded every download with `image::load_from_memory`, which discards GIF
+frames after the first.
+
+Animated hashes now use the `.gif` endpoint. The worker recognises GIF URLs under
+`/icons/`, decodes them through `GifDecoder`, and sends every frame with its own
+delay (clamped to 20 ms–10 s, capped at 64 frames / 64 MB decoded). Static images
+still arrive as one frame. `ImageLoader` uploads each frame, keeps a separate
+`AnimatedTexture`, and charges all frames to the same byte-bounded LRU cache as
+static images; eviction and `clear()` remove both maps. `peek` remains the
+first-frame/static accessor used by avatars and attachments, while `frame(url,time)`
+picks the current frame and `is_animated` tells the rail to request the next
+repaint. The rail uses egui's input clock and repaints at most every 80 ms, so an
+idle client with no animated icons stays idle. Animation decoding is deliberately
+limited to guild icons: animated attachments and embeds keep their first-frame
+behaviour and cannot fill the cache with frames the UI never draws.

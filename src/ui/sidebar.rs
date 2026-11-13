@@ -89,14 +89,24 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
     // Guild icons share the existing bounded image cache. They are requested
     // before the rail draws, so a decoded texture is used on the next frame.
     let mut icons = std::collections::HashMap::new();
+    // GIF frames share one clock so every guild icon advances on the same tick.
+    let now = ui.ctx().input(|input| input.time);
+    let mut animated = false;
     for guild in &guilds {
         let Some(url) = guild.icon_url() else {
             continue;
         };
         app.images.prepare(std::slice::from_ref(&url));
-        if let Some(texture) = app.images.peek(&url) {
+        if let Some(texture) = app.images.frame(&url, now) {
             icons.insert(guild.id.clone(), texture.clone());
+            animated |= app.images.is_animated(&url);
         }
+    }
+    if animated {
+        // ~12 fps is enough for Discord's guild icons and avoids a hot repaint
+        // loop when no animation is on screen.
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(80));
     }
     let view = RailView {
         theme: &theme,
