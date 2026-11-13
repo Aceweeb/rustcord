@@ -92,6 +92,9 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
   (`image_cache_mb`, default 32 MB). Only visible rows are downloaded, only
   Discord's CDN hosts are contacted, and the cache drops least-recently-used
   textures to stay inside the budget.
+- Discord-style composer toolbar with a scrollable Unicode emoji picker and
+  a native file picker for one attachment (10 MiB cap); selected files show a
+  removable chip and upload as multipart messages, with or without a caption.
 - Bot-token authentication stored in the OS keyring (`src/auth.rs`). Tokens are
   never written to `settings.json`.
 - Direct messages and group DMs, loaded at startup into a "Direct Messages" rail
@@ -137,15 +140,15 @@ Measured on the development machine (Arch, Wayland, release build):
 
 | Metric | Result |
 | --- | --- |
-| Binary size | ~11 MB stripped |
-| Idle RSS (release, 1280×800) | 231 MB (`VmRSS`) |
-| Idle PSS (fair per-process figure) | 167 MB (`smaps_rollup`) |
-| Peak RSS (20 s sample) | 261 MB (`VmHWM`) |
+| Binary size | ~14 MB stripped |
+| Idle RSS (release, 1280×800) | 220 MB (`VmRSS`) |
+| Idle PSS (fair per-process figure) | 157 MB (`smaps_rollup`) |
+| Peak RSS (20 s sample) | 251 MB (`VmHWM`) |
 | CPU | 0.0% with no animation on screen; animated surfaces redraw at 12.5 fps, and guild icons pause when unfocused |
 | Threads | 7–11 |
 
 The sign-in screen measures lower because no channel surface is built until there
-is a session. Peak RSS stays below the project's 300 MB ceiling with ~39 MB of
+is a session. Peak RSS stays below the project's 300 MB ceiling with ~49 MB of
 headroom; the figure includes the shared NVIDIA driver mappings described below.
 
 RSS for a GL application counts shared library pages in full, and on this machine

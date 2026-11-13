@@ -254,6 +254,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [x] Hover-card member counts (`DECISIONS.md` D74): total and active counts under
   the server name, with payload/roster fallbacks and no invented zeros. 1 new
   test; peak 261 MB. Peek not visually checked.
+- [x] Composer toolbar (`DECISIONS.md` D75): native attachment picker with a
+  10 MiB cap and removable chip, multipart upload, and a Unicode emoji picker
+  inserting into the draft. 3 new tests; peak 251 MB. Live picker/upload not
+  visually checked.
 - [x] Roster-backed channel members (`DECISIONS.md` D69): all loaded guild
   members, plus authors and voice participants; virtualised 34 px rows and
   visible-only avatar requests. 1 new test; live roster not exercised.

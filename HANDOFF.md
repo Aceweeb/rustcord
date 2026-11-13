@@ -7,12 +7,17 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 332 lib + 5 bin tests passing (337)
+- `cargo test --all-targets`: 335 lib + 5 bin tests passing (340)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 231 MB RSS, 167 MB PSS, 261 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
+- Runtime: 220 MB RSS, 157 MB PSS, 251 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
 
 ## What changed most recently
+
+Composer toolbar (`DECISIONS.md` D75): paperclip/native file picker, a removable
+attachment chip, multipart upload and a Unicode emoji picker that inserts into
+the draft. Release peak measured at 251 MB, under the 300 MB ceiling; the native
+dialog raises the stripped binary to about 14 MB.
 
 Hover-card member counts (`DECISIONS.md` D74): the server peek now shows total
 and active approximate counts under the name, reusing the D73-refreshed data.
@@ -50,6 +55,16 @@ Periodic guild counts (`DECISIONS.md` D67):
 - `src/app.rs` — five-minute count pass for all guilds, idle repaint scheduling,
   counts independent of roster eviction.
 - `src/api/discord.rs` — non-destructive `GuildCounts::merge`, 1 test.
+
+Composer toolbar (`DECISIONS.md` D75):
+
+- `src/ui/chat.rs` — attachment chip, toolbar, emoji popup with a bounded scroll
+  area, and `rfd` file picker.
+- `src/app.rs` — one `ComposerAttachment`, size/regular-file validation, and the
+  attachment/clone path into a send.
+- `src/api/discord.rs` — multipart `payload_json` + `files[0]` through the shared
+  rate-limited request helper, plus MIME selection and a 10 MiB cap.
+- `Cargo.toml` — `rfd 0.17`, reqwest `multipart`, tokio `fs`.
 
 Hover-card member counts (`DECISIONS.md` D74):
 

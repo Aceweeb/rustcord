@@ -188,7 +188,7 @@ Later user additions:
 | `cargo test` | 12 tests passing |
 | `cargo clippy --all-targets -- -D warnings` | clean |
 | `cargo build --release` | passes |
-| Release binary | `target/release/rustcord`, ~11 MB stripped |
+| Release binary | `target/release/rustcord`, ~14 MB stripped |
 | Runtime | launches on Arch/Wayland; idle RSS ~134 MB; steady-state CPU ~0.0% |
 | Git | not initialized in this directory |
 
@@ -630,6 +630,12 @@ Priority order for the next session:
   approximate counts under the server name, falling back to the guild payload
   and loaded roster, and omitting fields that are not known. 1 new test; suite
   337. Release peak 261 MB, 39 MB of headroom. Peek not visually checked.
+
+- Composer toolbar (D75): paperclip and native file picker with a removable
+  attachment chip, multipart upload with reply/empty-caption support, and a
+  bounded Unicode emoji picker that inserts into the draft. 3 new tests; suite
+  340. Release peak 251 MB, 49 MB of headroom; binary ~14 MB. Picker and live
+  upload not visually exercised.
 
 ---
 

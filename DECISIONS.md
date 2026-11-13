@@ -2078,3 +2078,36 @@ One unit test covers the label combinations; the suite is 337. The release binar
 measures 231 MB RSS / 167 MB PSS / 261 MB peak in a 20 s sample, about 39 MB below
 the 300 MB ceiling. The peek itself was not visually checked, and live approximate
 counts were not available in this environment.
+
+
+## D75. The composer owns a native attachment picker, multipart send and emoji picker
+
+The composer was a single text field with Enter-to-send. Attachments could be
+rendered from history but not sent, and reactions had quick emoji but there was
+no way to put one in a message. Discord's composer puts both behind toolbar
+controls.
+
+The field now sits above a small toolbar. The paperclip opens `rfd`'s native
+file dialog (XDG Desktop Portal on Linux; the GTK backend is not required) and
+accepts one regular file up to Discord's default 10 MiB upload ceiling. The
+selection is validated before it enters state and appears as a removable chip
+above the field; attachment-only sends are allowed, replies carry the same
+`message_reference`, and editing hides the attach control because edits cannot
+add files. The emoji button opens a popup grid of about 160 common Unicode
+glyphs in a 280 px scroll area; choosing one appends it to the draft. Custom
+guild emoji would need an emoji-list request that is not made yet.
+
+The REST client's rate-limited request path now takes a builder closure so a
+multipart body can be reconstructed for the one 429 retry. `send_attachment`
+reads the file with tokio, checks the size again against a racing change, and
+sends `payload_json` plus `files[0]` with an extension-derived content type.
+The JSON and multipart paths share `message_payload`, and attachment sends use
+the same route bucket as ordinary messages. `rfd` adds about 3 MB to the
+stripped binary but no background thread or resident cache; the release binary
+measures 220 MB RSS / 157 MB PSS / 251 MB peak in a 20 s sample, about 49 MB
+below the 300 MB ceiling.
+
+Three tests cover attachment validation, emoji-choice uniqueness and the
+attachment MIME/payload helpers; the suite is 340. The picker, popup and live
+multipart upload were not visually or end-to-end exercised in this environment,
+so the UI wiring and Discord's acceptance of the form remain unverified.

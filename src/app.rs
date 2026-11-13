@@ -72,6 +72,40 @@ struct SpotifyConnect {
     exchange: Option<std::sync::mpsc::Receiver<anyhow::Result<crate::api::spotify_auth::Tokens>>>,
 }
 
+/// One file selected in the composer, before it is uploaded. Discord allows
+/// several; the low-memory client keeps a single slot and says so in the UI.
+#[derive(Debug, Clone)]
+pub(crate) struct ComposerAttachment {
+    pub path: std::path::PathBuf,
+    pub filename: String,
+    pub size: u64,
+}
+
+/// Validate a selected path before it reaches the composer. Pure enough to test
+/// without constructing the app or opening a dialog.
+fn prepare_attachment(path: std::path::PathBuf) -> Result<ComposerAttachment, String> {
+    let metadata =
+        std::fs::metadata(&path).map_err(|err| format!("could not attach file: {err}"))?;
+    if !metadata.is_file() {
+        return Err("attachments must be regular files".to_string());
+    }
+    if metadata.len() > crate::api::discord::DiscordClient::MAX_ATTACHMENT_BYTES {
+        return Err(format!(
+            "attachment must be at most {} MiB",
+            crate::api::discord::DiscordClient::MAX_ATTACHMENT_BYTES / (1024 * 1024)
+        ));
+    }
+    let filename = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "attachment".to_string());
+    Ok(ComposerAttachment {
+        path,
+        filename,
+        size: metadata.len(),
+    })
+}
+
 pub struct RustcordApp {
     pub(crate) settings: Settings,
     pub(crate) guilds: Vec<Guild>,
@@ -80,6 +114,8 @@ pub struct RustcordApp {
     pub(crate) selected_guild: Option<String>,
     pub(crate) selected_channel: Option<String>,
     pub(crate) draft: String,
+    /// The one file waiting to be sent with the next message.
+    pub(crate) composer_attachment: Option<ComposerAttachment>,
     pub(crate) plugins: PluginManager,
     pub(crate) current_user: User,
     pub(crate) show_settings: bool,
@@ -572,6 +608,7 @@ impl RustcordApp {
             voice: crate::models::VoiceTracker::default(),
             editing: None,
             replying_to: None,
+            composer_attachment: None,
             pending_delete: None,
             action_tx,
             action_results,
@@ -1548,6 +1585,7 @@ impl RustcordApp {
 
     pub(crate) fn begin_edit(&mut self, message: &Message) {
         self.replying_to = None;
+        self.composer_attachment = None;
         self.editing = Some(message.id.clone());
         self.draft = message.content.clone();
         self.status_line = Some("editing message — Enter saves, Esc cancels".to_string());
@@ -3056,6 +3094,28 @@ impl RustcordApp {
         crate::models::typing_refresh_in(last, channel_id, std::time::Instant::now())
     }
 
+    /// Select one file for the next message. The size check happens here so a
+    /// huge file is rejected before any upload work starts.
+    pub(crate) fn attach_file(&mut self, path: std::path::PathBuf) {
+        match prepare_attachment(path) {
+            Ok(file) => {
+                self.status_line = Some(format!(
+                    "attached {} ({})",
+                    file.filename,
+                    crate::sysinfo::human_bytes(file.size)
+                ));
+                self.composer_attachment = Some(file);
+            }
+            Err(err) => self.status_line = Some(err),
+        }
+    }
+
+    pub(crate) fn clear_attachment(&mut self) {
+        if self.composer_attachment.take().is_some() {
+            self.status_line = Some("attachment removed".to_string());
+        }
+    }
+
     pub(crate) fn send_current_draft(&mut self) {
         if let Some(message_id) = self.editing.clone() {
             self.submit_edit(message_id);
@@ -3063,7 +3123,14 @@ impl RustcordApp {
         }
 
         let content = self.draft.trim().to_string();
-        if content.is_empty() {
+        if content.chars().count() > crate::api::discord::DiscordClient::MAX_CONTENT_CHARS {
+            self.status_line = Some(format!(
+                "a message needs at most {} characters",
+                crate::api::discord::DiscordClient::MAX_CONTENT_CHARS
+            ));
+            return;
+        }
+        if content.is_empty() && self.composer_attachment.is_none() {
             return;
         }
 
@@ -3077,6 +3144,8 @@ impl RustcordApp {
         if self.live_data && !selected_is_text {
             return;
         }
+
+        let attachment = self.composer_attachment.take();
 
         if self.live_data {
             if let (Some(runtime), Some(channel_id)) =
@@ -3094,11 +3163,21 @@ impl RustcordApp {
                     let tx = self.send_tx.clone();
                     runtime.spawn(async move {
                         let result = match DiscordClient::new(token, token_is_bot) {
-                            Ok(client) => match reply_id {
-                                Some(target) => {
+                            Ok(client) => match (attachment, reply_id) {
+                                (Some(file), target) => {
+                                    client
+                                        .send_attachment(
+                                            &channel_id,
+                                            &content,
+                                            &file.path,
+                                            target.as_deref(),
+                                        )
+                                        .await
+                                }
+                                (None, Some(target)) => {
                                     client.send_reply(&channel_id, &content, &target).await
                                 }
-                                None => client.send_message(&channel_id, &content).await,
+                                (None, None) => client.send_message(&channel_id, &content).await,
                             }
                             .map_err(|err| format!("{err:#}")),
                             Err(err) => Err(format!("{err:#}")),
@@ -3122,6 +3201,13 @@ impl RustcordApp {
         let mut message = Message::new(self.current_user.clone(), content);
         message.channel_id = self.selected_channel.clone();
         message.reply_to = self.replying_to.take();
+        if let Some(file) = attachment {
+            message.attachments.push(crate::models::Attachment {
+                filename: file.filename,
+                size: file.size,
+                ..crate::models::Attachment::default()
+            });
+        }
         self.plugins.on_message(&mut message);
         self.messages.push(message);
         self.draft.clear();
@@ -3405,6 +3491,27 @@ mod tests {
             Some(now - GUILD_COUNTS_REFRESH),
             now
         ));
+    }
+
+    #[test]
+    fn attachment_selection_validates_the_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("notes.txt");
+        std::fs::write(&path, b"hello").expect("write");
+        let file = prepare_attachment(path).expect("valid attachment");
+        assert_eq!(file.filename, "notes.txt");
+        assert_eq!(file.size, 5);
+
+        let directory = prepare_attachment(dir.path().to_path_buf()).expect_err("directory");
+        assert!(directory.contains("regular file"));
+
+        let huge = dir.path().join("huge.bin");
+        let handle = std::fs::File::create(&huge).expect("create");
+        handle
+            .set_len(crate::api::discord::DiscordClient::MAX_ATTACHMENT_BYTES + 1)
+            .expect("size");
+        let error = prepare_attachment(huge).expect_err("oversized");
+        assert!(error.contains("at most 10 MiB"));
     }
 
     #[test]

@@ -8,6 +8,23 @@ use egui::RichText;
 /// composer counter and the send check cannot disagree.
 const MESSAGE_LIMIT: usize = crate::api::discord::DiscordClient::MAX_CONTENT_CHARS;
 
+/// A compact Unicode set covering Discord's most-used reactions. The picker is
+/// deliberately dependency-free; custom guild emoji need the guild emoji API,
+/// which this client does not request yet.
+const EMOJI_CHOICES: &[&str] = &[
+    "😀", "😃", "😄", "😁", "😆", "😅", "😂", "🤣", "😊", "😇", "🙂", "🙃", "😉", "😌", "😍", "🥰",
+    "😘", "😗", "😙", "😚", "😋", "😛", "😝", "😜", "🤪", "🤨", "🧐", "🤓", "😎", "🥳", "🤩", "😏",
+    "😒", "😞", "😔", "😟", "😕", "🙁", "☹️", "😣", "😖", "😫", "😩", "🥺", "😢", "😭", "😤", "😠",
+    "😡", "🤬", "🤯", "😳", "🥵", "🥶", "😱", "😨", "😰", "😥", "😓", "🤗", "🤔", "🤭", "🤫", "🤥",
+    "😶", "😐", "😑", "😬", "🙄", "😯", "😦", "😧", "😮", "😲", "🥱", "😴", "🤤", "😪", "😵", "🤐",
+    "🥴", "🤢", "🤮", "🤧", "😷", "🤒", "🤕", "🤑", "🤠", "😈", "👿", "👹", "👺", "🤡", "💩", "👻",
+    "💀", "☠️", "👽", "👾", "🤖", "🎃", "😺", "😸", "😹", "😻", "😼", "😽", "🙀", "😿", "😾", "👍",
+    "👎", "👌", "✌️", "🤞", "🤟", "🤘", "🤙", "👈", "👉", "👆", "👇", "☝️", "✋", "🤚", "🖐️", "🖖",
+    "👋", "🤝", "🙏", "💪", "🦾", "❤️", "🧡", "💛", "💚", "💙", "💜", "🖤", "🤍", "🤎", "💔", "❣️",
+    "💕", "💞", "💓", "💗", "💖", "💘", "💝", "🔥", "✨", "🎉", "🎊", "💯", "✅", "❌", "⚠️", "👀",
+    "💬", "📎", "📷", "🎮", "🎵", "🍕", "🍺", "☕", "🌙", "⭐",
+];
+
 /// The stamp drawn on a message row, plus the exact time for its tooltip.
 /// `long` adds Today/Yesterday/`d Mon` so every row carries its date; the clock
 /// alone is enough when the setting is off. Pure so day boundaries are testable.
@@ -569,7 +586,33 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             .corner_radius(8.0)
             .inner_margin(egui::Margin::symmetric(12, 10))
             .show(ui, |ui| {
+                if let Some(attachment) = app.composer_attachment.as_ref() {
+                    let filename = attachment.filename.clone();
+                    let size = attachment.size;
+                    let mut remove = false;
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("📎").size(15.0).color(theme.text));
+                        ui.label(RichText::new(&filename).size(12.0).color(theme.text));
+                        ui.label(
+                            RichText::new(crate::sysinfo::human_bytes(size))
+                                .size(10.0)
+                                .color(theme.muted),
+                        );
+                        if ui
+                            .small_button("\u{2715}")
+                            .on_hover_text("Remove attachment")
+                            .clicked()
+                        {
+                            remove = true;
+                        }
+                    });
+                    if remove {
+                        app.clear_attachment();
+                    }
+                }
+
                 let counter = app.settings.character_counter;
+                let mut editor_id = None;
                 ui.horizontal(|ui| {
                     // Leave room for the counter so it never sits under the text.
                     let reserve = if counter { 62.0 } else { 0.0 };
@@ -581,6 +624,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             .frame(egui::Frame::new())
                             .text_color(theme.text),
                     );
+                    editor_id = Some(response.id);
 
                     if counter {
                         let count = app.draft.chars().count();
@@ -629,6 +673,77 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                         app.send_current_draft();
                         response.request_focus();
                     }
+                });
+
+                ui.horizontal(|ui| {
+                    if app.editing.is_none() {
+                        let attach = ui
+                            .add(egui::Button::new(RichText::new("📎").size(15.0)).frame(false))
+                            .on_hover_text("Attach a file");
+                        if attach.clicked() {
+                            if let Some(path) = rfd::FileDialog::new().pick_file() {
+                                app.attach_file(path);
+                            }
+                            // The native dialog takes keyboard focus; put it back
+                            // so typing the caption needs no extra click.
+                            if let Some(editor_id) = editor_id {
+                                ui.ctx()
+                                    .memory_mut(|memory| memory.request_focus(editor_id));
+                            }
+                        }
+                    }
+
+                    let emoji = ui
+                        .add(egui::Button::new(RichText::new("🙂").size(15.0)).frame(false))
+                        .on_hover_text("Emoji");
+                    let mut chosen = None;
+                    egui::Popup::menu(&emoji).show(|ui| {
+                        ui.set_min_width(244.0);
+                        egui::ScrollArea::vertical()
+                            .max_height(280.0)
+                            .show(ui, |ui| {
+                                egui::Grid::new("composer-emoji-grid")
+                                    .num_columns(8)
+                                    .spacing([2.0, 2.0])
+                                    .show(ui, |ui| {
+                                        for (index, emoji) in EMOJI_CHOICES.iter().enumerate() {
+                                            if ui
+                                                .add(
+                                                    egui::Button::new(
+                                                        RichText::new(*emoji).size(18.0),
+                                                    )
+                                                    .frame(false),
+                                                )
+                                                .on_hover_text(*emoji)
+                                                .clicked()
+                                            {
+                                                chosen = Some((*emoji).to_string());
+                                            }
+                                            if index % 8 == 7 {
+                                                ui.end_row();
+                                            }
+                                        }
+                                    });
+                            });
+                    });
+                    if let Some(emoji) = chosen {
+                        app.draft.push_str(&emoji);
+                        // Clicking the popup moved focus off the field; put it
+                        // back so the next keystroke lands in the draft.
+                        if let Some(editor_id) = editor_id {
+                            ui.ctx()
+                                .memory_mut(|memory| memory.request_focus(editor_id));
+                        }
+                    }
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let hint = if app.editing.is_some() {
+                            "Enter to save · Esc to cancel"
+                        } else {
+                            "Enter to send"
+                        };
+                        ui.label(RichText::new(hint).size(10.0).color(theme.muted));
+                    });
                 });
             });
         ui.add_space(8.0);
@@ -1190,7 +1305,7 @@ fn message_row_body(
             ui.label(RichText::new(&message.content).size(15.0).color(theme.text));
 
             for attachment in &message.attachments {
-                if attachment.is_image() {
+                if attachment.is_image() && !attachment.url.is_empty() {
                     image_block(app, ui, &attachment.url, attachment.dimensions());
                 } else {
                     ui.label(
@@ -1635,6 +1750,14 @@ fn channel_member_rows<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn emoji_picker_choices_are_unique_and_nonempty() {
+        let unique: std::collections::HashSet<&str> = EMOJI_CHOICES.iter().copied().collect();
+        assert_eq!(unique.len(), EMOJI_CHOICES.len());
+        assert!(EMOJI_CHOICES.iter().all(|emoji| !emoji.is_empty()));
+        assert!(EMOJI_CHOICES.len() >= 100);
+    }
 
     #[test]
     fn wide_images_fill_the_column() {

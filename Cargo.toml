@@ -27,8 +27,8 @@ eframe = { version = "0.37", default-features = false, features = [
 egui = "0.37"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "fs"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "multipart", "rustls-tls"] }
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 futures-util = "0.3"
 keyring = { version = "3", features = ["sync-secret-service"] }
@@ -46,6 +46,7 @@ sha2 = "0.11.1"
 getrandom = "0.4.3"
 wasmi = { version = "2.0.0", default-features = false, features = ["std", "validate", "wat", "auto-dispatch"] }
 qrcode = "0.13"
+rfd = "0.17"
 
 [profile.release]
 opt-level = "z"

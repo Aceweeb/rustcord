@@ -153,6 +153,19 @@ impl DiscordClient {
         path: &str,
         body: Option<serde_json::Value>,
     ) -> Result<String> {
+        self.request_with(method, path, |builder| match &body {
+            Some(body) => builder.json(body),
+            None => builder,
+        })
+        .await
+    }
+
+    /// Shared rate-limited round trip. The builder is a closure because a
+    /// multipart body cannot be cloned for the one 429 retry.
+    async fn request_with<F>(&self, method: reqwest::Method, path: &str, build: F) -> Result<String>
+    where
+        F: Fn(reqwest::RequestBuilder) -> reqwest::RequestBuilder,
+    {
         let route = Route::new(method.as_str(), path);
         let url = format!("{API_BASE}{path}");
 
@@ -171,16 +184,12 @@ impl DiscordClient {
                 tokio::time::sleep(Duration::from_secs_f64(wait)).await;
             }
 
-            let mut builder = self
+            let builder = self
                 .http
                 .request(method.clone(), &url)
                 .header(AUTHORIZATION, &self.token)
                 .header(USER_AGENT, "Rustcord/0.1");
-            if let Some(body) = &body {
-                builder = builder.json(body);
-            }
-
-            let response = builder
+            let response = build(builder)
                 .send()
                 .await
                 .with_context(|| format!("{method} {url} failed"))?;
@@ -288,6 +297,9 @@ impl DiscordClient {
     /// Discord's message limit. Longer content is refused by the API, so it is
     /// refused here first instead of after a round trip.
     pub const MAX_CONTENT_CHARS: usize = 2000;
+    /// Discord's default upload ceiling for a guild channel (10 MiB). Boosted
+    /// guilds can raise it, but the client does not know the tier here.
+    pub const MAX_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
 
     pub async fn edit_message(
         &self,
@@ -446,15 +458,7 @@ impl DiscordClient {
         content: &str,
         reply_to: Option<&str>,
     ) -> Result<Message> {
-        let mut payload = serde_json::json!({ "content": content });
-        if let Some(reply_to) = reply_to {
-            payload["message_reference"] = serde_json::json!({
-                "message_id": reply_to,
-                "channel_id": channel_id,
-                "fail_if_not_exists": false
-            });
-        }
-
+        let payload = message_payload(channel_id, content, reply_to);
         let body = self
             .request(
                 reqwest::Method::POST,
@@ -467,6 +471,111 @@ impl DiscordClient {
             serde_json::from_str(&body).context("could not decode Discord message")?;
         Message::try_from(raw)
     }
+
+    /// Upload one file with an optional caption/reply. Discord expects
+    /// `payload_json` plus `files[0]` in a multipart form.
+    pub async fn send_attachment(
+        &self,
+        channel_id: &str,
+        content: &str,
+        path: &std::path::Path,
+        reply_to: Option<&str>,
+    ) -> Result<Message> {
+        let metadata = tokio::fs::metadata(path)
+            .await
+            .with_context(|| format!("could not read attachment {}", path.display()))?;
+        if !metadata.is_file() {
+            anyhow::bail!("attachment is not a regular file: {}", path.display());
+        }
+        if metadata.len() > Self::MAX_ATTACHMENT_BYTES {
+            anyhow::bail!(
+                "attachment is larger than Discord's {} MiB upload limit",
+                Self::MAX_ATTACHMENT_BYTES / (1024 * 1024)
+            );
+        }
+        if content.chars().count() > Self::MAX_CONTENT_CHARS {
+            anyhow::bail!(
+                "a message needs at most {} characters",
+                Self::MAX_CONTENT_CHARS
+            );
+        }
+
+        let file_name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "attachment".to_string());
+        let bytes = tokio::fs::read(path)
+            .await
+            .with_context(|| format!("could not read attachment {}", path.display()))?;
+        if bytes.len() as u64 > Self::MAX_ATTACHMENT_BYTES {
+            anyhow::bail!("attachment grew past the upload limit while being read");
+        }
+
+        let payload_json = message_payload(channel_id, content, reply_to).to_string();
+        let content_type = attachment_mime(&file_name);
+        let body = self
+            .request_with(
+                reqwest::Method::POST,
+                &format!("/channels/{channel_id}/messages"),
+                move |builder| {
+                    let file = attachment_part(&file_name, bytes.clone(), content_type);
+                    let form = reqwest::multipart::Form::new()
+                        .text("payload_json", payload_json.clone())
+                        .part("files[0]", file);
+                    builder.multipart(form)
+                },
+            )
+            .await?;
+
+        let raw: DiscordMessage =
+            serde_json::from_str(&body).context("could not decode Discord message")?;
+        Message::try_from(raw)
+    }
+}
+
+/// The JSON half of a message send, shared by JSON and multipart requests.
+fn message_payload(channel_id: &str, content: &str, reply_to: Option<&str>) -> serde_json::Value {
+    let mut payload = serde_json::json!({ "content": content });
+    if let Some(reply_to) = reply_to {
+        payload["message_reference"] = serde_json::json!({
+            "message_id": reply_to,
+            "channel_id": channel_id,
+            "fail_if_not_exists": false
+        });
+    }
+    payload
+}
+
+fn attachment_mime(file_name: &str) -> &'static str {
+    match file_name
+        .rsplit('.')
+        .next()
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("webp") => "image/webp",
+        Some("txt" | "log" | "md") => "text/plain",
+        Some("pdf") => "application/pdf",
+        Some("json") => "application/json",
+        Some("mp4") => "video/mp4",
+        Some("mp3") => "audio/mpeg",
+        _ => "application/octet-stream",
+    }
+}
+
+fn attachment_part(
+    file_name: &str,
+    bytes: Vec<u8>,
+    content_type: &str,
+) -> reqwest::multipart::Part {
+    // `attachment_mime` only returns valid constants, so this cannot fail.
+    reqwest::multipart::Part::bytes(bytes)
+        .file_name(file_name.to_string())
+        .mime_str(content_type)
+        .expect("attachment_mime returns valid MIME types")
 }
 
 /// The DM channel Discord returns from `POST /users/@me/channels`.
@@ -875,19 +984,27 @@ mod tests {
     }
 
     #[test]
-    fn requires_a_reference_block_for_replies() {
+    fn message_payload_carries_the_reply_reference() {
         // The payload shape is what Discord's docs specify; a reply without it
         // would be sent as a normal message, which is the bug this guards.
-        let payload = serde_json::json!({
-            "content": "hi",
-            "message_reference": {
-                "message_id": "42",
-                "channel_id": "10",
-                "fail_if_not_exists": false
-            }
-        });
+        let payload = message_payload("10", "hi", Some("42"));
         assert_eq!(payload["message_reference"]["message_id"], "42");
+        assert_eq!(payload["message_reference"]["channel_id"], "10");
         assert_eq!(payload["message_reference"]["fail_if_not_exists"], false);
+        // An attachment-only upload sends an empty caption, not a missing one.
+        assert_eq!(message_payload("10", "", None)["content"], "");
+        assert!(message_payload("10", "", None)
+            .get("message_reference")
+            .is_none());
+    }
+
+    #[test]
+    fn attachment_mime_comes_from_the_extension() {
+        assert_eq!(attachment_mime("cat.PNG"), "image/png");
+        assert_eq!(attachment_mime("photo.jpeg"), "image/jpeg");
+        assert_eq!(attachment_mime("notes.md"), "text/plain");
+        assert_eq!(attachment_mime("archive.zip"), "application/octet-stream");
+        assert_eq!(attachment_mime("no-extension"), "application/octet-stream");
     }
 
     #[test]
