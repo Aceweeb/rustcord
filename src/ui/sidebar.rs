@@ -587,7 +587,6 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
     let theme = app.plugins.theme().clone();
     let mut clicked: Option<String> = None;
     let mut toggle_category: Option<String> = None;
-    let mut open_settings = false;
 
     let guild_name = app
         .selected_guild
@@ -614,18 +613,6 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                 .color(theme.text),
                         );
                         ui.label(RichText::new("⌄").size(11.0).color(theme.muted));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui
-                                .add(
-                                    egui::Button::new(RichText::new("⚙").color(theme.muted))
-                                        .frame(false),
-                                )
-                                .on_hover_text("Settings (Ctrl+,)")
-                                .clicked()
-                            {
-                                open_settings = true;
-                            }
-                        });
                     });
                 });
 
@@ -806,9 +793,6 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
         // A click takes over from the keyboard focus.
         app.navigator.stop();
         app.select_channel(id);
-    }
-    if open_settings {
-        app.show_settings = true;
     }
 }
 
