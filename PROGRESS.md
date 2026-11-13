@@ -589,7 +589,7 @@ Priority order for the next session:
   keyboard order matches. 1 new test; suite 320. Appearance not visually checked.
 
 - Animated guild icons (D66): `a_` hashes request GIFs, worker keeps all frames
-  with delays, texture cache animates them on egui's clock at ≤12 fps. 3 new
+  with delays, texture cache animates them on egui's clock at ≤12 fps. 4 new
   tests; suite 324. Motion not visually checked.
 
 ---
