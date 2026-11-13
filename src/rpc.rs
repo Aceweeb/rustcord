@@ -32,12 +32,16 @@ const RECONNECT: Duration = Duration::from_secs(15);
 const POLL: Duration = Duration::from_millis(500);
 
 /// The activity Rustcord shows on the Discord profile of the account signed in
-/// to the local client. `started_unix` renders as elapsed time.
+/// to the local client. `started_unix` renders as elapsed time; a Spotify track
+/// also supplies an end so Discord draws the remaining-time bar, and the album as
+/// the large-image tooltip.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Presence {
     pub details: String,
     pub state: Option<String>,
     pub started_unix: i64,
+    pub end_unix: Option<i64>,
+    pub large_text: Option<String>,
 }
 
 /// What the UI thread asks the worker to do.
@@ -335,10 +339,17 @@ pub fn activity_command(presence: &Presence, pid: u32) -> Value {
         activity.insert("state".to_string(), Value::String(state));
     }
     if presence.started_unix > 0 {
-        activity.insert(
-            "timestamps".to_string(),
-            json!({ "start": presence.started_unix.saturating_mul(1000) }),
-        );
+        let mut timestamps = serde_json::Map::from_iter([(
+            "start".to_string(),
+            json!(presence.started_unix * 1000),
+        )]);
+        if let Some(end) = presence.end_unix.filter(|end| *end > presence.started_unix) {
+            timestamps.insert("end".to_string(), json!(end * 1000));
+        }
+        activity.insert("timestamps".to_string(), Value::Object(timestamps));
+    }
+    if let Some(text) = presence.large_text.as_deref().and_then(presence_field) {
+        activity.insert("assets".to_string(), json!({ "large_text": text }));
     }
     activity.insert("instance".to_string(), Value::Bool(false));
 
@@ -415,6 +426,8 @@ mod tests {
             details: "Rustcord".to_string(),
             state: Some("#".to_string()),
             started_unix: 1_700_000_000,
+            end_unix: None,
+            large_text: None,
         };
         let command = activity_command(&presence, 42);
         assert_eq!(command["cmd"], "SET_ACTIVITY");
@@ -430,6 +443,24 @@ mod tests {
         assert!(command["nonce"]
             .as_str()
             .is_some_and(|nonce| !nonce.is_empty()));
+    }
+
+    #[test]
+    fn a_spotify_track_carries_progress_and_album() {
+        let presence = Presence {
+            details: "Windowlicker".to_string(),
+            state: Some("Aphex Twin".to_string()),
+            started_unix: 1_700_000_000,
+            end_unix: Some(1_700_000_360),
+            large_text: Some("Windowlicker".to_string()),
+        };
+        let command = activity_command(&presence, 7);
+        let activity = &command["args"]["activity"];
+        assert_eq!(activity["details"], "Windowlicker");
+        assert_eq!(activity["state"], "Aphex Twin");
+        assert_eq!(activity["timestamps"]["start"], 1_700_000_000_000i64);
+        assert_eq!(activity["timestamps"]["end"], 1_700_000_360_000i64);
+        assert_eq!(activity["assets"]["large_text"], "Windowlicker");
     }
 
     #[test]

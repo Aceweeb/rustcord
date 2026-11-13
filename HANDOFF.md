@@ -7,12 +7,19 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 309 lib + 5 bin tests passing (314)
+- `cargo test --all-targets`: 310 lib + 5 bin tests passing (315)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Spotify Rich Presence (`DECISIONS.md` D59):
+
+- `src/rpc.rs` — `Presence` grew `end_unix`/`large_text`; activity payload sends
+  end timestamps and the album tooltip, 1 test.
+- `src/app.rs` — `presence()` prefers the playing track, `poll_spotify` refreshes
+  only when a poll update arrives.
 
 Discord-style message/member rhythm (`DECISIONS.md` D58):
 

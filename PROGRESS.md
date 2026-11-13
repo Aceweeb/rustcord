@@ -559,6 +559,11 @@ Priority order for the next session:
   break blocks. Member list split into ONLINE/OFFLINE sections. 1 new test; suite
   314. UI not visually inspected.
 
+- Spotify as Discord Rich Presence (D59): while playing, the local RPC activity
+  carries song/artist, elapsed start and end timestamps, and the album as large
+  text; paused/idle falls back to server/channel. 1 new test; suite 315. Not
+  exercised against a running Discord client/IPC socket.
+
 ---
 
 ## 7. Notes for the next agent

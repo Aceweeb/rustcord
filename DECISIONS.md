@@ -1706,3 +1706,24 @@ from the gateway's member list; without presence data a member counts as online.
 from the veiled theme palette, and no new fills were added — the clock uses the
 existing muted colour. The rail's Direct Messages button now uses `@` instead of an
 initial so it reads with the `@` in the channel header.
+
+## D59. The Rich Presence worker shows the playing Spotify track
+
+D41 sets a local Discord activity with the server and channel. Spotify playback was
+only visible inside Rustcord, so the profile never reflected what was playing. The
+existing IPC worker now carries the track instead of the channel while playback is
+running.
+
+`poll_spotify` calls `refresh_presence` only when the poller delivered an update,
+so the text is not re-sent every frame. `presence()` returns early for a playing
+track: `details` is the song, `state` is the artist, the start timestamp is derived
+from Spotify's progress so the elapsed clock is correct mid-song, and the end
+timestamp is start + duration so Discord also draws the remaining bar. The album
+name travels as `assets.large_text`, which Discord uses as the large-image tooltip;
+no external album-art URL is sent because RPC only accepts uploaded application
+assets or Discord-proxied external links. A paused or idle track falls back to the
+server/channel activity, matching the "when Spotify is playing" requirement and
+leaving the now-playing strip to show the paused state locally.
+
+This remains opt-in through the existing Discord Rich Presence settings: with the
+toggle off, or no local Discord client running, nothing leaves the process.

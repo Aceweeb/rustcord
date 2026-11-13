@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Spotify now-playing in Discord Rich Presence (`DECISIONS.md` D59): playing
+  tracks replace the server activity with song/artist, progress and end timestamps;
+  paused/idle falls back to channel presence. 1 new test; live IPC unverified.
 - [x] Discord-style UI rhythm (`DECISIONS.md` D58): grouped message blocks for
   same-author messages within seven minutes, gutter clock, ONLINE/OFFLINE member
   sections, `@` DM rail glyph. 1 new test; appearance not visually checked.

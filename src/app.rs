@@ -719,6 +719,7 @@ impl RustcordApp {
                 updates.push(update);
             }
         }
+        let changed = !updates.is_empty();
         for update in updates {
             match update {
                 crate::spotify_sync::Update::Track(track) => {
@@ -733,6 +734,11 @@ impl RustcordApp {
                     self.spotify_status = message;
                 }
             }
+        }
+        // Only a new track, a pause or an idle poll changes the activity; the
+        // progress bar is derived from the track clock, not sent every frame.
+        if changed {
+            self.refresh_presence();
         }
     }
 
@@ -781,6 +787,24 @@ impl RustcordApp {
             return None;
         }
 
+        // Spotify playback takes over the profile while it is actually playing:
+        // Discord allows one activity, and the track is the more interesting one.
+        if self.plugins.spotify_playing() {
+            if let Some(track) = self.plugins.spotify_activity() {
+                let now = Utc::now().timestamp();
+                let progress = (self.plugins.spotify_progress_ms() / 1000) as i64;
+                let duration = (self.plugins.spotify_duration_ms() / 1000) as i64;
+                let started = now.saturating_sub(progress);
+                return Some(crate::rpc::Presence {
+                    details: track.name.clone(),
+                    state: track.details.clone(),
+                    started_unix: started,
+                    end_unix: (duration > 0).then_some(started.saturating_add(duration)),
+                    large_text: track.state.clone(),
+                });
+            }
+        }
+
         let guild = self
             .selected_guild
             .as_ref()
@@ -796,6 +820,8 @@ impl RustcordApp {
             details: guild.unwrap_or_else(|| "Rustcord".to_string()),
             state,
             started_unix: self.started_unix,
+            end_unix: None,
+            large_text: None,
         })
     }
 
