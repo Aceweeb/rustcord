@@ -10,6 +10,7 @@ pub struct SpotifyStatusPlugin {
     current: Option<Activity>,
     progress_ms: u64,
     duration_ms: u64,
+    playing: bool,
     last_tick: f32,
 }
 
@@ -20,6 +21,7 @@ impl Default for SpotifyStatusPlugin {
             current: None,
             progress_ms: 0,
             duration_ms: 0,
+            playing: false,
             last_tick: 0.0,
         }
     }
@@ -53,6 +55,7 @@ impl SpotifyStatusPlugin {
         });
         self.progress_ms = progress_ms.min(duration_ms);
         self.duration_ms = duration_ms;
+        self.playing = true;
     }
 
     /// Apply a track from the live poller, including its album art URL.
@@ -68,6 +71,7 @@ impl SpotifyStatusPlugin {
         if let Some(current) = &mut self.current {
             current.large_image = track.album_image.clone();
         }
+        self.playing = track.is_playing;
     }
 
     /// Nothing is playing: drop the state instead of keeping the last track.
@@ -75,6 +79,13 @@ impl SpotifyStatusPlugin {
         self.current = None;
         self.progress_ms = 0;
         self.duration_ms = 0;
+        self.playing = false;
+    }
+
+    /// Whether Spotify says playback is running. A paused track keeps its strip
+    /// but stops advancing the clock.
+    pub fn is_playing(&self) -> bool {
+        self.playing
     }
 
     pub fn current(&self) -> Option<&Activity> {
@@ -96,7 +107,7 @@ impl SpotifyStatusPlugin {
     /// Advance the locally displayed progress. The real implementation should
     /// reconcile this with `GET /me/player` every few seconds.
     pub fn tick(&mut self, now: f32) {
-        if !self.enabled || self.duration_ms == 0 {
+        if !self.enabled || self.duration_ms == 0 || !self.playing {
             self.last_tick = now;
             return;
         }
@@ -161,5 +172,37 @@ mod tests {
             .expect("init");
         assert!(plugin.current().is_none());
         assert_eq!(plugin.duration_ms(), 0);
+        assert!(!plugin.is_playing());
+    }
+
+    fn track(is_playing: bool) -> crate::api::spotify::SpotifyTrack {
+        crate::api::spotify::SpotifyTrack {
+            name: "Smooth Operator".to_string(),
+            artists: vec!["Sade".to_string()],
+            album: "Diamond Life".to_string(),
+            album_image: Some("https://i.scdn.co/image/large".to_string()),
+            progress_ms: 1_000,
+            duration_ms: 10_000,
+            uri: "spotify:track:x".to_string(),
+            is_playing,
+        }
+    }
+
+    #[test]
+    fn a_paused_track_keeps_its_progress() {
+        let mut plugin = SpotifyStatusPlugin::new();
+        plugin.set_from_track(&track(false));
+        assert!(plugin.current().is_some());
+        assert!(!plugin.is_playing());
+
+        plugin.tick(0.0);
+        plugin.tick(5.0);
+        assert_eq!(plugin.progress_ms(), 1_000);
+
+        // Resuming continues from the reported position, not from zero.
+        plugin.set_from_track(&track(true));
+        plugin.tick(10.0);
+        plugin.tick(11.0);
+        assert!(plugin.progress_ms() > 1_000);
     }
 }

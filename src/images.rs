@@ -25,6 +25,7 @@ pub const MAX_DIMENSION: u32 = 4096;
 /// client fetch arbitrary URLs.
 const ALLOWED_HOSTS: &[&str] = &[
     "cdn.discordapp.com",
+    "i.scdn.co",
     "media.discordapp.net",
     "images-ext-1.discordapp.net",
     "images-ext-2.discordapp.net",
@@ -429,6 +430,9 @@ mod tests {
             "https://media.discordapp.net/attachments/1/2/cat.png?width=400"
         ));
         assert!(is_allowed_url("https://cdn.discordapp.com:443/x.png"));
+        assert!(is_allowed_url("https://i.scdn.co/image/large"));
+        assert!(!is_allowed_url("http://i.scdn.co/image/large"));
+        assert!(!is_allowed_url("https://i.scdn.co.evil.test/image"));
     }
 
     #[test]

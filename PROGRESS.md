@@ -541,6 +541,10 @@ Priority order for the next session:
   avatars through `ImageLoader`; existing page data already carried the hashes.
   No new test; suite unchanged at 308.
 
+- Now-playing strip shows album art and a pause state (D55): paused tracks are kept
+  with `is_playing`, progress freezes while paused, `i.scdn.co` added to the image
+  and privacy allowlists. 3 new tests; suite 311.
+
 ---
 
 ## 7. Notes for the next agent

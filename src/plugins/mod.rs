@@ -195,6 +195,10 @@ impl PluginManager {
         self.spotify.duration_ms()
     }
 
+    pub fn spotify_playing(&self) -> bool {
+        self.spotify.is_playing()
+    }
+
     pub fn streaming_state(&self) -> &StreamingState {
         self.streaming.state()
     }

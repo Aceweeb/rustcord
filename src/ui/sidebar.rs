@@ -699,32 +699,87 @@ fn bottom_panels(app: &mut RustcordApp, ui: &mut egui::Ui, theme: &AppTheme) {
             });
         });
 
-        if let Some(activity) = app.plugins.spotify_activity() {
-            let artist = activity.details.as_deref().unwrap_or("unknown artist");
-            ui.label(
-                RichText::new(format!("🎵 {} — {}", activity.name, artist))
-                    .size(12.0)
-                    .color(theme.text),
-            );
-
-            let duration = app.plugins.spotify_duration_ms();
-            if duration > 0 {
-                let progress = app.plugins.spotify_progress_ms() as f32 / duration as f32;
-                ui.add(
-                    egui::ProgressBar::new(progress.clamp(0.0, 1.0))
-                        .desired_width(200.0)
-                        .fill(theme.accent),
-                );
-                ui.label(
-                    RichText::new(format!(
-                        "{} / {}",
-                        format_duration(app.plugins.spotify_progress_ms()),
-                        format_duration(duration)
-                    ))
-                    .size(10.0)
-                    .color(theme.muted),
-                );
+        if let Some(activity) = app.plugins.spotify_activity().cloned() {
+            let playing = app.plugins.spotify_playing();
+            // Album art is fetched through the same bounded cache as attachments;
+            // prepare deduplicates, so a paused track is not re-requested.
+            let art = activity.large_image.clone();
+            if let Some(url) = &art {
+                app.images.prepare(std::slice::from_ref(url));
             }
+
+            ui.horizontal(|ui| {
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(40.0, 40.0), egui::Sense::hover());
+                match art.as_deref().and_then(|url| app.images.peek(url)) {
+                    Some(texture) => {
+                        ui.painter().image(
+                            texture.id(),
+                            rect,
+                            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                            egui::Color32::WHITE,
+                        );
+                    }
+                    None => {
+                        ui.painter().rect_filled(
+                            rect,
+                            egui::CornerRadius::same(4),
+                            crate::utils::lift(theme.surface_alt, 12),
+                        );
+                        ui.painter().text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "♪",
+                            egui::FontId::proportional(16.0),
+                            theme.muted,
+                        );
+                    }
+                }
+
+                ui.vertical(|ui| {
+                    let artist = activity.details.as_deref().unwrap_or("unknown artist");
+                    let glyph = if playing { "🎵" } else { "⏸" };
+                    ui.label(
+                        RichText::new(format!("{glyph} {} — {}", activity.name, artist))
+                            .size(12.0)
+                            .color(if playing { theme.text } else { theme.muted }),
+                    )
+                    .on_hover_text(if playing {
+                        "Playing on Spotify"
+                    } else {
+                        "Paused on Spotify"
+                    });
+
+                    let duration = app.plugins.spotify_duration_ms();
+                    if duration > 0 {
+                        let progress = app.plugins.spotify_progress_ms() as f32 / duration as f32;
+                        let fill = if playing {
+                            theme.accent
+                        } else {
+                            theme.muted.gamma_multiply(0.6)
+                        };
+                        ui.add(
+                            egui::ProgressBar::new(progress.clamp(0.0, 1.0))
+                                .desired_width(150.0)
+                                .fill(fill),
+                        );
+                        let clock = format!(
+                            "{} / {}",
+                            format_duration(app.plugins.spotify_progress_ms()),
+                            format_duration(duration)
+                        );
+                        ui.label(
+                            RichText::new(if playing {
+                                clock
+                            } else {
+                                format!("{clock} · paused")
+                            })
+                            .size(10.0)
+                            .color(theme.muted),
+                        );
+                    }
+                });
+            });
         }
     });
 }

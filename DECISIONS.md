@@ -1612,3 +1612,23 @@ is capped at `MEMBER_CAP`, the loader deduplicates URLs and remembers failures, 
 the textures count against the existing image byte budget rather than a second
 cache. No extra request is made for the roster: the avatar hashes arrived with the
 members page.
+
+## D55. Paused playback keeps the strip, with art and a pause marker
+
+D52 stopped the fake demo track appearing, but it also made a real pause vanish:
+`CurrentlyPlaying::into_track` returned `None` whenever `is_playing` was false, so
+the poller sent `Idle` and the strip disappeared mid-album. That conflated "nothing
+loaded" with "paused".
+
+`into_track` now keeps the item and carries `is_playing`; only a missing item (204,
+or Spotify reporting no track) maps to `Idle` and clears the strip. The plugin stores
+the flag: `set_from_track` copies it, `clear` resets it, and `tick` stops advancing
+the progress clock while paused, so the bar freezes where playback stopped instead
+of creeping forward. Resuming jumps back to Spotify's reported position because the
+next poll overwrites progress.
+
+The strip now has a 40 px album-art thumbnail and a track line whose glyph is
+`🎵` while playing and `⏸` while paused, with the progress fill dimmed and a
+`· paused` clock label. Art comes from `i.scdn.co`, which is added to both the image
+loader's host allowlist and the privacy summary's; it is still HTTPS-only and
+host-exact. Two tests cover paused-vs-playing parsing and the frozen progress clock.

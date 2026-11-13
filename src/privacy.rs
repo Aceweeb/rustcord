@@ -38,6 +38,7 @@ pub const ALLOWED_HOSTS: &[&str] = &[
     "images-ext-2.discordapp.net",
     "accounts.spotify.com",
     "api.spotify.com",
+    "i.scdn.co",
 ];
 
 /// One piece of local state, and where it lives.
@@ -133,6 +134,7 @@ mod tests {
         assert!(host_allowed("https://discord.com/api/v10/users/@me"));
         assert!(host_allowed("wss://gateway.discord.gg/?v=10&encoding=json"));
         assert!(host_allowed("https://cdn.discordapp.com/avatars/1/a.png"));
+        assert!(host_allowed("https://i.scdn.co/image/large"));
         assert!(host_allowed("https://media.discordapp.net/x"));
         // Ports and case do not change the host.
         assert!(host_allowed("https://discord.com:443/api"));

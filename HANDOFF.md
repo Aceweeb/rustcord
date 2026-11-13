@@ -7,12 +7,21 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 303 lib + 5 bin tests passing (308)
+- `cargo test --all-targets`: 306 lib + 5 bin tests passing (311)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Album art and pause state in the now-playing strip (`DECISIONS.md` D55):
+
+- `src/api/spotify.rs` — `SpotifyTrack::is_playing`; paused tracks no longer become
+  `None`; 2 tests.
+- `src/plugins/spotify_status.rs` — stores the flag, `tick` freezes while paused;
+  1 test.
+- `src/ui/sidebar.rs` — 40 px art thumbnail, `⏸` marker, dimmed bar and paused clock.
+- `src/images.rs`, `src/privacy.rs` — `i.scdn.co` allowlisted.
 
 Member-list avatars (`DECISIONS.md` D54):
 

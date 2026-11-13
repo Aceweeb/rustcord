@@ -309,8 +309,9 @@ dashboard, add
 `http://127.0.0.1:53135/callback` as a redirect URI, then paste the client id into
 Settings → Notifications → Spotify application id and press **Connect Spotify**. The
 PKCE flow asks only for `user-read-currently-playing`, keeps the tokens in the OS
-keyring, and polls every five seconds; pausing or closing Spotify clears the track,
-and **Disconnect Spotify** forgets the grant. No client secret exists in this
+keyring, and polls every five seconds. The strip shows the album art and a pause
+marker when Spotify reports a paused track, and clears when nothing is loaded or
+Spotify closes; **Disconnect Spotify** forgets the grant. No client secret exists in this
 program.
 
 ### Rich Presence
