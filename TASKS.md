@@ -258,6 +258,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   10 MiB cap and removable chip, multipart upload, and a Unicode emoji picker
   inserting into the draft. 3 new tests; peak 251 MB. Live picker/upload not
   visually checked.
+- [x] Role-grouped member panel (`DECISIONS.md` D76): gateway/REST role lookup,
+  highest-hoisted-role sections with colours, and ONLINE/OFFLINE fallbacks.
+  3 new tests; peak 250 MB. Live rendering not visually checked.
 - [x] Roster-backed channel members (`DECISIONS.md` D69): all loaded guild
   members, plus authors and voice participants; virtualised 34 px rows and
   visible-only avatar requests. 1 new test; live roster not exercised.

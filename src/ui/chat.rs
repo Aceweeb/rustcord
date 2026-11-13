@@ -370,23 +370,29 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 );
 
                 ui.add_space(6.0);
-                // Discord splits the list into ONLINE and OFFLINE groups. A full
-                // roster can hold thousands of users, so the section rows are
-                // virtualised: only the visible slice builds avatars and buttons.
-                let mut rows: Vec<MemberListRow> = Vec::with_capacity(members.len() + 2);
-                for (title, offline) in [("ONLINE", false), ("OFFLINE", true)] {
-                    let group: Vec<&crate::models::User> = members
-                        .iter()
-                        .copied()
-                        .filter(|member| {
-                            (member.status == crate::models::Presence::Offline) == offline
-                        })
-                        .collect();
-                    if group.is_empty() {
-                        continue;
-                    }
-                    rows.push(MemberListRow::Header(title, group.len()));
-                    rows.extend(group.into_iter().map(MemberListRow::Member));
+                // Discord groups members by their highest hoisted role, then
+                // keeps ONLINE/OFFLINE catch-alls for members without one. This
+                // client gets no live presence for REST members (they all arrive
+                // offline), so role sections must include them or the roles would
+                // never be visible. A full roster can hold thousands of users, so
+                // the section rows are virtualised: only the visible slice builds
+                // avatars and buttons.
+                let roles = app
+                    .selected_guild
+                    .as_ref()
+                    .and_then(|id| app.guilds.iter().find(|guild| &guild.id == id))
+                    .map(|guild| guild.roles.as_slice())
+                    .unwrap_or(&[]);
+                let sections = member_sections(&members, roles);
+                let mut rows: Vec<MemberListRow> =
+                    Vec::with_capacity(members.len() + sections.len());
+                for section in sections {
+                    rows.push(MemberListRow::Header {
+                        title: section.title,
+                        count: section.members.len(),
+                        color: section.color,
+                    });
+                    rows.extend(section.members.into_iter().map(MemberListRow::Member));
                 }
 
                 egui::ScrollArea::vertical()
@@ -394,17 +400,38 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     .show_rows(ui, MEMBER_ROW_HEIGHT, rows.len(), |ui, range| {
                         for row in &rows[range] {
                             match row {
-                                MemberListRow::Header(title, count) => {
+                                MemberListRow::Header {
+                                    title,
+                                    count,
+                                    color,
+                                } => {
                                     ui.allocate_ui_with_layout(
                                         egui::vec2(ui.available_width(), MEMBER_ROW_HEIGHT),
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
                                             ui.add_space(4.0);
-                                            ui.label(
-                                                RichText::new(format!("{title} \u{2014} {count}"))
+                                            if let Some(color) = color {
+                                                let (rect, _) = ui.allocate_exact_size(
+                                                    egui::vec2(7.0, 7.0),
+                                                    egui::Sense::hover(),
+                                                );
+                                                ui.painter().circle_filled(
+                                                    rect.center(),
+                                                    3.0,
+                                                    *color,
+                                                );
+                                                ui.add_space(4.0);
+                                            }
+                                            ui.add(
+                                                egui::Label::new(
+                                                    RichText::new(format!(
+                                                        "{title} \u{2014} {count}"
+                                                    ))
                                                     .size(10.0)
                                                     .strong()
                                                     .color(theme.muted),
+                                                )
+                                                .truncate(),
                                             );
                                         },
                                     );
@@ -1718,11 +1745,105 @@ fn fitted_size(available: f32, image: egui::Vec2) -> egui::Vec2 {
 /// share a height so `ScrollArea::show_rows` can calculate offsets without
 /// measuring every user.
 enum MemberListRow<'a> {
-    Header(&'static str, usize),
+    Header {
+        title: String,
+        count: usize,
+        color: Option<egui::Color32>,
+    },
     Member(&'a crate::models::User),
 }
 
+/// One role/status section in the member panel. Headers own their labels
+/// because role names come from the guild payload and the virtual row list
+/// outlives the borrow of that payload.
+struct MemberSection<'a> {
+    title: String,
+    color: Option<egui::Color32>,
+    members: Vec<&'a crate::models::User>,
+}
+
 const MEMBER_ROW_HEIGHT: f32 = 34.0;
+
+/// Build Discord's member-list sections: members grouped by their highest
+/// hoisted role, with ONLINE/OFFLINE catch-alls for members without one.
+/// Non-hoisted roles are intentionally not sections, matching Discord. Role
+/// sections include offline members because this client has no live presence
+/// for a REST roster; their status dot still distinguishes them. With no roles
+/// (a failed or unavailable guild payload) this degrades to the old
+/// ONLINE/OFFLINE view.
+fn member_sections<'a>(
+    members: &[&'a crate::models::User],
+    roles: &[crate::models::Role],
+) -> Vec<MemberSection<'a>> {
+    use std::collections::{BTreeMap, HashMap};
+
+    let by_id: HashMap<&str, &crate::models::Role> =
+        roles.iter().map(|role| (role.id.as_str(), role)).collect();
+    let mut grouped: BTreeMap<&str, Vec<&'a crate::models::User>> = BTreeMap::new();
+    let mut ungrouped_online = Vec::new();
+    let mut offline = Vec::new();
+
+    for member in members.iter().copied() {
+        let highest = member
+            .role_ids
+            .iter()
+            .filter_map(|id| by_id.get(id.as_str()).copied())
+            .filter(|role| role.hoist)
+            .max_by(|a, b| a.position.cmp(&b.position).then_with(|| a.id.cmp(&b.id)));
+        match highest {
+            Some(role) => grouped.entry(role.id.as_str()).or_default().push(member),
+            None if member.status == crate::models::Presence::Offline => offline.push(member),
+            None => ungrouped_online.push(member),
+        }
+    }
+
+    let mut role_groups: Vec<(&crate::models::Role, Vec<&crate::models::User>)> = grouped
+        .into_iter()
+        .filter_map(|(id, members)| by_id.get(id).map(|role| (*role, members)))
+        .collect();
+    role_groups.sort_by(|(a, _), (b, _)| {
+        b.position
+            .cmp(&a.position)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+
+    let mut sections = Vec::with_capacity(role_groups.len() + 2);
+    for (role, members) in role_groups {
+        let title = if role.name.is_empty() {
+            "Unnamed role".to_string()
+        } else {
+            role.name.clone()
+        };
+        let color = (role.color & 0x00ff_ffff != 0).then(|| {
+            egui::Color32::from_rgb(
+                ((role.color >> 16) & 0xff) as u8,
+                ((role.color >> 8) & 0xff) as u8,
+                (role.color & 0xff) as u8,
+            )
+        });
+        sections.push(MemberSection {
+            title,
+            color,
+            members,
+        });
+    }
+    if !ungrouped_online.is_empty() {
+        sections.push(MemberSection {
+            title: "ONLINE".to_string(),
+            color: None,
+            members: ungrouped_online,
+        });
+    }
+    if !offline.is_empty() {
+        sections.push(MemberSection {
+            title: "OFFLINE".to_string(),
+            color: None,
+            members: offline,
+        });
+    }
+    sections
+}
 
 /// Merge the loaded guild roster with channel evidence (message authors, thread
 /// participants, voice members) into one name-sorted, deduplicated list. Roster
@@ -1891,6 +2012,100 @@ mod tests {
             username: name.to_string(),
             ..crate::models::User::default()
         }
+    }
+
+    #[test]
+    fn member_panel_groups_members_by_highest_hoisted_role() {
+        let roles = vec![
+            crate::models::Role {
+                id: "admin".to_string(),
+                name: "Admin".to_string(),
+                color: 0xe74c3c,
+                hoist: true,
+                position: 30,
+            },
+            crate::models::Role {
+                id: "mod".to_string(),
+                name: "Moderator".to_string(),
+                color: 0,
+                hoist: true,
+                position: 20,
+            },
+            crate::models::Role {
+                id: "colour".to_string(),
+                name: "Colour".to_string(),
+                color: 0x3498db,
+                hoist: false,
+                position: 40,
+            },
+        ];
+        let mut alice = member("1", "alice");
+        alice.status = Presence::Online;
+        alice.role_ids = vec!["mod".to_string(), "admin".to_string()];
+        let mut bob = member("2", "bob");
+        bob.status = Presence::Idle;
+        bob.role_ids = vec!["colour".to_string()];
+        let mut carol = member("3", "carol");
+        carol.role_ids = vec!["admin".to_string()];
+        let mut dave = member("4", "dave");
+        dave.status = Presence::Dnd;
+        let eve = member("5", "eve");
+
+        let members = [&alice, &bob, &carol, &dave, &eve];
+        let sections = member_sections(&members, &roles);
+        let titles: Vec<&str> = sections
+            .iter()
+            .map(|section| section.title.as_str())
+            .collect();
+        // Admin outranks Moderator; Colour is not hoisted, so Bob falls into
+        // ONLINE alongside Dave. Carol is offline but still belongs to Admin;
+        // Eve, who has no hoisted role, is the only OFFLINE row.
+        assert_eq!(titles, ["Admin", "ONLINE", "OFFLINE"]);
+        assert_eq!(
+            sections[0]
+                .members
+                .iter()
+                .map(|user| user.id.as_str())
+                .collect::<Vec<_>>(),
+            ["1", "3"]
+        );
+        assert_eq!(
+            sections[0].color,
+            Some(egui::Color32::from_rgb(0xe7, 0x4c, 0x3c))
+        );
+        assert_eq!(
+            sections[1]
+                .members
+                .iter()
+                .map(|user| user.id.as_str())
+                .collect::<Vec<_>>(),
+            ["2", "4"]
+        );
+        assert_eq!(
+            sections[2]
+                .members
+                .iter()
+                .map(|user| user.id.as_str())
+                .collect::<Vec<_>>(),
+            ["5"]
+        );
+    }
+
+    #[test]
+    fn member_panel_falls_back_to_presence_without_roles() {
+        let mut online = member("1", "alice");
+        online.status = Presence::Online;
+        let offline = member("2", "bob");
+        let members = [&online, &offline];
+
+        let sections = member_sections(&members, &[]);
+        let titles: Vec<&str> = sections
+            .iter()
+            .map(|section| section.title.as_str())
+            .collect();
+        assert_eq!(titles, ["ONLINE", "OFFLINE"]);
+        assert_eq!(sections[0].members.len(), 1);
+        assert_eq!(sections[1].members.len(), 1);
     }
 
     #[test]

@@ -2111,3 +2111,34 @@ Three tests cover attachment validation, emoji-choice uniqueness and the
 attachment MIME/payload helpers; the suite is 340. The picker, popup and live
 multipart upload were not visually or end-to-end exercised in this environment,
 so the UI wiring and Discord's acceptance of the form remain unverified.
+
+
+## D76. Member sections follow hoisted guild roles, with presence as a fallback
+
+The member panel only split the channel-scoped roster into ONLINE and OFFLINE.
+That is readable but hides the hierarchy Discord uses to organise a server:
+permissions roles and their relative rank.
+
+Guild roles now travel with the guild (`Guild::roles`, parsed from GUILD_CREATE
+and READY) and are refreshed by `GET /guilds/{id}/roles` in the same task as the
+roster. The members endpoint supplies each member's role ids, stored on `User`.
+For each member the panel chooses the highest-position role whose `hoist` flag is
+set, creates one section per such role, orders sections by descending position,
+and prints the role name with a dot in the role's colour. Non-hoisted roles
+intentionally do not become sections, because Discord's "display role members
+separately" setting is exactly that flag; treating every colour role as a
+section would bury the list in noise.
+
+Members with no hoisted role fall back to ONLINE/OFFLINE. Unlike Discord, role
+sections include offline members: this client has no live presence for a REST
+roster, so every fetched member is offline, and an online-only role section would
+never appear. Status dots still distinguish those members. If roles are missing
+(a failed fetch and no gateway roles), the old ONLINE/OFFLINE layout is the
+fallback. Role changes wait for the next roster load/reconnect because
+GUILD_ROLE_CREATE/UPDATE/DELETE are not handled yet.
+
+Three tests cover role parsing, highest-hoisted-role selection with a non-hoisted
+role ignored, and the no-role fallback; the suite is 343. The 20 s release sample
+measured 211 MB RSS / 164 MB PSS / 250 MB peak, 50 MB below the ceiling. The
+role-grouped panel was not visually checked, and the grouping was not observed
+in the running UI.

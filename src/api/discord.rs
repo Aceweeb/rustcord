@@ -1,7 +1,9 @@
 use crate::api::ratelimit::{
     global_from_body, retry_after_from_body, RateLimitHeaders, RateLimiter, Route, MAX_WAIT_SECS,
 };
-use crate::models::{Attachment, Channel, Embed, Message, Presence, Reaction, ReplyRef, User};
+use crate::models::{
+    Attachment, Channel, Embed, Message, Presence, Reaction, ReplyRef, Role, User,
+};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
@@ -342,6 +344,13 @@ impl DiscordClient {
             .get_text(&format!("/guilds/{guild_id}?with_counts=true"))
             .await?;
         parse_guild_counts(&body)
+    }
+
+    /// The guild's roles. This endpoint has no privileged-intent requirement
+    /// and supplies the names, positions and hoist flags for member sections.
+    pub async fn fetch_guild_roles(&self, guild_id: &str) -> Result<Vec<Role>> {
+        let body = self.get_text(&format!("/guilds/{guild_id}/roles")).await?;
+        parse_roles(&body)
     }
 
     /// Every guild member, newest id first order, in pages of 1000. Needs the
@@ -710,6 +719,7 @@ impl From<DiscordUser> for User {
                 .avatar_decoration_data
                 .and_then(|decoration| decoration.asset),
             status: Presence::Offline,
+            role_ids: Vec::new(),
         }
     }
 }
@@ -795,6 +805,25 @@ pub fn parse_guild_counts(body: &str) -> Result<GuildCounts> {
     })
 }
 
+/// Parse a `GET /guilds/{id}/roles` body. Roles without an id cannot be used as
+/// a section key, so they are skipped; a missing name gets a readable fallback.
+pub fn parse_roles(body: &str) -> Result<Vec<Role>> {
+    let raw: Vec<serde_json::Value> =
+        serde_json::from_str(body).context("could not decode Discord roles")?;
+    Ok(raw
+        .iter()
+        .filter_map(|value| {
+            Some(Role {
+                id: value["id"].as_str()?.to_string(),
+                name: value["name"].as_str().unwrap_or("Unnamed role").to_string(),
+                color: value["color"].as_u64().unwrap_or(0) as u32,
+                hoist: value["hoist"].as_bool().unwrap_or(false),
+                position: value["position"].as_i64().unwrap_or(0),
+            })
+        })
+        .collect())
+}
+
 /// Parse a `GET /guilds/{id}/members` body. Order is preserved because the
 /// caller paginates with `after=<last user id>`; display sorting happens later.
 /// Duplicate and malformed entries are dropped.
@@ -805,6 +834,10 @@ pub fn parse_members(body: &str) -> Result<Vec<User>> {
         // the whole page.
         #[serde(default)]
         user: Option<DiscordUser>,
+        /// Role ids are used by the member panel to choose Discord's hoisted
+        /// role section. Members are never grouped from this endpoint's order.
+        #[serde(default)]
+        roles: Vec<String>,
     }
 
     let raw: Vec<Member> =
@@ -816,7 +849,8 @@ pub fn parse_members(body: &str) -> Result<Vec<User>> {
         let Some(raw_user) = member.user else {
             continue;
         };
-        let user: User = raw_user.into();
+        let mut user: User = raw_user.into();
+        user.role_ids = member.roles;
         if user.id.is_empty() || user.username.is_empty() {
             continue;
         }
@@ -929,7 +963,7 @@ mod tests {
     #[test]
     fn members_parse_without_reordering() {
         let body = r#"[
-            { "user": { "id": "3", "username": "carol", "avatar": null } },
+            { "user": { "id": "3", "username": "carol", "avatar": null }, "roles": ["10", "11"] },
             { "user": { "id": "1", "username": "alice", "avatar": null } },
             { "user": { "id": "3", "username": "carol", "avatar": null } },
             { "user": { "id": "", "username": "ghost", "avatar": null } },
@@ -940,7 +974,25 @@ mod tests {
         assert_eq!(members.len(), 2, "duplicates and malformed entries dropped");
         // Pagination depends on this: `after` uses the last id as returned.
         assert_eq!(members[0].id, "3");
+        assert_eq!(members[0].role_ids, ["10", "11"]);
+        assert!(members[1].role_ids.is_empty());
         assert_eq!(members[1].id, "1");
+    }
+
+    #[test]
+    fn roles_parse_names_colours_and_hoist_order() {
+        let body = r#"[
+            { "id": "10", "name": "Admin", "color": 15158332, "hoist": true, "position": 30 },
+            { "id": "11", "name": "Member", "color": 0, "hoist": false, "position": 0 },
+            { "name": "no id" }
+        ]"#;
+        let roles = parse_roles(body).expect("roles");
+        assert_eq!(roles.len(), 2);
+        assert_eq!(roles[0].name, "Admin");
+        assert_eq!(roles[0].color, 0xe7_4c_3c);
+        assert!(roles[0].hoist);
+        assert_eq!(roles[0].position, 30);
+        assert!(!roles[1].hoist);
     }
 
     #[test]

@@ -310,6 +310,7 @@ mod tests {
                 icon: None,
                 banner: None,
                 member_count: None,
+                roles: Vec::new(),
             })
             .collect()
     }

@@ -287,6 +287,8 @@ enum MemberResult {
     Loaded {
         guild_id: String,
         members: Vec<User>,
+        /// A successful roles fetch; gateway roles stay in place when it fails.
+        roles: Option<Vec<crate::models::Role>>,
         counts: crate::api::discord::GuildCounts,
     },
     Failed {
@@ -402,6 +404,7 @@ impl RustcordApp {
                 icon: None,
                 banner: None,
                 member_count: None,
+                roles: Vec::new(),
             },
             Guild {
                 id: "2".to_string(),
@@ -409,6 +412,7 @@ impl RustcordApp {
                 icon: None,
                 banner: None,
                 member_count: None,
+                roles: Vec::new(),
             },
             Guild {
                 id: "3".to_string(),
@@ -416,6 +420,7 @@ impl RustcordApp {
                 icon: None,
                 banner: None,
                 member_count: None,
+                roles: Vec::new(),
             },
         ];
 
@@ -1274,6 +1279,7 @@ impl RustcordApp {
                     icon: None,
                     banner: None,
                     member_count: None,
+                    roles: Vec::new(),
                 },
             );
         }
@@ -1400,24 +1406,27 @@ impl RustcordApp {
         self.members_loading.insert(guild_id.clone());
 
         runtime.spawn(async move {
-            let (result, counts) = match DiscordClient::new(token, token_is_bot) {
+            let (result, roles, counts) = match DiscordClient::new(token, token_is_bot) {
                 Ok(client) => {
-                    let (members, counts) = tokio::join!(
+                    let (members, roles, counts) = tokio::join!(
                         client.fetch_members(&guild_id),
+                        client.fetch_guild_roles(&guild_id),
                         client.fetch_guild_counts(&guild_id)
                     );
                     (
                         members.map_err(|err| format!("{err:#}")),
+                        roles.ok(),
                         counts.unwrap_or_default(),
                     )
                 }
-                Err(err) => (Err(format!("{err:#}")), Default::default()),
+                Err(err) => (Err(format!("{err:#}")), None, Default::default()),
             };
 
             let _ = tx.send(match result {
                 Ok(members) => MemberResult::Loaded {
                     guild_id,
                     members,
+                    roles,
                     counts,
                 },
                 Err(error) => MemberResult::Failed { guild_id, error },
@@ -1431,10 +1440,19 @@ impl RustcordApp {
                 MemberResult::Loaded {
                     guild_id,
                     members,
+                    roles,
                     counts,
                 } => {
                     self.members_loading.remove(&guild_id);
                     self.members.insert(guild_id.clone(), members);
+                    // An empty parsed list usually means a malformed response;
+                    // keep the gateway's roles rather than wiping them.
+                    if let (Some(roles), Some(guild)) = (
+                        roles.filter(|roles| !roles.is_empty()),
+                        self.guilds.iter_mut().find(|guild| guild.id == guild_id),
+                    ) {
+                        guild.roles = roles;
+                    }
                     // A failed counts half of the roster join must not wipe the
                     // periodic refresh's fresher values.
                     self.guild_counts.entry(guild_id).or_default().merge(counts);

@@ -6,7 +6,7 @@ Last verified: 2026-11-13, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **340 passed (335 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **343 passed (338 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -17,14 +17,14 @@ Release binary, 1280×800 window, default settings, theme file loaded.
 
 | Metric | Latest | How measured |
 | --- | --- | --- |
-| RSS | **220 MB** | `/proc/<pid>/status` `VmRSS`, 20 s sample |
-| PSS | **157 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
-| Peak (`VmHWM`) | **251 MB** | kernel high-water mark |
+| RSS | **211 MB** | `/proc/<pid>/status` `VmRSS`, 20 s sample |
+| PSS | **164 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
+| Peak (`VmHWM`) | **250 MB** | kernel high-water mark |
 | CPU | **0.0% without animation; nonzero while animated surfaces are visible** | ticks/s; 12.5 fps redraws; guild icons stop when unfocused |
 | Threads | **7–11** | `/proc/<pid>/status` |
 | Sign-in screen | lower than a channel session | no channel surface is built |
 
-The 300 MB ceiling holds with about 49 MB of headroom. The earlier 159 MB figure
+The 300 MB ceiling holds with about 50 MB of headroom. The earlier 159 MB figure
 predates animated guild icons, the roster-backed member panel, and periodic count
 refreshes; re-measure after any surface that adds textures or caches.
 
@@ -249,6 +249,21 @@ skips it; **Settings → Privacy → Sign out** clears the keyring, session and
 caches and brings the page back. An install that already has a token opens in
 the workspace, so the page never interrupts an existing session.
 
+## Member panel roles
+
+The member panel follows Discord's hoisted-role layout. Guild roles arrive in
+`GUILD_CREATE`/READY and are refreshed by `GET /guilds/{id}/roles` alongside the
+roster fetch; every member records its role ids from `GET /guilds/{id}/members`.
+The highest-position hoisted role becomes the member's section, role sections
+are ordered by descending position, and a role-colour dot precedes the header.
+Members without a hoisted role fall back to ONLINE/OFFLINE by presence.
+
+REST members carry no live presence, so they arrive offline and would otherwise
+never appear in a role section; role sections therefore include them and their
+status dot still shows the absence. Non-hoisted roles are not sections, matching
+Discord. `GUILD_ROLE_CREATE/UPDATE/DELETE` are not handled yet, so a role change
+appears after the next roster load or reconnect.
+
 ## Attachments and images
 
 Message attachments and embeds render inline through a byte-bounded image cache
@@ -296,6 +311,8 @@ guild emoji are not listed yet.
 6. The composer's native file dialog, emoji popup and live multipart upload
    have not been exercised end-to-end here; the multipart form needs a real bot
    session to prove Discord accepts it.
+7. Role sections are refreshed with the roster, not on `GUILD_ROLE_*` gateway
+   events; role changes wait for a reconnect or a fresh roster load.
 
 ## Environment quirks
 

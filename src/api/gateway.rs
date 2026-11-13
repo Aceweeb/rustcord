@@ -2,7 +2,7 @@ use super::backoff::{
     jittered_secs, monotonic_secs, random_unit, should_reset_backoff, IdentifyAllow,
     IdentifyBudget, IDENTIFY_LIMIT,
 };
-use crate::models::{Channel, ChannelKind, Embed, Guild, Message, Presence, User};
+use crate::models::{Channel, ChannelKind, Embed, Guild, Message, Presence, Role, User};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use futures_util::{SinkExt, StreamExt};
@@ -627,6 +627,10 @@ fn parse_guild(value: &Value) -> Option<(Guild, Vec<Channel>)> {
     let icon = value["icon"].as_str().map(str::to_string);
     let banner = value["banner"].as_str().map(str::to_string);
     let member_count = value["member_count"].as_u64();
+    let roles = value["roles"]
+        .as_array()
+        .map(|roles| roles.iter().filter_map(parse_role).collect())
+        .unwrap_or_default();
 
     let channels = value["channels"]
         .as_array()
@@ -645,9 +649,20 @@ fn parse_guild(value: &Value) -> Option<(Guild, Vec<Channel>)> {
             icon,
             banner,
             member_count,
+            roles,
         },
         channels,
     ))
+}
+
+fn parse_role(value: &Value) -> Option<Role> {
+    Some(Role {
+        id: value["id"].as_str()?.to_string(),
+        name: value["name"].as_str().unwrap_or("Unnamed role").to_string(),
+        color: value["color"].as_u64().unwrap_or(0) as u32,
+        hoist: value["hoist"].as_bool().unwrap_or(false),
+        position: value["position"].as_i64().unwrap_or(0),
+    })
 }
 
 fn parse_channel(value: &Value, guild_id: &str) -> Option<Channel> {
@@ -682,6 +697,7 @@ fn parse_message(value: &Value) -> Result<Message> {
             .as_str()
             .map(str::to_string),
         status: Presence::Offline,
+        role_ids: Vec::new(),
     };
 
     let timestamp = value["timestamp"]
@@ -1264,6 +1280,10 @@ mod tests {
                 "id": "999",
                 "name": "Test Guild",
                 "icon": null,
+                "roles": [
+                    { "id": "10", "name": "Admin", "color": 15158332, "hoist": true, "position": 10 },
+                    { "id": "11", "name": "Member", "color": 0, "hoist": false, "position": 0 }
+                ],
                 "channels": [
                     { "id": "1", "name": "general", "type": 0 },
                     { "id": "2", "name": "voice", "type": 2 },
@@ -1280,6 +1300,11 @@ mod tests {
             GatewayEvent::GuildCreate { guild, channels } => {
                 assert_eq!(guild.id, "999");
                 assert_eq!(guild.name, "Test Guild");
+                assert_eq!(guild.roles.len(), 2);
+                assert_eq!(guild.roles[0].name, "Admin");
+                assert!(guild.roles[0].hoist);
+                assert_eq!(guild.roles[0].position, 10);
+                assert!(!guild.roles[1].hoist);
                 assert_eq!(channels.len(), 3);
                 assert_eq!(channels[0].kind, ChannelKind::Text);
                 assert_eq!(channels[1].kind, ChannelKind::Voice);

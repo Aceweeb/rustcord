@@ -11,6 +11,24 @@ pub enum Presence {
     Offline,
 }
 
+/// One guild role. Only the fields the member panel needs are kept; permission
+/// bitfields and role icons are deliberately outside this client's scope.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Role {
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+    /// Packed `0xRRGGBB`; zero is Discord's "no colour" default.
+    #[serde(default)]
+    pub color: u32,
+    /// Whether Discord shows a separate member-list section for this role.
+    #[serde(default)]
+    pub hoist: bool,
+    /// Higher roles sort first in Discord's member list.
+    #[serde(default)]
+    pub position: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
     pub id: String,
@@ -30,6 +48,10 @@ pub struct User {
     pub avatar_decoration: Option<String>,
     #[serde(default)]
     pub status: Presence,
+    /// Guild role ids for a fetched roster member. Empty for message authors,
+    /// DM users and other records that did not come from the members endpoint.
+    #[serde(default)]
+    pub role_ids: Vec<String>,
 }
 
 impl Default for User {
@@ -43,6 +65,7 @@ impl Default for User {
             accent_color: None,
             avatar_decoration: None,
             status: Presence::Offline,
+            role_ids: Vec::new(),
         }
     }
 }
@@ -116,6 +139,10 @@ pub struct Guild {
     /// shows this as the total and the roster length only as a fallback.
     #[serde(default)]
     pub member_count: Option<u64>,
+    /// Guild roles from GUILD_CREATE/READY, used to group the member panel by
+    /// hoisted role. Empty until the gateway supplies them.
+    #[serde(default)]
+    pub roles: Vec<Role>,
 }
 
 impl Guild {
@@ -1393,6 +1420,7 @@ mod tests {
             accent_color: Some(0x11_22_33),
             avatar_decoration: Some("deco".to_string()),
             status: Presence::Online,
+            role_ids: Vec::new(),
         };
         assert_eq!(user.display_name(), "Jane");
         assert_eq!(
@@ -1450,6 +1478,7 @@ mod tests {
             icon: Some("a_animated".to_string()),
             banner: Some("a_animated_banner".to_string()),
             member_count: None,
+            roles: Vec::new(),
         };
         assert!(guild
             .icon_url()

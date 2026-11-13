@@ -7,12 +7,17 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 335 lib + 5 bin tests passing (340)
+- `cargo test --all-targets`: 338 lib + 5 bin tests passing (343)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 220 MB RSS, 157 MB PSS, 251 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
+- Runtime: 211 MB RSS, 164 MB PSS, 250 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
 
 ## What changed most recently
+
+Role-grouped member panel (`DECISIONS.md` D76): guild roles come from the gateway
+and are refreshed over REST with the roster; online/offline catch-alls remain for
+members without a hoisted role. Release peak measured at 250 MB, under the
+300 MB ceiling. Live role rendering was not visually checked.
 
 Composer toolbar (`DECISIONS.md` D75): paperclip/native file picker, a removable
 attachment chip, multipart upload and a Unicode emoji picker that inserts into
@@ -55,6 +60,15 @@ Periodic guild counts (`DECISIONS.md` D67):
 - `src/app.rs` — five-minute count pass for all guilds, idle repaint scheduling,
   counts independent of roster eviction.
 - `src/api/discord.rs` — non-destructive `GuildCounts::merge`, 1 test.
+
+Role-grouped member panel (`DECISIONS.md` D76):
+
+- `src/models.rs` — `Role` and `User::role_ids`; `Guild::roles`.
+- `src/api/gateway.rs` — parse roles from GUILD_CREATE/READY.
+- `src/api/discord.rs` — role ids on parsed members and `/guilds/{id}/roles`.
+- `src/app.rs` — roles joined with the roster and installed on the guild.
+- `src/ui/chat.rs` — highest hoisted role sections, role-colour dots and fallback
+  ONLINE/OFFLINE sections.
 
 Composer toolbar (`DECISIONS.md` D75):
 

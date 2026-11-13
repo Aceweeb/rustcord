@@ -637,6 +637,12 @@ Priority order for the next session:
   340. Release peak 251 MB, 49 MB of headroom; binary ~14 MB. Picker and live
   upload not visually exercised.
 
+- Role-grouped member panel (D76): roles parsed from the gateway and refreshed
+  from `/guilds/{id}/roles`, member role ids from the roster, sections ordered by
+  hoisted-role position with role-colour dots, and ONLINE/OFFLINE catch-alls for
+  unhoisted members. 3 new tests; suite 343. Release 211 MB RSS / 164 MB PSS /
+  250 MB peak, 50 MB of headroom. Live rendering not visually checked.
+
 ---
 
 ## 7. Notes for the next agent

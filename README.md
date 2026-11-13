@@ -108,7 +108,9 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
 - A channel member panel seeded from the loaded guild roster, so members who have
   not spoken are included alongside message authors and current voice members;
   thread participants who remain guild members come in through the same roster.
-  Presence dots, virtualised rows and Discord-style hover complete the list.
+  It follows Discord's hoisted-role sections (highest role wins, ordered by role
+  position, with a role-colour dot), then ONLINE/OFFLINE catch-alls; presence
+  dots, virtualised rows and Discord-style hover complete the list.
 - Discord channel-header chrome: parsed channel topics, a working search button
   (Ctrl+F), and a member-list toggle; user settings sit in the bottom user panel.
 - Collapsible Discord channel categories, ordered by the guild's `position`, with
@@ -141,14 +143,14 @@ Measured on the development machine (Arch, Wayland, release build):
 | Metric | Result |
 | --- | --- |
 | Binary size | ~14 MB stripped |
-| Idle RSS (release, 1280×800) | 220 MB (`VmRSS`) |
-| Idle PSS (fair per-process figure) | 157 MB (`smaps_rollup`) |
-| Peak RSS (20 s sample) | 251 MB (`VmHWM`) |
+| Idle RSS (release, 1280×800) | 211 MB (`VmRSS`) |
+| Idle PSS (fair per-process figure) | 164 MB (`smaps_rollup`) |
+| Peak RSS (20 s sample) | 250 MB (`VmHWM`) |
 | CPU | 0.0% with no animation on screen; animated surfaces redraw at 12.5 fps, and guild icons pause when unfocused |
 | Threads | 7–11 |
 
 The sign-in screen measures lower because no channel surface is built until there
-is a session. Peak RSS stays below the project's 300 MB ceiling with ~49 MB of
+is a session. Peak RSS stays below the project's 300 MB ceiling with ~50 MB of
 headroom; the figure includes the shared NVIDIA driver mappings described below.
 
 RSS for a GL application counts shared library pages in full, and on this machine
