@@ -7,12 +7,17 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 323 lib + 5 bin tests passing (328)
+- `cargo test --all-targets`: 324 lib + 5 bin tests passing (329)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Roster-backed channel members (`DECISIONS.md` D69):
+
+- `src/ui/chat.rs` — roster-seeded list with author/voice extras, virtualised
+  member rows, visible-only avatar loading, 1 test.
 
 Message hover actions (`DECISIONS.md` D68):
 

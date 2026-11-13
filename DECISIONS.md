@@ -1919,3 +1919,31 @@ which is also used by right-click, so copy/reply/edit/delete cannot drift betwee
 the two entry points. Button ids are derived globally from the message id (not the
 row's layout id) so a recycled virtual row cannot inherit another message's open
 menu.
+
+## D69. The member panel starts from the guild roster, not only speakers
+
+D62 scoped the panel to the open channel's message authors and voice members because
+Discord has no endpoint listing everyone who can read a text channel. That made a
+quiet channel look empty even when the guild roster was loaded, and it omitted
+channel members who simply had not spoken plus thread participants who were not in
+the current page of history.
+
+The loaded guild roster is now the base of the list. Message authors and voice-state
+members are merged in as extras, so a capped, unloaded or privilege-restricted
+roster still shows the people the client can prove are present. Roster records win
+when both sources have a user, preserving avatars, display names and cosmetics.
+Thread participants who are still guild members arrive through this same roster;
+Rustcord does not model thread channels yet, so a thread member absent from a
+capped roster cannot be discovered separately.
+
+The panel is still an approximation of channel access: Discord does not expose
+per-channel permission membership to a bot. The `IN CHANNEL — n` label carries a
+tooltip saying it is the loaded roster plus channel participants rather than a
+permission-filtered list.
+
+A full roster can hold 5000 users, so the list is now virtualised with
+`ScrollArea::show_rows` at a fixed 34 px row height. Only the visible slice builds
+avatar widgets and DM buttons, and only those visible avatars are requested from
+the image cache (after the panel closure, because rows borrow the roster while the
+cache is mutable). Deduplicated, name-sorted references replace cloning the roster
+every frame; the merge is covered by a unit test.

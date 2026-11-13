@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Roster-backed channel members (`DECISIONS.md` D69): all loaded guild
+  members, plus authors and voice participants; virtualised 34 px rows and
+  visible-only avatar requests. 1 new test; live roster not exercised.
 - [x] Message hover actions (`DECISIONS.md` D68): react, reply and more in a
   floating bar, sharing the right-click menu. 3 new tests; hover/popup behaviour
   not visually checked.

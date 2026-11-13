@@ -172,6 +172,9 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     }
 
     let mut dm_target: Option<crate::models::User> = None;
+    // Only avatars in the visible slice are requested. The panel borrows the
+    // roster, so the mutable image cache is filled after the closure returns.
+    let mut visible_avatars: Vec<String> = Vec::new();
 
     egui::Panel::right("member_list")
         .exact_size(240.0)
@@ -185,27 +188,12 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             let theme = app.plugins.theme().clone();
             ui.add_space(12.0);
 
-            // Only people who appear in the open channel: its message authors
-            // and, for a voice channel, its current voice members. Discord has no
-            // endpoint that lists everyone who can read a text channel, so the
-            // loaded history is the honest source for "in this channel".
+            // Discord's panel is scoped to the open channel, but the API has no
+            // endpoint that lists everyone who can read a text channel. The loaded
+            // guild roster is the nearest evidence for members who have not spoken
+            // yet; thread participants who are still guild members are in it too.
+            // Authors and voice users cover gaps from a capped/unavailable roster.
             let channel_id = app.selected_channel.clone();
-            let mut participant_ids: std::collections::BTreeSet<String> = app
-                .messages
-                .iter()
-                .filter(|message| message.channel_id.as_deref() == channel_id.as_deref())
-                .map(|message| message.author.id.clone())
-                .collect();
-            let mut voice_members: Vec<crate::models::VoiceMember> = channel_id
-                .as_deref()
-                .map(|id| app.voice.members(id).to_vec())
-                .unwrap_or_default();
-            for member in &voice_members {
-                participant_ids.insert(member.user_id.clone());
-            }
-            voice_members.sort_by(|a, b| a.username.to_lowercase().cmp(&b.username.to_lowercase()));
-
-            let roster = app.roster();
             let mut authors: Vec<crate::models::User> = Vec::new();
             let mut seen_authors = std::collections::BTreeSet::new();
             for message in app.messages.iter().rev() {
@@ -217,25 +205,16 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 }
             }
 
-            let mut members: Vec<crate::models::User> = roster
-                .iter()
-                .filter(|member| participant_ids.contains(&member.id))
-                .cloned()
-                .collect();
-            // The roster can be unavailable (privileged intent), still loading,
-            // or capped before a recent author; the authors are always valid
-            // participants, so merge them in rather than showing an empty panel.
-            for author in authors {
-                if !members.iter().any(|known| known.id == author.id) {
-                    members.push(author);
-                }
-            }
-            // Voice members are not necessarily in the loaded history, and their
-            // User record may not be in the capped roster; synthesise the row
-            // from the voice-state name the gateway already sent.
+            let mut voice_members: Vec<crate::models::VoiceMember> = channel_id
+                .as_deref()
+                .map(|id| app.voice.members(id).to_vec())
+                .unwrap_or_default();
+            voice_members.sort_by(|a, b| a.username.to_lowercase().cmp(&b.username.to_lowercase()));
+
+            let mut extras = authors;
             for member in voice_members {
-                if !members.iter().any(|known| known.id == member.user_id) {
-                    members.push(crate::models::User {
+                if !extras.iter().any(|known| known.id == member.user_id) {
+                    extras.push(crate::models::User {
                         id: member.user_id,
                         username: member.username,
                         status: Presence::Online,
@@ -243,12 +222,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     });
                 }
             }
-            members.sort_by(|a, b| {
-                a.username
-                    .to_lowercase()
-                    .cmp(&b.username.to_lowercase())
-                    .then_with(|| a.id.cmp(&b.id))
-            });
+            let members = channel_member_rows(app.roster(), &extras);
 
             if members.is_empty() {
                 let hint = if channel_id.is_none() {
@@ -257,12 +231,6 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     "Members appear once a bot token is connected."
                 } else if app.member_intent_missing {
                     "Enable the Server Members Intent to load the roster."
-                } else if !app
-                    .messages
-                    .iter()
-                    .any(|message| message.channel_id.as_deref() == channel_id.as_deref())
-                {
-                    "No one in this channel has spoken yet."
                 } else {
                     "No channel members to show."
                 };
@@ -317,75 +285,97 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 RichText::new(format!("IN CHANNEL \u{2014} {}", members.len()))
                     .size(10.0)
                     .color(theme.muted),
+            )
+            .on_hover_text(
+                "Loaded guild roster plus participants in this channel. Discord does \
+                 not expose per-channel access, so this is the closest available list.",
             );
 
             ui.add_space(6.0);
-            // The roster is capped and the loader deduplicates, so each avatar
-            // starts downloading once; the textures share the attachment budget.
-            let avatar_urls: Vec<String> = members
-                .iter()
-                .filter_map(|member| member.avatar_url())
-                .collect();
-            app.images.prepare(&avatar_urls);
+            // Discord splits the list into ONLINE and OFFLINE groups. A full
+            // roster can hold thousands of users, so the section rows are
+            // virtualised: only the visible slice builds avatars and buttons.
+            let mut rows: Vec<MemberListRow> = Vec::with_capacity(members.len() + 2);
+            for (title, offline) in [("ONLINE", false), ("OFFLINE", true)] {
+                let group: Vec<&crate::models::User> = members
+                    .iter()
+                    .copied()
+                    .filter(|member| (member.status == crate::models::Presence::Offline) == offline)
+                    .collect();
+                if group.is_empty() {
+                    continue;
+                }
+                rows.push(MemberListRow::Header(title, group.len()));
+                rows.extend(group.into_iter().map(MemberListRow::Member));
+            }
+
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    // Discord splits the list into ONLINE and OFFLINE groups. The
-                    // demo roster has no presence data, so it lands under online.
-                    for (title, offline) in [("ONLINE", false), ("OFFLINE", true)] {
-                        let group: Vec<&crate::models::User> = members
-                            .iter()
-                            .filter(|member| {
-                                (member.status == crate::models::Presence::Offline) == offline
-                            })
-                            .collect();
-                        if group.is_empty() {
-                            continue;
-                        }
-                        ui.add_space(4.0);
-                        ui.label(
-                            RichText::new(format!("{title} \u{2014} {}", group.len()))
-                                .size(10.0)
-                                .strong()
-                                .color(theme.muted),
-                        );
-                        ui.add_space(2.0);
-                        for member in group {
-                            let hover = ui.painter().add(egui::Shape::Noop);
-                            let response = ui
-                                .horizontal(|ui| {
-                                    let _ = avatar_with_status(app, ui, member, 32.0);
-                                    ui.label(
-                                        RichText::new(&member.username)
-                                            .size(14.0)
-                                            .color(theme.text),
-                                    );
-                                    if app.live_data && member.id != app.current_user.id {
-                                        if ui
-                                            .small_button("DM")
-                                            .on_hover_text("Open a direct message")
-                                            .clicked()
-                                        {
-                                            dm_target = Some(member.clone());
-                                        }
-                                    }
-                                })
-                                .response;
-                            if response.hovered() {
-                                ui.painter().set(
-                                    hover,
-                                    egui::Shape::rect_filled(
-                                        response.rect.expand2(egui::vec2(4.0, 1.0)),
-                                        egui::CornerRadius::same(4),
-                                        crate::utils::lift(theme.surface, 10),
-                                    ),
+                .show_rows(ui, MEMBER_ROW_HEIGHT, rows.len(), |ui, range| {
+                    for row in &rows[range] {
+                        match row {
+                            MemberListRow::Header(title, count) => {
+                                ui.allocate_ui_with_layout(
+                                    egui::vec2(ui.available_width(), MEMBER_ROW_HEIGHT),
+                                    egui::Layout::left_to_right(egui::Align::Center),
+                                    |ui| {
+                                        ui.add_space(4.0);
+                                        ui.label(
+                                            RichText::new(format!("{title} \u{2014} {count}"))
+                                                .size(10.0)
+                                                .strong()
+                                                .color(theme.muted),
+                                        );
+                                    },
                                 );
+                            }
+                            MemberListRow::Member(member) => {
+                                let hover = ui.painter().add(egui::Shape::Noop);
+                                let response = ui
+                                    .allocate_ui_with_layout(
+                                        egui::vec2(ui.available_width(), MEMBER_ROW_HEIGHT),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            if let Some(url) = member.avatar_url() {
+                                                visible_avatars.push(url);
+                                            }
+                                            let _ = avatar_with_status(app, ui, member, 32.0);
+                                            ui.label(
+                                                RichText::new(&member.username)
+                                                    .size(14.0)
+                                                    .color(theme.text),
+                                            );
+                                            if app.live_data && member.id != app.current_user.id {
+                                                if ui
+                                                    .small_button("DM")
+                                                    .on_hover_text("Open a direct message")
+                                                    .clicked()
+                                                {
+                                                    dm_target = Some((*member).clone());
+                                                }
+                                            }
+                                        },
+                                    )
+                                    .response;
+                                if response.hovered() {
+                                    ui.painter().set(
+                                        hover,
+                                        egui::Shape::rect_filled(
+                                            response.rect.expand2(egui::vec2(4.0, 1.0)),
+                                            egui::CornerRadius::same(4),
+                                            crate::utils::lift(theme.surface, 10),
+                                        ),
+                                    );
+                                }
                             }
                         }
                     }
                 });
         });
 
+    // Visible avatars share the attachment byte budget; the loader deduplicates
+    // URLs, so requesting the same row every frame is a cache lookup.
+    app.images.prepare(&visible_avatars);
     if let Some(user) = dm_target {
         app.open_dm_with(&user);
     }
@@ -1506,6 +1496,39 @@ fn fitted_size(available: f32, image: egui::Vec2) -> egui::Vec2 {
     egui::vec2(width, height)
 }
 
+/// One fixed-height row in the virtualised member panel. Headers and members
+/// share a height so `ScrollArea::show_rows` can calculate offsets without
+/// measuring every user.
+enum MemberListRow<'a> {
+    Header(&'static str, usize),
+    Member(&'a crate::models::User),
+}
+
+const MEMBER_ROW_HEIGHT: f32 = 34.0;
+
+/// Merge the loaded guild roster with channel evidence (message authors, thread
+/// participants, voice members) into one name-sorted, deduplicated list. Roster
+/// records win because they carry avatars, names and cosmetics; extras supply
+/// people missing from a capped or unavailable roster.
+fn channel_member_rows<'a>(
+    roster: &'a [crate::models::User],
+    extras: &'a [crate::models::User],
+) -> Vec<&'a crate::models::User> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut rows: Vec<&crate::models::User> = roster
+        .iter()
+        .chain(extras.iter())
+        .filter(|user| !user.id.is_empty() && seen.insert(user.id.as_str()))
+        .collect();
+    rows.sort_by(|a, b| {
+        a.username
+            .to_lowercase()
+            .cmp(&b.username.to_lowercase())
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1634,6 +1657,29 @@ mod tests {
     fn a_narrow_row_has_no_hover_actions() {
         let row = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(80.0, 40.0));
         assert!(hover_action_rects(row).is_none());
+    }
+
+    fn member(id: &str, name: &str) -> crate::models::User {
+        crate::models::User {
+            id: id.to_string(),
+            username: name.to_string(),
+            ..crate::models::User::default()
+        }
+    }
+
+    #[test]
+    fn scoped_rows_include_silent_roster_members_and_extra_participants() {
+        let roster = vec![member("1", "zoe"), member("2", "alice")];
+        let extras = vec![
+            // Already in the roster: the roster's record wins, but no duplicate row.
+            member("2", "alice"),
+            // A thread participant missing from the capped roster.
+            member("3", "bob"),
+        ];
+        let rows = channel_member_rows(&roster, &extras);
+        let ids: Vec<&str> = rows.iter().map(|user| user.id.as_str()).collect();
+        assert_eq!(ids, ["2", "3", "1"]);
+        assert_eq!(rows.len(), 3);
     }
 
     #[test]

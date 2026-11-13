@@ -98,9 +98,10 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
 - Real server icons in the guild rail, with member totals and online counts
   refreshed every five minutes.
 - Animated server icons (`a_` hashes) play their GIF frames in the rail.
-  and online count in the member panel.
-- A member panel scoped to the open channel: its message authors and current voice
-  members, with presence dots and Discord-style row hover.
+- A channel member panel seeded from the loaded guild roster, so members who have
+  not spoken are included alongside message authors and current voice members;
+  thread participants who remain guild members come in through the same roster.
+  Presence dots, virtualised rows and Discord-style hover complete the list.
 - Collapsible Discord channel categories, ordered by the guild's `position`, with
   uncategorised text and voice channels kept in their usual groups.
 - Discord's hover action bar on messages: quick reactions, reply and the full

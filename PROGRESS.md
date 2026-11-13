@@ -601,6 +601,11 @@ Priority order for the next session:
   that shares the context-menu contents; painted inside the row so row metrics
   do not move. 3 new tests; suite 328. Hover/popup behaviour not visually checked.
 
+- Roster-seeded member panel (D69): silent guild members and roster-backed thread
+  participants included, authors/voice merged, virtualised rows, only visible
+  avatars requested. 1 new test; suite 329. Live roster/thread behaviour not
+  exercised without a bot session.
+
 ---
 
 ## 7. Notes for the next agent
