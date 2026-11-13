@@ -537,6 +537,10 @@ Priority order for the next session:
   display name and decoration; the account panel reuses `ui::chat::avatar` and its
   profile card. Gateway test extended; suite 308.
 
+- Member-list avatars (D54): rows reuse `ui::chat::avatar` and request roster
+  avatars through `ImageLoader`; existing page data already carried the hashes.
+  No new test; suite unchanged at 308.
+
 ---
 
 ## 7. Notes for the next agent

@@ -1597,3 +1597,18 @@ the same hover profile card — and asks `ImageLoader` for the URL each frame (t
 loader deduplicates, so this starts at most one download). Until the texture lands,
 the old initial is still the fallback. No new request, field or storage: the data was
 already in the gateway payload.
+
+## D54. Member rows use the same avatar as messages
+
+The roster was already fetched as full `User` objects — `parse_members` goes through
+the same `DiscordUser` conversion that now carries avatars and cosmetics — but the
+member list still painted a circle and an initial. Rows now call
+`ui::chat::avatar`, so a member looks the same in the roster as in the message list,
+with the same hover profile card and the same initial fallback while the texture is
+missing.
+
+The panel requests every roster avatar through `ImageLoader` once; the roster itself
+is capped at `MEMBER_CAP`, the loader deduplicates URLs and remembers failures, and
+the textures count against the existing image byte budget rather than a second
+cache. No extra request is made for the roster: the avatar hashes arrived with the
+members page.

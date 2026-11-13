@@ -206,25 +206,19 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             }
 
             ui.add_space(6.0);
+            // The roster is capped and the loader deduplicates, so each avatar
+            // starts downloading once; the textures share the attachment budget.
+            let avatar_urls: Vec<String> = members
+                .iter()
+                .filter_map(|member| member.avatar_url())
+                .collect();
+            app.images.prepare(&avatar_urls);
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     for member in &members {
                         ui.horizontal(|ui| {
-                            let (rect, _) = ui
-                                .allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
-                            ui.painter().circle_filled(
-                                rect.center(),
-                                16.0,
-                                crate::utils::lift(theme.surface, 18),
-                            );
-                            ui.painter().text(
-                                rect.center(),
-                                egui::Align2::CENTER_CENTER,
-                                initial(&member.username),
-                                egui::FontId::proportional(12.0),
-                                theme.text,
-                            );
+                            let _ = avatar(app, ui, member, 32.0);
                             ui.label(RichText::new(&member.username).size(14.0).color(theme.text));
                         });
                     }

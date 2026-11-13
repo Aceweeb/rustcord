@@ -14,6 +14,11 @@ repository state before changing anything.
 
 ## What changed most recently
 
+Member-list avatars (`DECISIONS.md` D54):
+
+- `src/ui/chat.rs` — roster rows call `avatar`, roster avatars requested through
+  `ImageLoader`.
+
 Sidebar account avatar (`DECISIONS.md` D53):
 
 - `src/api/gateway.rs` — READY carries `avatar`, `global_name`,

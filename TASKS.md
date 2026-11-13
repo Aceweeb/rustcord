@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Member-list avatars (`DECISIONS.md` D54): roster rows use the shared avatar
+  helper and profile card; avatars share the image budget. Visual check pending
+  (D28).
 - [x] Signed-in avatar and profile card in the sidebar (`DECISIONS.md` D53):
   READY forwards avatar/global name/decoration, app stores the READY user id, panel
   reuses the message-row avatar helper. Visual check pending (D28).
