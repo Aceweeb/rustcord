@@ -648,6 +648,12 @@ Priority order for the next session:
   breaking author grouping. 4 new tests; suite 347. Release 221 MB RSS / 171 MB
   PSS / 236 MB peak, 64 MB of headroom. Dividers not visually checked.
 
+- Caret-aware emoji insertion (D78): the picker reads the editor's persisted
+  character selection, replaces it (or inserts at the collapsed caret), and
+  stores the caret after the glyph instead of appending to the draft. 1 new test;
+  suite 348. Release 220 MB RSS / 154 MB PSS / 239 MB peak, 61 MB of headroom.
+  UI event path not visually checked.
+
 ---
 
 ## 7. Notes for the next agent

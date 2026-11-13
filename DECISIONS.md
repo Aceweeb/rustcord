@@ -2110,7 +2110,8 @@ below the 300 MB ceiling.
 Three tests cover attachment validation, emoji-choice uniqueness and the
 attachment MIME/payload helpers; the suite is 340. The picker, popup and live
 multipart upload were not visually or end-to-end exercised in this environment,
-so the UI wiring and Discord's acceptance of the form remain unverified.
+so the UI wiring and Discord's acceptance of the form remain unverified. D78
+later changed emoji insertion from appending to using the editor caret.
 
 
 ## D76. Member sections follow hoisted guild roles, with presence as a fallback
@@ -2169,3 +2170,24 @@ Four tests cover date labels, divider placement including a NEW insertion, first
 unread retention, and open/own messages not creating a marker; the suite is 347.
 The 20 s release sample measured 221 MB RSS / 171 MB PSS / 236 MB peak, 64 MB
 below the ceiling. The dividers were not visually checked.
+
+
+## D78. The emoji picker inserts at the editor caret, not the end of the draft
+
+The picker previously called `String::push_str`, so choosing an emoji always put
+it after the existing text even when the user had placed the caret mid-message
+or selected a word. That made the picker feel detached from the text field.
+
+The composer already retains the `TextEdit` response id. On a choice it now loads
+that widget's persisted `TextEditState`, takes the sorted character range, and
+converts the range endpoints to byte offsets before replacing the selection or
+inserting at the collapsed caret. It stores a collapsed cursor immediately after
+the inserted glyph and returns focus to the editor, so the next keystroke lands
+in the right place. If no editor state is available (the field has never been
+focused), the helper falls back to appending, preserving the old behaviour.
+
+One test covers a collapsed caret after a multi-byte character, replacing a
+multi-character selection with an emoji, and the append fallback; the suite is
+348. The 20 s release sample measured 220 MB RSS / 154 MB PSS / 239 MB peak,
+61 MB below the ceiling. The popup's live click path and visible caret were not
+exercised in a desktop session.

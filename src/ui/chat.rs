@@ -25,6 +25,32 @@ const EMOJI_CHOICES: &[&str] = &[
     "💬", "📎", "📷", "🎮", "🎵", "🍕", "🍺", "☕", "🌙", "⭐",
 ];
 
+/// Insert `text` at the selected character range, or at the end when there is
+/// no editor selection. Returns the caret position after the inserted text.
+fn insert_at_char_range(
+    draft: &mut String,
+    text: &str,
+    selected: Option<std::ops::Range<usize>>,
+) -> usize {
+    let len = draft.chars().count();
+    let mut range = selected.unwrap_or(len..len);
+    if range.start > range.end {
+        std::mem::swap(&mut range.start, &mut range.end);
+    }
+    let start = range.start.min(len);
+    let end = range.end.min(len);
+    let byte_start = draft
+        .char_indices()
+        .nth(start)
+        .map_or(draft.len(), |(byte, _)| byte);
+    let byte_end = draft
+        .char_indices()
+        .nth(end)
+        .map_or(draft.len(), |(byte, _)| byte);
+    draft.replace_range(byte_start..byte_end, text);
+    start + text.chars().count()
+}
+
 /// The stamp drawn on a message row, plus the exact time for its tooltip.
 /// `long` adds Today/Yesterday/`d Mon` so every row carries its date; the clock
 /// alone is enough when the setting is off. Pure so day boundaries are testable.
@@ -772,10 +798,26 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             });
                     });
                     if let Some(emoji) = chosen {
-                        app.draft.push_str(&emoji);
-                        // Clicking the popup moved focus off the field; put it
-                        // back so the next keystroke lands in the draft.
+                        let selection = editor_id
+                            .and_then(|id| egui::text_edit::TextEditState::load(ui.ctx(), id))
+                            .and_then(|state| state.cursor.char_range())
+                            .map(|range| {
+                                let chars = range.as_sorted_char_range();
+                                chars.start.0..chars.end.0
+                            });
+                        let caret = insert_at_char_range(&mut app.draft, &emoji, selection);
                         if let Some(editor_id) = editor_id {
+                            let mut state =
+                                egui::text_edit::TextEditState::load(ui.ctx(), editor_id)
+                                    .unwrap_or_default();
+                            state
+                                .cursor
+                                .set_char_range(Some(egui::text::CCursorRange::one(
+                                    egui::text::CCursor::new(caret),
+                                )));
+                            state.store(ui.ctx(), editor_id);
+                            // Clicking the popup moved focus off the field; put it
+                            // back so the next keystroke lands at the new caret.
                             ui.ctx()
                                 .memory_mut(|memory| memory.request_focus(editor_id));
                         }
@@ -2021,6 +2063,23 @@ mod tests {
         assert_eq!(unique.len(), EMOJI_CHOICES.len());
         assert!(EMOJI_CHOICES.iter().all(|emoji| !emoji.is_empty()));
         assert!(EMOJI_CHOICES.len() >= 100);
+    }
+
+    #[test]
+    fn emoji_insertion_uses_the_caret_and_replaces_a_selection() {
+        let mut draft = "héllo".to_string();
+        let caret = insert_at_char_range(&mut draft, "X", Some(2..2));
+        assert_eq!(draft, "héXllo");
+        assert_eq!(caret, 3);
+
+        let mut draft = "héllo wörld".to_string();
+        let caret = insert_at_char_range(&mut draft, "😀", Some(1..3));
+        assert_eq!(draft, "h😀lo wörld");
+        assert_eq!(caret, 2);
+
+        let caret = insert_at_char_range(&mut draft, "!", None);
+        assert_eq!(draft, "h😀lo wörld!");
+        assert_eq!(caret, draft.chars().count());
     }
 
     #[test]

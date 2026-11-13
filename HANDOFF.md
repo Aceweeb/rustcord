@@ -7,12 +7,18 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 342 lib + 5 bin tests passing (347)
+- `cargo test --all-targets`: 343 lib + 5 bin tests passing (348)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 221 MB RSS, 171 MB PSS, 236 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
+- Runtime: 220 MB RSS, 154 MB PSS, 239 MB peak, 7–12 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
 
 ## What changed most recently
+
+Caret-aware emoji insertion (`DECISIONS.md` D78): the composer reads the text
+editor's persisted character range, inserts the chosen glyph at the collapsed
+caret or replaces the selection, and restores focus with the caret after it.
+With no editor state it falls back to appending. The UI event path was not
+visually checked; the pure insertion helper is unit-tested.
 
 Message dividers (`DECISIONS.md` D77): local-date separators and a NEW line at
 the first live-unread message, rendered as measured virtual rows; divider rows
@@ -71,6 +77,11 @@ Message dividers (`DECISIONS.md` D77):
 - `src/models.rs` — first-unread id in `UnreadTracker`.
 - `src/app.rs` — snapshot the first unread when opening a channel.
 - `src/ui/chat.rs` — date/NEW virtual rows, local labels and divider drawing.
+
+Caret-aware emoji insertion (`DECISIONS.md` D78):
+
+- `src/ui/chat.rs` — read the editor's character range, replace/insert at the
+  caret, store the new cursor and restore focus; pure insertion helper + test.
 
 Role-grouped member panel (`DECISIONS.md` D76):
 
