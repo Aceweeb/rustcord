@@ -1632,3 +1632,32 @@ The strip now has a 40 px album-art thumbnail and a track line whose glyph is
 `· paused` clock label. Art comes from `i.scdn.co`, which is added to both the image
 loader's host allowlist and the privacy summary's; it is still HTTPS-only and
 host-exact. Two tests cover paused-vs-playing parsing and the frozen progress clock.
+
+## D56. DMs open from a member row and live under a synthetic guild
+
+There was no DM path at all: `ChannelKind` had no DM variant, nothing called
+`POST /users/@me/channels`, and the rail only knew real guilds. Opening a DM from
+the member list needs a place to put the resulting channel without rebuilding the
+rail around a second channel type.
+
+**How a DM enters the client.** A member row now has a `DM` button (live
+connections only, never on your own row). Clicking it calls
+`DiscordClient::open_dm`, which POSTs `{"recipient_id": …}` to
+`/users/@me/channels` — Discord returns the existing channel if one is already open,
+so the id is cached per recipient and a second click is instant. The returned
+channel is named after the recipient's display name.
+
+**Where it lives.** DM channels reuse `ChannelKind::Text` and a synthetic guild id,
+`DM_GUILD_ID`, rather than adding a fourth kind. That is deliberate: every existing
+text path — history paging, send, edit, delete, unread, typing, search — already
+keys off `ChannelKind::Text`, so a DM gets all of it without touching those checks.
+The synthetic guild appears in the rail as "Direct Messages"; `ensure_members`
+refuses to ask Discord for its roster, the sidebar labels it `@`/DIRECT MESSAGES
+instead of `#`/TEXT CHANNELS, hides the voice section, and the chat header uses `@`.
+Real guild ids are numeric snowflakes, so `"direct-messages"` cannot collide.
+
+**Limits.** Bots can only DM users who share a guild with them; Discord rejects
+others, and that error is surfaced in the status line. The DM list is session-only:
+nothing is written to disk, so a restart shows no DM history until one is reopened
+from a member. A failed request leaves the status line explaining why, and the
+result channel is polled on the UI thread like the roster fetch.

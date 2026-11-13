@@ -597,7 +597,17 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     let mut nav_index = 0usize;
-                    category_label(ui, &theme, "TEXT CHANNELS");
+                    let is_dm_guild =
+                        app.selected_guild.as_deref() == Some(crate::models::DM_GUILD_ID);
+                    category_label(
+                        ui,
+                        &theme,
+                        if is_dm_guild {
+                            "DIRECT MESSAGES"
+                        } else {
+                            "TEXT CHANNELS"
+                        },
+                    );
                     for channel in app.channels.iter().filter(|channel| {
                         Some(&channel.guild_id) == app.selected_guild.as_ref()
                             && channel.kind == ChannelKind::Text
@@ -609,7 +619,7 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             ui,
                             &theme,
                             selected,
-                            "#",
+                            if is_dm_guild { "@" } else { "#" },
                             &channel.name,
                             app.unread.get(&channel.id),
                             focused,
@@ -618,31 +628,34 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                         }
                     }
 
-                    ui.add_space(14.0);
-                    category_label(ui, &theme, "VOICE CHANNELS");
-                    for channel in app.channels.iter().filter(|channel| {
-                        Some(&channel.guild_id) == app.selected_guild.as_ref()
-                            && channel.kind == ChannelKind::Voice
-                    }) {
-                        let selected = app.selected_channel.as_deref() == Some(channel.id.as_str());
-                        let focused = app.navigator.on_channel(nav_index);
-                        nav_index += 1;
-                        if channel_row(
-                            ui,
-                            &theme,
-                            selected,
-                            "🔊",
-                            &channel.name,
-                            app.unread.get(&channel.id),
-                            focused,
-                        ) {
-                            clicked = Some(channel.id.clone());
-                        }
+                    if !is_dm_guild {
+                        ui.add_space(14.0);
+                        category_label(ui, &theme, "VOICE CHANNELS");
+                        for channel in app.channels.iter().filter(|channel| {
+                            Some(&channel.guild_id) == app.selected_guild.as_ref()
+                                && channel.kind == ChannelKind::Voice
+                        }) {
+                            let selected =
+                                app.selected_channel.as_deref() == Some(channel.id.as_str());
+                            let focused = app.navigator.on_channel(nav_index);
+                            nav_index += 1;
+                            if channel_row(
+                                ui,
+                                &theme,
+                                selected,
+                                "🔊",
+                                &channel.name,
+                                app.unread.get(&channel.id),
+                                focused,
+                            ) {
+                                clicked = Some(channel.id.clone());
+                            }
 
-                        // Who is in the channel, as Discord lists them under it.
-                        // Live gateway data only: there is no audio here (D24).
-                        for member in app.voice.members(&channel.id) {
-                            voice_member_row(ui, &theme, &member.username);
+                            // Who is in the channel, as Discord lists them under it.
+                            // Live gateway data only: there is no audio here (D24).
+                            for member in app.voice.members(&channel.id) {
+                                voice_member_row(ui, &theme, &member.username);
+                            }
                         }
                     }
                     ui.add_space(8.0);

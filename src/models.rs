@@ -89,6 +89,10 @@ impl User {
     }
 }
 
+/// Synthetic guild that holds DM channels. Real guild ids are numeric snowflakes,
+/// so this can never collide with one from Discord.
+pub const DM_GUILD_ID: &str = "direct-messages";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Guild {
     pub id: String,

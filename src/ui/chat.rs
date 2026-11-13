@@ -62,8 +62,13 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 .selected_channel_name()
                 .map(str::to_string)
                 .unwrap_or_else(|| "No channel selected".to_string());
+            let is_dm = app
+                .selected_channel
+                .as_deref()
+                .and_then(|id| app.channels.iter().find(|known| known.id == id))
+                .is_some_and(|known| known.guild_id == crate::models::DM_GUILD_ID);
             ui.label(
-                RichText::new("#")
+                RichText::new(if is_dm { "@" } else { "#" })
                     .size(20.0)
                     .color(app.plugins.theme().muted),
             );
@@ -153,6 +158,8 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         }
     }
 
+    let mut dm_target: Option<crate::models::User> = None;
+
     egui::Panel::right("member_list")
         .exact_size(240.0)
         .resizable(false)
@@ -220,10 +227,23 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                         ui.horizontal(|ui| {
                             let _ = avatar(app, ui, member, 32.0);
                             ui.label(RichText::new(&member.username).size(14.0).color(theme.text));
+                            if app.live_data && member.id != app.current_user.id {
+                                if ui
+                                    .small_button("DM")
+                                    .on_hover_text("Open a direct message")
+                                    .clicked()
+                                {
+                                    dm_target = Some(member.clone());
+                                }
+                            }
                         });
                     }
                 });
         });
+
+    if let Some(user) = dm_target {
+        app.open_dm_with(&user);
+    }
 
     let mut status = app.gateway_status.clone();
     if let Some(line) = &app.status_line {

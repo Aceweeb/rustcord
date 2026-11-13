@@ -174,6 +174,10 @@ pub struct RustcordApp {
     pub(crate) member_intent_missing: bool,
     member_tx: Sender<MemberResult>,
     member_results: Receiver<MemberResult>,
+    /// Recipient user id → DM channel id, for the channels opened this session.
+    dm_channels: HashMap<String, String>,
+    dm_tx: Sender<DmResult>,
+    dm_results: Receiver<DmResult>,
     /// Measured row heights for the virtualised message list.
     pub(crate) metrics: RowMetrics,
     pub(crate) metrics_channel: Option<String>,
@@ -216,6 +220,12 @@ enum MemberResult {
         guild_id: String,
         error: String,
     },
+}
+
+/// A DM channel opened (or reused) through REST.
+enum DmResult {
+    Opened { user_id: String, channel: Channel },
+    Failed(String),
 }
 
 /// Result of an outbound edit or delete, applied on the UI thread.
@@ -412,6 +422,7 @@ impl RustcordApp {
         let (history_tx, history_rx) = mpsc::channel();
         let (action_tx, action_results) = mpsc::channel();
         let (member_tx, member_results) = mpsc::channel();
+        let (dm_tx, dm_results) = mpsc::channel();
 
         let mut app = Self {
             settings,
@@ -474,6 +485,9 @@ impl RustcordApp {
             member_intent_missing: false,
             member_tx,
             member_results,
+            dm_channels: HashMap::new(),
+            dm_tx,
+            dm_results,
             metrics: RowMetrics::new(),
             metrics_channel: None,
             history_tx,
@@ -928,6 +942,78 @@ impl RustcordApp {
             .unwrap_or(&[])
     }
 
+    /// Open the DM with a member. Discord returns the existing channel when one
+    /// is already open, so a successful result is cached by recipient id.
+    pub(crate) fn open_dm_with(&mut self, user: &User) {
+        if !self.live_data {
+            self.status_line = Some("direct messages need a connected account".to_string());
+            return;
+        }
+        if let Some(channel_id) = self.dm_channels.get(&user.id).cloned() {
+            if self.channels.iter().any(|channel| channel.id == channel_id) {
+                self.selected_guild = Some(crate::models::DM_GUILD_ID.to_string());
+                self.select_channel(channel_id);
+                return;
+            }
+        }
+
+        let (Some(runtime), token) = (&self.runtime, self.token_draft.clone()) else {
+            self.status_line = Some("not connected; cannot open a DM".to_string());
+            return;
+        };
+        let token_is_bot = self.token_is_bot;
+        let tx = self.dm_tx.clone();
+        let user_id = user.id.clone();
+        self.status_line = Some(format!("opening a DM with {}…", user.display_name()));
+
+        runtime.spawn(async move {
+            let result = match DiscordClient::new(token, token_is_bot) {
+                Ok(client) => client.open_dm(&user_id).await,
+                Err(err) => Err(err),
+            };
+            let _ = tx.send(match result {
+                Ok(channel) => DmResult::Opened { user_id, channel },
+                Err(err) => DmResult::Failed(format!("{err:#}")),
+            });
+        });
+    }
+
+    fn poll_dm(&mut self) {
+        while let Ok(result) = self.dm_results.try_recv() {
+            match result {
+                DmResult::Opened { user_id, channel } => {
+                    if !self
+                        .guilds
+                        .iter()
+                        .any(|guild| guild.id == crate::models::DM_GUILD_ID)
+                    {
+                        self.guilds.push(Guild {
+                            id: crate::models::DM_GUILD_ID.to_string(),
+                            name: "Direct Messages".to_string(),
+                            icon: None,
+                        });
+                    }
+                    self.dm_channels.insert(user_id, channel.id.clone());
+                    if let Some(existing) = self
+                        .channels
+                        .iter_mut()
+                        .find(|known| known.id == channel.id)
+                    {
+                        *existing = channel.clone();
+                    } else {
+                        self.channels.push(channel.clone());
+                    }
+                    self.selected_guild = Some(crate::models::DM_GUILD_ID.to_string());
+                    self.select_channel(channel.id.clone());
+                    self.status_line = Some(format!("opened a DM with {}", channel.name));
+                }
+                DmResult::Failed(error) => {
+                    self.status_line = Some(format!("could not open the DM: {error}"));
+                }
+            }
+        }
+    }
+
     /// Fetch the selected guild's roster once. The Members intent is privileged;
     /// `member_intent_missing` stops the retry loop when Discord refuses it.
     fn ensure_members(&mut self) {
@@ -937,6 +1023,10 @@ impl RustcordApp {
         let Some(guild_id) = self.selected_guild.clone() else {
             return;
         };
+        // The synthetic DM guild has no roster; asking would error every visit.
+        if guild_id == crate::models::DM_GUILD_ID {
+            return;
+        }
         if self.members.contains_key(&guild_id) || self.members_loading.contains(&guild_id) {
             return;
         }
@@ -2412,6 +2502,7 @@ impl RustcordApp {
         self.log_filter.clear();
         self.members.clear();
         self.members_loading.clear();
+        self.dm_channels.clear();
         self.member_intent_missing = false;
         self.cancel_edit();
         self.replying_to = None;
@@ -2644,6 +2735,7 @@ impl eframe::App for RustcordApp {
         self.poll_action_results();
         self.poll_history();
         self.poll_members();
+        self.poll_dm();
         self.ensure_history();
         self.ensure_members();
         self.sync_image_budget();

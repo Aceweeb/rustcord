@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Open a DM from the member list (`DECISIONS.md` D56): `DM` button, REST
+  open-or-create, synthetic Direct Messages guild, `@` labels, member fetch skip.
+  1 new test; live Discord call unverified (D28), list is session-only.
 - [x] Member-list avatars (`DECISIONS.md` D54): roster rows use the shared avatar
   helper and profile card; avatars share the image budget. Visual check pending
   (D28).

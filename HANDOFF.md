@@ -7,12 +7,21 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 306 lib + 5 bin tests passing (311)
+- `cargo test --all-targets`: 307 lib + 5 bin tests passing (312)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+DMs from the member list (`DECISIONS.md` D56):
+
+- `src/models.rs` — `DM_GUILD_ID`.
+- `src/api/discord.rs` — `open_dm`, `DiscordDmChannel::into_channel`, 1 test.
+- `src/app.rs` — `DmResult`, `open_dm_with`, `poll_dm`, `dm_channels` cache;
+  `ensure_members` skips the synthetic guild.
+- `src/ui/chat.rs` — member-row `DM` button, `@` header.
+- `src/ui/sidebar.rs` — DIRECT MESSAGES labels, `@` glyph, no voice section.
 
 Album art and pause state in the now-playing strip (`DECISIONS.md` D55):
 

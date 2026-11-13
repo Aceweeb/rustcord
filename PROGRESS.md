@@ -545,6 +545,11 @@ Priority order for the next session:
   with `is_playing`, progress freezes while paused, `i.scdn.co` added to the image
   and privacy allowlists. 3 new tests; suite 311.
 
+- DMs from the member list (D56): `open_dm` POSTs `/users/@me/channels`, channels
+  live under the synthetic `direct-messages` guild and reuse all text-channel
+  paths; rail/header label them `@`. 1 new test; suite 312. Not exercised against
+  Discord (D28); session-only list.
+
 ---
 
 ## 7. Notes for the next agent

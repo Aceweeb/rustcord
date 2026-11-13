@@ -1,7 +1,7 @@
 use crate::api::ratelimit::{
     global_from_body, retry_after_from_body, RateLimitHeaders, RateLimiter, Route, MAX_WAIT_SECS,
 };
-use crate::models::{Attachment, Embed, Message, Presence, Reaction, ReplyRef, User};
+use crate::models::{Attachment, Channel, Embed, Message, Presence, Reaction, ReplyRef, User};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use reqwest::header::{AUTHORIZATION, USER_AGENT};
@@ -239,6 +239,21 @@ impl DiscordClient {
         Ok(raw.into())
     }
 
+    /// Open (or reuse) the DM channel with a user. Discord returns the existing
+    /// channel when one is already open, so callers can cache the id.
+    pub async fn open_dm(&self, recipient_id: &str) -> Result<Channel> {
+        let body = self
+            .request(
+                reqwest::Method::POST,
+                "/users/@me/channels",
+                Some(serde_json::json!({ "recipient_id": recipient_id })),
+            )
+            .await?;
+        let raw: DiscordDmChannel =
+            serde_json::from_str(&body).context("could not decode the DM channel")?;
+        raw.into_channel()
+    }
+
     /// Fetch one page of channel history.
     ///
     /// Discord returns newest-first; the result is oldest-first for display.
@@ -433,6 +448,40 @@ impl DiscordClient {
         let raw: DiscordMessage =
             serde_json::from_str(&body).context("could not decode Discord message")?;
         Message::try_from(raw)
+    }
+}
+
+/// The DM channel Discord returns from `POST /users/@me/channels`.
+#[derive(Debug, Deserialize)]
+struct DiscordDmChannel {
+    id: String,
+    #[serde(default)]
+    recipients: Vec<DiscordUser>,
+}
+
+impl DiscordDmChannel {
+    fn into_channel(self) -> Result<Channel> {
+        if self.id.is_empty() {
+            anyhow::bail!("Discord returned a DM channel without an id");
+        }
+        let name = self
+            .recipients
+            .first()
+            .map(|user| {
+                user.global_name
+                    .clone()
+                    .unwrap_or_else(|| user.username.clone())
+            })
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "Direct message".to_string());
+        Ok(Channel {
+            id: self.id,
+            name,
+            // DMs behave like text channels for history, sending and unread
+            // tracking; the synthetic guild id is what distinguishes them.
+            kind: crate::models::ChannelKind::Text,
+            guild_id: crate::models::DM_GUILD_ID.to_string(),
+        })
     }
 }
 
@@ -830,6 +879,30 @@ mod tests {
             ..Attachment::default()
         };
         assert!(!document.is_image());
+    }
+
+    #[test]
+    fn a_dm_channel_uses_the_recipients_display_name() {
+        let raw: DiscordDmChannel = serde_json::from_str(
+            r#"{"id":"500","recipients":[
+                {"id":"42","username":"jane","global_name":"Jane","avatar":null}
+            ]}"#,
+        )
+        .expect("dm payload");
+        let channel = raw.into_channel().expect("channel");
+        assert_eq!(channel.id, "500");
+        assert_eq!(channel.name, "Jane");
+        assert_eq!(channel.kind, crate::models::ChannelKind::Text);
+        assert_eq!(channel.guild_id, crate::models::DM_GUILD_ID);
+
+        // A payload without a recipient still names the channel and stays usable.
+        let bare: DiscordDmChannel = serde_json::from_str(r#"{"id":"501"}"#).expect("bare payload");
+        assert_eq!(bare.into_channel().expect("channel").name, "Direct message");
+
+        // Discord must return an id; an empty one is an error, not a clickable row.
+        let empty: DiscordDmChannel =
+            serde_json::from_str(r#"{"id":"","recipients":[]}"#).expect("empty payload");
+        assert!(empty.into_channel().is_err());
     }
 
     #[test]
