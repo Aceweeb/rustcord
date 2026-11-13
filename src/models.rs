@@ -139,6 +139,9 @@ pub struct Guild {
     /// shows this as the total and the roster length only as a fallback.
     #[serde(default)]
     pub member_count: Option<u64>,
+    /// Discord's boost count for the guild, when the payload carried it.
+    #[serde(default)]
+    pub premium_subscription_count: Option<u64>,
     /// Guild roles from GUILD_CREATE/READY, used to group the member panel by
     /// hoisted role. Empty until the gateway supplies them.
     #[serde(default)]
@@ -1530,6 +1533,7 @@ mod tests {
             icon: Some("a_animated".to_string()),
             banner: Some("a_animated_banner".to_string()),
             member_count: None,
+            premium_subscription_count: None,
             roles: Vec::new(),
         };
         assert!(guild

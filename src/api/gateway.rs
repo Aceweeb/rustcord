@@ -627,6 +627,7 @@ fn parse_guild(value: &Value) -> Option<(Guild, Vec<Channel>)> {
     let icon = value["icon"].as_str().map(str::to_string);
     let banner = value["banner"].as_str().map(str::to_string);
     let member_count = value["member_count"].as_u64();
+    let premium_subscription_count = value["premium_subscription_count"].as_u64();
     let roles = value["roles"]
         .as_array()
         .map(|roles| roles.iter().filter_map(parse_role).collect())
@@ -649,6 +650,7 @@ fn parse_guild(value: &Value) -> Option<(Guild, Vec<Channel>)> {
             icon,
             banner,
             member_count,
+            premium_subscription_count,
             roles,
         },
         channels,
@@ -885,12 +887,14 @@ mod tests {
             "icon": "abc123",
             "banner": "banner456",
             "member_count": 42,
+            "premium_subscription_count": 9,
             "channels": []
         }))
         .expect("guild");
         assert_eq!(guild.icon.as_deref(), Some("abc123"));
         assert_eq!(guild.banner.as_deref(), Some("banner456"));
         assert_eq!(guild.member_count, Some(42));
+        assert_eq!(guild.premium_subscription_count, Some(9));
         assert_eq!(
             guild.icon_url().as_deref(),
             Some("https://cdn.discordapp.com/icons/10/abc123.png?size=96")

@@ -8,7 +8,9 @@
 
 Last updated: 2026-11-12 (Europe/Berlin)
 
-Latest increment: a colour per folder, assigned from a palette and editable from
+Latest increment: Discord UI fidelity (D80) — banner guild header, real-count
+boost strip, inline search, role-coloured display names, red NEW rule and tinted
+account strip. Before that: a colour per folder, assigned from a palette and editable from
 the folder menu (D38); the server peek's channels are clickable (D37); a native message log of edits and deletions (D36); a
 hover peek of a server's channels beside the rail (D35);
 folder renaming from the folder menu (D34); keyboard-only navigation with an
@@ -660,6 +662,14 @@ Priority order for the next session:
   map `files[n]` to matching attachment ids and filenames. 2 new tests; suite
   350. Release 216 MB RSS / 154 MB PSS / 238 MB peak, 62 MB of headroom. Live
   multi-file upload not exercised.
+
+- Discord fidelity pass (D80): 100 px guild banner header from the bounded image
+  cache, count-backed boost strip, Discord search pill, role-coloured display
+  names, red right-aligned NEW rule, accent-tinted account strip with a working
+  Settings gear, and a hidden-by-default member list matching the reference.
+  2 new tests; suite 352. Release 206 MB RSS / 155 MB PSS / 217 MB peak, 83 MB
+  of headroom. No visual check; the OS title bar stays native and unimplemented
+  voice controls were not faked.
 
 ---
 

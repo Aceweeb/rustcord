@@ -424,6 +424,7 @@ impl RustcordApp {
                 icon: None,
                 banner: None,
                 member_count: None,
+                premium_subscription_count: None,
                 roles: Vec::new(),
             },
             Guild {
@@ -432,6 +433,7 @@ impl RustcordApp {
                 icon: None,
                 banner: None,
                 member_count: None,
+                premium_subscription_count: None,
                 roles: Vec::new(),
             },
             Guild {
@@ -440,6 +442,7 @@ impl RustcordApp {
                 icon: None,
                 banner: None,
                 member_count: None,
+                premium_subscription_count: None,
                 roles: Vec::new(),
             },
         ];
@@ -669,7 +672,7 @@ impl RustcordApp {
             dm_loaded: false,
             dm_loading: false,
             collapsed_categories: std::collections::BTreeSet::new(),
-            show_member_list: true,
+            show_member_list: false,
             metrics: RowMetrics::new(),
             metrics_channel: None,
             history_tx,
@@ -1300,6 +1303,7 @@ impl RustcordApp {
                     icon: None,
                     banner: None,
                     member_count: None,
+                    premium_subscription_count: None,
                     roles: Vec::new(),
                 },
             );

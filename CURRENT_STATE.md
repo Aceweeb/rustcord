@@ -6,7 +6,7 @@ Last verified: 2026-11-13, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **350 passed (345 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **352 passed (347 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -17,14 +17,14 @@ Release binary, 1280×800 window, default settings, theme file loaded.
 
 | Metric | Latest | How measured |
 | --- | --- | --- |
-| RSS | **216 MB** | `/proc/<pid>/status` `VmRSS`, 20 s sample |
-| PSS | **154 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
-| Peak (`VmHWM`) | **238 MB** | kernel high-water mark |
+| RSS | **206 MB** | `/proc/<pid>/status` `VmRSS`, 20 s sample |
+| PSS | **155 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
+| Peak (`VmHWM`) | **217 MB** | kernel high-water mark |
 | CPU | **0.0% without animation; nonzero while animated surfaces are visible** | ticks/s; 12.5 fps redraws; guild icons stop when unfocused |
 | Threads | **7–12** | `/proc/<pid>/status` |
 | Sign-in screen | lower than a channel session | no channel surface is built |
 
-The 300 MB ceiling holds with about 62 MB of headroom. The earlier 159 MB figure
+The 300 MB ceiling holds with about 83 MB of headroom. The earlier 159 MB figure
 predates animated guild icons, the roster-backed member panel, and periodic count
 refreshes; re-measure after any surface that adds textures or caches.
 
@@ -87,8 +87,12 @@ count.
 
 Default preset **Discord** (`#313338` chat, `#2b2d31` sidebars, `#1e1f22` rail,
 `#5865f2` blurple, D23), with Discord's measurements as constants in
-`src/ui/sidebar.rs`: 72 px rail, 240 px channel list, 48 px guild header,
+`src/ui/sidebar.rs`: 72 px rail, 240 px channel list, 100 px banner guild header,
 48 px guild icons, 34 px channel rows, 240 px member list, 40 px message avatars.
+The header shows the guild banner through the bounded image cache, the guild name
+and member toggle, and a boost strip only when `premium_subscription_count` is
+present. The account strip is accent-tinted and its gear opens Settings; the
+member list starts hidden to match the reference and toggles from the header.
 
 Guild icons are circles that become rounded squares when active, with the white
 selection pill; channel rows are painted (8 px inset, 4 px radius, hover and
@@ -311,6 +315,9 @@ custom guild emoji are not listed yet.
   log ring eviction, gateway payload parsing, EGL vendor selection policy,
   history page parsing (order, reactions, malformed bodies) and row
   virtualisation (viewport ranges, clamping, 10k-row cost).
+- Also unit-tested: highest-position coloured role selection for message names
+  and boost-tier progress. The banner header, search pill, tinted account strip
+  and red `NEW` rule have no automated visual check (no UI test harness).
 - Not tested automatically: the GUI itself (no UI test harness), live Discord
   connectivity (needs a real bot token), keyring storage (no Secret Service
   provider was assumed, and none was used).

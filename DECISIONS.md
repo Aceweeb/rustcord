@@ -2220,3 +2220,41 @@ mapping; the suite is 350. The 20 s release sample measured 216 MB RSS / 154 MB
 PSS / 238 MB peak, 62 MB below the ceiling. The live multi-file upload and
 composer rows were not exercised in a desktop session, so Discord's acceptance
 of the multipart form remains unverified.
+
+## D80. The workspace chrome follows the supplied Discord reference
+
+The reference screenshot shows a server banner header, a boost strip, a search
+field in the chat header, role-coloured display names and a right-aligned NEW
+pill. Those are layout and identity details that the existing egui client could
+adopt without changing its data model or adding a dependency.
+
+The guild header grows from 48 to 100 px and draws the selected guild's banner
+through the existing bounded image cache. A dark translucent overlay keeps white
+text legible on pale banners and light presets; guilds without a banner get a
+themed accent fallback. The guild name, chevron and member-list toggle sit over
+the banner. The boost strip renders only when `GUILD_CREATE`/READY supplied
+`premium_subscription_count`; its fill is progress toward Discord's next
+published tier (2, 7, 14), not a guessed per-server goal. No new image or
+texture path was introduced.
+
+The chat header's magnifier became a Discord-style search pill that opens the
+existing search, with the member toggle beside it. Message rows resolve the
+author against the live roster because message payloads do not carry guild role
+ids, then use the highest-position non-zero role colour and the display name;
+without a roster entry they fall back to the payload author and the theme text
+colour. The NEW separator is now a thin red rule with an outlined pill at the
+right edge, matching Discord's unread marker.
+
+The account strip is tinted with the accent and its gear opens Settings instead
+of being decorative. The member list starts hidden to match the reference and
+can be reopened from the header. The composer's attachment control uses the
+reference's plus glyph but keeps the real file picker. Voice mute/deafen controls
+were not added because voice actions are unimplemented; placing dead buttons in
+their place would violate the project's no-fake-controls rule.
+
+Two tests cover highest-coloured-role selection and boost-tier progress; the
+suite is 352. The 20 s release sample measured 206 MB RSS / 155 MB PSS / 217 MB
+peak, 83 MB below the ceiling. The native UI was not visually inspected in this
+environment. The OS title bar remains native, and the reference's invite widget,
+voice footer controls and hidden boost goal configuration are not reproduced, so
+this is content-level fidelity rather than literal 1:1 pixel parity.

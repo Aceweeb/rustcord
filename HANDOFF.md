@@ -7,12 +7,23 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 345 lib + 5 bin tests passing (350)
+- `cargo test --all-targets`: 347 lib + 5 bin tests passing (352)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 216 MB RSS, 154 MB PSS, 238 MB peak, 7–12 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
+- Runtime: 206 MB RSS, 155 MB PSS, 217 MB peak, 7–12 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
 
 ## What changed most recently
+
+Discord fidelity pass (`DECISIONS.md` D80): the channel sidebar now has a
+100 px banner header using the bounded image cache, guild name/chevron, member
+toggle and a real-count boost strip. The chat header has a Discord-style search
+pill; message authors use roster-backed display names and their highest
+positioned role colour; the NEW separator is a red rule with a right-aligned
+pill. The account strip is accent-tinted with a working Settings gear, and the
+member list starts hidden to match the reference. Two new tests; suite 352.
+Release 206 MB RSS / 155 MB PSS / 217 MB peak, 83 MB of headroom. Native visuals
+were not inspected; the OS title bar remains native, so this is content-level
+fidelity rather than literal pixel parity.
 
 Bounded attachment queue (`DECISIONS.md` D79): the paperclip accepts multiple
 files, the composer keeps up to ten removable rows with a running total, and the

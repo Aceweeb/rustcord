@@ -12,7 +12,20 @@ use egui::{Color32, RichText};
 const RAIL_WIDTH: f32 = 72.0;
 const CHANNEL_LIST_WIDTH: f32 = 240.0;
 const GUILD_ICON: f32 = 48.0;
+const GUILD_HEADER_HEIGHT: f32 = 100.0;
 const CHANNEL_ROW_HEIGHT: f32 = 34.0;
+
+/// Progress toward Discord's next boost tier (2, 7, then 14 boosts). The count
+/// is real; the goal tier is the next published milestone, not a hidden
+/// per-server setting that the API does not expose.
+fn boost_progress(count: u64) -> f32 {
+    match count {
+        0..2 => count as f32 / 2.0,
+        2..7 => (count - 2) as f32 / 5.0,
+        7..14 => (count - 7) as f32 / 7.0,
+        _ => 1.0,
+    }
+}
 /// Rows are inset from the panel edge, as Discord's are.
 const ROW_INSET: f32 = 8.0;
 
@@ -590,40 +603,167 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
     let theme = app.plugins.theme().clone();
     let mut clicked: Option<String> = None;
     let mut toggle_category: Option<String> = None;
+    let mut toggle_members = false;
 
-    let guild_name = app
+    let selected_guild = app
         .selected_guild
         .as_ref()
         .and_then(|id| app.guilds.iter().find(|guild| &guild.id == id))
+        .cloned();
+    let guild_name = selected_guild
+        .as_ref()
         .map(|guild| guild.name.clone())
         .unwrap_or_else(|| "Rustcord".to_string());
+    let banner_texture = selected_guild
+        .as_ref()
+        .and_then(crate::models::Guild::banner_url)
+        .and_then(|url| {
+            app.images.prepare(std::slice::from_ref(&url));
+            app.images.peek(&url).cloned()
+        });
 
     egui::Panel::left("channel_list")
         .exact_size(CHANNEL_LIST_WIDTH)
         .resizable(false)
         .frame(egui::Frame::new().fill(theme.surface))
         .show(ui, |ui| {
-            // Guild header: name, chevron, settings, 48 px like Discord's.
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(16, 0))
-                .show(ui, |ui| {
-                    ui.set_height(48.0);
-                    ui.horizontal_centered(|ui| {
-                        ui.label(
-                            RichText::new(&guild_name)
-                                .size(15.0)
-                                .strong()
-                                .color(theme.text),
-                        );
-                        ui.label(RichText::new("⌄").size(11.0).color(theme.muted));
-                    });
+            // Discord's guild header is a banner with the name over its lower
+            // edge, not a flat title row. The texture comes from the same LRU
+            // cache as avatars and attachments, and a themed gradient is used
+            // until it arrives or when the guild has no banner.
+            let (header, _) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), GUILD_HEADER_HEIGHT),
+                egui::Sense::hover(),
+            );
+            if let Some(texture) = &banner_texture {
+                ui.painter().image(
+                    texture.id(),
+                    header,
+                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+            } else {
+                ui.painter().rect_filled(
+                    header,
+                    0.0,
+                    crate::utils::mix(theme.surface_alt, theme.accent, 0.16),
+                );
+            }
+            // Keep the overlaid text legible on pale banners and light presets.
+            ui.painter()
+                .rect_filled(header, 0.0, Color32::from_black_alpha(46));
+            ui.painter().rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(header.left(), header.bottom() - 42.0),
+                    header.max,
+                ),
+                0.0,
+                Color32::from_black_alpha(92),
+            );
+            ui.painter().text(
+                egui::pos2(header.left() + 16.0, header.bottom() - 16.0),
+                egui::Align2::LEFT_BOTTOM,
+                &guild_name,
+                egui::FontId::proportional(15.0),
+                Color32::WHITE,
+            );
+            let name_width = ui
+                .painter()
+                .layout_no_wrap(
+                    guild_name.clone(),
+                    egui::FontId::proportional(15.0),
+                    Color32::WHITE,
+                )
+                .size()
+                .x;
+            ui.painter().text(
+                egui::pos2(
+                    (header.left() + 22.0 + name_width).min(header.right() - 44.0),
+                    header.bottom() - 19.0,
+                ),
+                egui::Align2::LEFT_CENTER,
+                "⌄",
+                egui::FontId::proportional(11.0),
+                Color32::from_rgb(0xb9, 0xbb, 0xc0),
+            );
+            let members = egui::Rect::from_center_size(
+                egui::pos2(header.right() - 22.0, header.top() + 22.0),
+                egui::vec2(30.0, 30.0),
+            );
+            let members = ui
+                .interact(
+                    members,
+                    egui::Id::unique("guild_header_members"),
+                    egui::Sense::click(),
+                )
+                .on_hover_text(if app.show_member_list {
+                    "Hide member list"
+                } else {
+                    "Show member list"
                 });
+            if members.hovered() {
+                ui.painter().circle_filled(
+                    members.rect.center(),
+                    13.0,
+                    Color32::from_black_alpha(70),
+                );
+            }
+            ui.painter().text(
+                members.rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "👥",
+                egui::FontId::proportional(15.0),
+                Color32::from_rgb(0xd7, 0xd9, 0xdd),
+            );
+            if members.clicked() {
+                toggle_members = true;
+            }
 
             ui.painter().hline(
                 ui.max_rect().x_range(),
-                ui.cursor().top(),
+                header.bottom(),
                 egui::Stroke::new(1.0, lift(theme.surface, -8)),
             );
+            if let Some(count) = selected_guild
+                .as_ref()
+                .and_then(|guild| guild.premium_subscription_count)
+                .filter(|count| *count > 0)
+            {
+                ui.add_space(6.0);
+                let (row, _) = ui.allocate_exact_size(
+                    egui::vec2(ui.available_width(), 28.0),
+                    egui::Sense::hover(),
+                );
+                let track = egui::Rect::from_min_max(
+                    egui::pos2(row.left() + 8.0, row.top()),
+                    egui::pos2(row.right() - 8.0, row.bottom()),
+                );
+                ui.painter().rect_filled(
+                    track,
+                    4.0,
+                    crate::utils::mix(theme.surface, theme.accent, 0.20),
+                );
+                let width = (track.width() * boost_progress(count)).max(4.0);
+                ui.painter().rect_filled(
+                    egui::Rect::from_min_size(track.min, egui::vec2(width, track.height())),
+                    4.0,
+                    crate::utils::mix(theme.surface, theme.accent, 0.42),
+                );
+                ui.painter().text(
+                    track.left_center() + egui::vec2(10.0, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    "🚀 Boost Goal",
+                    egui::FontId::proportional(12.0),
+                    Color32::WHITE,
+                );
+                ui.painter().text(
+                    track.right_center() - egui::vec2(10.0, 0.0),
+                    egui::Align2::RIGHT_CENTER,
+                    format!("{count} Boosts ›"),
+                    egui::FontId::proportional(11.0),
+                    Color32::WHITE,
+                );
+            }
             ui.add_space(8.0);
 
             egui::ScrollArea::vertical()
@@ -778,15 +918,20 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     ui.add_space(8.0);
                 });
 
-            // Account panel, pinned to the bottom like Discord's.
+            // Account panel, pinned to the bottom like Discord's. A little of
+            // the accent keeps the transparent theme's user strip visually
+            // separate without introducing an opaque block.
             egui::Frame::new()
-                .fill(theme.surface_alt)
+                .fill(crate::utils::mix(theme.surface_alt, theme.accent, 0.10))
                 .inner_margin(egui::Margin::symmetric(8, 6))
                 .show(ui, |ui| {
                     bottom_panels(app, ui, &theme);
                 });
         });
 
+    if toggle_members {
+        app.show_member_list = !app.show_member_list;
+    }
     if let Some(id) = toggle_category {
         if !app.collapsed_categories.remove(&id) {
             app.collapsed_categories.insert(id);
@@ -816,7 +961,7 @@ fn bottom_panels(app: &mut RustcordApp, ui: &mut egui::Ui, theme: &AppTheme) {
 
             ui.vertical(|ui| {
                 ui.label(
-                    RichText::new(&app.current_user.username)
+                    RichText::new(app.current_user.display_name())
                         .size(13.0)
                         .strong()
                         .color(theme.text),
@@ -828,6 +973,19 @@ fn bottom_panels(app: &mut RustcordApp, ui: &mut egui::Ui, theme: &AppTheme) {
                     Presence::Offline => ("Offline", theme.muted),
                 };
                 ui.label(RichText::new(status).size(11.0).color(color));
+            });
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui
+                    .add(
+                        egui::Button::new(RichText::new("⚙").size(16.0).color(theme.muted))
+                            .frame(false),
+                    )
+                    .on_hover_text("User settings (Ctrl+,)")
+                    .clicked()
+                {
+                    app.show_settings = true;
+                }
             });
         });
 
@@ -1482,6 +1640,15 @@ fn member_count_label(total: Option<usize>, active: Option<usize>) -> Option<Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn boost_progress_tracks_the_next_tier() {
+        assert_eq!(boost_progress(0), 0.0);
+        assert_eq!(boost_progress(1), 0.5);
+        assert_eq!(boost_progress(2), 0.0);
+        assert_eq!(boost_progress(14), 1.0);
+        assert_eq!(boost_progress(221), 1.0);
+    }
 
     #[test]
     fn guild_hover_counts_show_only_known_fields() {

@@ -98,6 +98,33 @@ pub(crate) fn date_divider_label(timestamp: DateTime<Utc>, now: DateTime<FixedOf
     }
 }
 
+/// Discord colours a member's name with their highest role that defines a
+/// colour. Zero is the role palette's "no colour" value, so it is skipped
+/// rather than painted black.
+fn role_name_color(user: &User, roles: &[crate::models::Role]) -> Option<egui::Color32> {
+    let role = user
+        .role_ids
+        .iter()
+        .filter_map(|id| roles.iter().find(|role| &role.id == id))
+        .filter(|role| role.color & 0x00ff_ffff != 0)
+        .max_by(|a, b| a.position.cmp(&b.position).then_with(|| a.id.cmp(&b.id)))?;
+    Some(egui::Color32::from_rgb(
+        ((role.color >> 16) & 0xff) as u8,
+        ((role.color >> 8) & 0xff) as u8,
+        (role.color & 0xff) as u8,
+    ))
+}
+
+/// Prefer the live roster record for an author: message payloads do not carry
+/// guild role ids, while the roster does, and the roster also has the newest
+/// display name and avatar.
+fn message_author<'a>(app: &'a RustcordApp, message: &'a Message) -> &'a User {
+    app.roster()
+        .iter()
+        .find(|member| member.id == message.author.id)
+        .unwrap_or(&message.author)
+}
+
 /// Discord stacks consecutive messages from one author into a single block for
 /// seven minutes: only the first row carries the avatar, name and full stamp.
 /// Replies start a new block even when the author and minute match.
@@ -131,6 +158,12 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     // the closure so the borrow checker stays out of the layout code.
     let mut open_search = false;
     let mut toggle_members = false;
+    let search_scope = app
+        .selected_guild
+        .as_ref()
+        .and_then(|id| app.guilds.iter().find(|guild| &guild.id == id))
+        .map(|guild| guild.name.clone())
+        .unwrap_or_else(|| "messages".to_string());
 
     // Discord's 48 px channel header: a muted #, the name, topic, then icons.
     egui::Panel::top("chat_top").show(ui, |ui| {
@@ -219,18 +252,31 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
-                if ui
-                    .add(
-                        egui::Button::new(
-                            RichText::new("🔍")
-                                .size(16.0)
-                                .color(app.plugins.theme().muted),
-                        )
-                        .frame(false),
-                    )
-                    .on_hover_text("Search messages (Ctrl+F)")
-                    .clicked()
-                {
+                let width = (ui.available_width() - 44.0).clamp(120.0, 220.0);
+                let (search, response) =
+                    ui.allocate_exact_size(egui::vec2(width, 26.0), egui::Sense::click());
+                let fill = if response.hovered() {
+                    crate::utils::lift(app.plugins.theme().surface_alt, 8)
+                } else {
+                    app.plugins.theme().surface_alt
+                };
+                ui.painter().rect_filled(search, 5.0, fill);
+                let clipped = ui.painter().with_clip_rect(search.shrink(8.0));
+                clipped.text(
+                    search.left_center() + egui::vec2(9.0, 0.0),
+                    egui::Align2::LEFT_CENTER,
+                    format!("Search {search_scope}"),
+                    egui::FontId::proportional(12.0),
+                    app.plugins.theme().muted,
+                );
+                ui.painter().text(
+                    search.right_center() - egui::vec2(12.0, 0.0),
+                    egui::Align2::RIGHT_CENTER,
+                    "⌕",
+                    egui::FontId::proportional(15.0),
+                    app.plugins.theme().muted,
+                );
+                if response.on_hover_text("Search messages (Ctrl+F)").clicked() {
                     open_search = true;
                 }
                 if ui
@@ -779,7 +825,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 ui.horizontal(|ui| {
                     if app.editing.is_none() {
                         let attach = ui
-                            .add(egui::Button::new(RichText::new("📎").size(15.0)).frame(false))
+                            .add(egui::Button::new(RichText::new("+").size(20.0)).frame(false))
                             .on_hover_text("Attach files");
                         if attach.clicked() {
                             if let Some(paths) = rfd::FileDialog::new().pick_files() {
@@ -1025,7 +1071,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     MessageListRow::New => {
                         let theme = app.plugins.theme();
                         let response = ui.scope(|ui| {
-                            divider_row(ui, "NEW", theme.accent, 26.0);
+                            new_divider_row(ui, theme.danger, 26.0);
                         });
                         metrics.set_height(row, response.response.rect.height() + 4.0);
                     }
@@ -1035,10 +1081,11 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             saw_target = true;
                         }
                         wanted.extend(message.image_urls().map(str::to_string));
-                        if let Some(url) = message.author.avatar_url() {
+                        let author = message_author(app, message);
+                        if let Some(url) = author.avatar_url() {
                             wanted.push(url);
                         }
-                        if let Some(url) = message.author.decoration_url() {
+                        if let Some(url) = author.decoration_url() {
                             wanted.push(url);
                         }
 
@@ -1228,8 +1275,39 @@ fn build_message_rows(
     rows
 }
 
+/// Discord's unread boundary: a thin red rule across the channel with a small
+/// outlined NEW pill at the right edge, rather than a centered date label.
+fn new_divider_row(ui: &mut egui::Ui, color: egui::Color32, height: f32) {
+    let width = ui.available_width().max(40.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let pill = egui::Rect::from_min_size(
+        egui::pos2(rect.right() - 44.0, rect.center().y - 9.0),
+        egui::vec2(38.0, 18.0),
+    );
+    ui.painter().line_segment(
+        [
+            egui::pos2(rect.left() + 8.0, rect.center().y),
+            egui::pos2(pill.left() - 8.0, rect.center().y),
+        ],
+        egui::Stroke::new(1.0, color.gamma_multiply(0.55)),
+    );
+    ui.painter().rect_stroke(
+        pill,
+        9.0,
+        egui::Stroke::new(1.0, color),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        pill.center(),
+        egui::Align2::CENTER_CENTER,
+        "NEW",
+        egui::FontId::proportional(10.0),
+        color,
+    );
+}
+
 /// Draw one centered divider. The line stops short of the label on both sides;
-/// callers choose the muted date colour or the accent NEW colour.
+/// callers choose the muted date colour or the accent label colour.
 fn divider_row(ui: &mut egui::Ui, label: &str, color: egui::Color32, height: f32) {
     let width = ui.available_width().max(40.0);
     let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
@@ -1483,6 +1561,13 @@ fn message_row_body(
     grouped: bool,
 ) {
     let theme = app.plugins.theme();
+    let author = message_author(app, message);
+    let name_color = app
+        .selected_guild
+        .as_ref()
+        .and_then(|id| app.guilds.iter().find(|guild| &guild.id == id))
+        .and_then(|guild| role_name_color(author, &guild.roles))
+        .unwrap_or(theme.text);
 
     ui.horizontal_top(|ui| {
         if grouped {
@@ -1501,17 +1586,17 @@ fn message_row_body(
             );
         } else {
             // Discord's message row: 40 px avatar, 16 px name line, 12 px timestamp.
-            avatar(app, ui, &message.author, 40.0);
+            avatar(app, ui, author, 40.0);
         }
 
         ui.vertical(|ui| {
             if !grouped {
                 ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new(&message.author.username)
+                        RichText::new(author.display_name())
                             .size(15.0)
                             .strong()
-                            .color(theme.text),
+                            .color(name_color),
                     );
                     let (stamp, detail) = message_timestamp(
                         message.timestamp,
@@ -2260,6 +2345,41 @@ mod tests {
         assert_ne!(online, idle);
         assert_ne!(idle, dnd);
         assert_ne!(dnd, offline);
+    }
+
+    #[test]
+    fn message_names_use_the_highest_coloured_role() {
+        let roles = vec![
+            crate::models::Role {
+                id: "low".to_string(),
+                name: "Low".to_string(),
+                color: 0x3498db,
+                hoist: false,
+                position: 10,
+            },
+            crate::models::Role {
+                id: "high".to_string(),
+                name: "High".to_string(),
+                color: 0xe74c3c,
+                hoist: false,
+                position: 20,
+            },
+            crate::models::Role {
+                id: "plain".to_string(),
+                name: "Plain".to_string(),
+                color: 0,
+                hoist: false,
+                position: 30,
+            },
+        ];
+        let mut user = member("1", "alice");
+        user.role_ids = vec!["low".into(), "plain".into(), "high".into()];
+        assert_eq!(
+            role_name_color(&user, &roles),
+            Some(egui::Color32::from_rgb(0xe7, 0x4c, 0x3c))
+        );
+        user.role_ids = vec!["plain".into()];
+        assert_eq!(role_name_color(&user, &roles), None);
     }
 
     #[test]

@@ -171,6 +171,7 @@ mod tests {
             icon: None,
             banner: None,
             member_count: None,
+            premium_subscription_count: None,
             roles: Vec::new(),
         }
     }
