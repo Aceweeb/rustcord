@@ -1753,3 +1753,22 @@ carries `member_count` too, for READY/GUILD_CREATE payloads that include it.
 
 Counts are refreshed when the roster is fetched (once per guild per session), not
 on every frame, and a failed counts request falls back quietly to the roster.
+
+## D61. Member avatars carry Discord's presence dot
+
+The member list showed a status only as section headings, so a glance could not tell
+who was online. Roster rows now draw Discord's indicator on the avatar's bottom-right
+corner: green for online, amber for idle, red for do-not-disturb and grey for
+offline, with a ring in the panel colour so the dot stays visible over any avatar.
+
+The dot is scaled from the avatar size (`0.17 × size`, clamped) and only appears at
+12 px or larger. Message rows deliberately keep the plain avatar — Discord does not
+mark presence beside every message, only in the roster and profile. The colours
+come from the status already stored on `User`, and the pure `presence_dot_color`
+mapping is tested without an egui context.
+
+Presence values themselves arrive with the member data the client already has. The
+gateway does not subscribe to the privileged `GUILD_PRESENCES` intent, so without it
+members default to offline; the section split and the approximate active count from
+D60 remain the reliable aggregate. Enabling the intent later only requires filling
+each member's `status`, which this dot already reads.

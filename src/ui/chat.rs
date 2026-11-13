@@ -1,5 +1,5 @@
 use crate::app::RustcordApp;
-use crate::models::{Embed, Message, User};
+use crate::models::{Embed, Message, Presence, User};
 use crate::utils::initial;
 use chrono::{DateTime, Datelike, FixedOffset, Local, Utc};
 use egui::RichText;
@@ -294,7 +294,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                         ui.add_space(2.0);
                         for member in group {
                             ui.horizontal(|ui| {
-                                let _ = avatar(app, ui, member, 32.0);
+                                let _ = avatar_with_status(app, ui, member, 32.0);
                                 ui.label(
                                     RichText::new(&member.username).size(14.0).color(theme.text),
                                 );
@@ -985,6 +985,45 @@ pub(crate) fn avatar(
     response.on_hover_ui(|ui| profile_card(app, ui, user))
 }
 
+/// Discord's presence dot, drawn on the avatar's bottom-right corner with a ring
+/// in the panel colour so it reads against any avatar. Idle and DND use the same
+/// amber/red as the official client; offline is the muted grey.
+fn presence_dot_color(theme: &crate::ui::theme::AppTheme, status: Presence) -> egui::Color32 {
+    match status {
+        Presence::Online => theme.success,
+        Presence::Idle => egui::Color32::from_rgb(0xf0, 0xb2, 0x32),
+        Presence::Dnd => theme.danger,
+        Presence::Offline => theme.muted,
+    }
+}
+
+/// A member-list avatar with its presence dot. Message rows keep the plain avatar:
+/// Discord only marks presence in the roster and profile, not beside every message.
+fn avatar_with_status(
+    app: &RustcordApp,
+    ui: &mut egui::Ui,
+    user: &User,
+    size: f32,
+) -> egui::Response {
+    let response = avatar(app, ui, user, size);
+    if !size.is_finite() || size < 12.0 {
+        return response;
+    }
+
+    let theme = app.plugins.theme();
+    let rect = response.rect;
+    let radius = (size * 0.17).clamp(4.0, 7.0);
+    let center = rect.right_bottom() - egui::vec2(size * 0.10, size * 0.10);
+    let painter = ui.painter();
+    painter.circle_filled(center, radius + 2.0, theme.surface);
+    painter.circle_filled(
+        center,
+        radius,
+        presence_dot_color(theme, user.status.clone()),
+    );
+    response
+}
+
 /// The avatar without the hover card, so the card can draw one without nesting
 /// another card inside itself.
 fn avatar_visual(app: &RustcordApp, ui: &mut egui::Ui, user: &User, size: f32) -> egui::Response {
@@ -1296,6 +1335,20 @@ mod tests {
         assert_eq!(stamp, "09:05");
         // The tooltip stays exact even when the row is terse.
         assert!(detail.contains("09:05:00"), "{detail}");
+    }
+
+    #[test]
+    fn presence_dots_use_distinct_status_colours() {
+        let theme = crate::ui::theme::AppTheme::default();
+        let online = presence_dot_color(&theme, Presence::Online);
+        let idle = presence_dot_color(&theme, Presence::Idle);
+        let dnd = presence_dot_color(&theme, Presence::Dnd);
+        let offline = presence_dot_color(&theme, Presence::Offline);
+        assert_eq!(online, theme.success);
+        assert_eq!(dnd, theme.danger);
+        assert_ne!(online, idle);
+        assert_ne!(idle, dnd);
+        assert_ne!(dnd, offline);
     }
 
     #[test]

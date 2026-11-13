@@ -7,12 +7,17 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 312 lib + 5 bin tests passing (317)
+- `cargo test --all-targets`: 313 lib + 5 bin tests passing (318)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Presence dots (`DECISIONS.md` D61):
+
+- `src/ui/chat.rs` — `presence_dot_color`, `avatar_with_status`, member rows use it,
+  1 test.
 
 Server icons and member counts (`DECISIONS.md` D60):
 

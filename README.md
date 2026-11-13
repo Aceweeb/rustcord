@@ -97,6 +97,8 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
   entry; open new ones from a member row, with history, sending, unread and typing.
 - Real server icons in the guild rail, with the server's approximate member total
   and online count in the member panel.
+- Presence dots on member-list avatars: green online, amber idle, red DND and grey
+  offline.
 - Real profile pictures with a hover profile card (display name, accent colour,
   banner and avatar decoration when Discord sends them), loaded through the
   bounded image cache.

@@ -568,6 +568,10 @@ Priority order for the next session:
   cache; `GET /guilds/{id}?with_counts=true` supplies approximate total/online
   counts beside the roster. 2 new tests; suite 317. Live CDN/REST unverified.
 
+- Presence dots on member avatars (D61): status-coloured dot with a panel ring,
+  green/amber/red/grey, member list only; 1 new test; suite 318. Live presence data
+  still depends on the privileged intent, so live rosters default to offline dots.
+
 ---
 
 ## 7. Notes for the next agent

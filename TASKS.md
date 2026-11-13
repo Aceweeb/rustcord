@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Presence dots on member-list avatars (`DECISIONS.md` D61): online/idle/DND/
+  offline colours, panel-coloured ring, scaled to the 32 px avatar. 1 new test;
+  live statuses need the privileged presence intent and remain offline for now.
 - [x] Server icons and member totals (`DECISIONS.md` D60): CDN guild icons with
   initial/folder fallbacks; approximate member and online counts via `with_counts`,
   shown as `MEMBERS — total` and `n active`. 2 new tests; live data unverified.
