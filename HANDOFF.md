@@ -7,12 +7,19 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 347 lib + 5 bin tests passing (352)
+- `cargo test --all-targets`: 349 lib + 5 bin tests passing (354)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 206 MB RSS, 155 MB PSS, 217 MB peak, 7–12 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
+- Runtime: 198 MB RSS, 138 MB PSS, 198 MB peak, 7–12 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
 
 ## What changed most recently
+
+Borderless window chrome (`DECISIONS.md` D81): the OS decorations are off and a
+32 px theme-aware title strip carries the centered guild name, drag region,
+double-click maximize/restore, real minimize/maximize/close commands, and eight
+foreground resize grips. Two geometry tests; suite 354. Release 198 MB RSS /
+138 MB PSS / 198 MB peak, 102 MB of headroom. Native drag/resize gestures were
+not visually exercised in this environment.
 
 Discord fidelity pass (`DECISIONS.md` D80): the channel sidebar now has a
 100 px banner header using the bounded image cache, guild name/chevron, member
@@ -22,8 +29,9 @@ positioned role colour; the NEW separator is a red rule with a right-aligned
 pill. The account strip is accent-tinted with a working Settings gear, and the
 member list starts hidden to match the reference. Two new tests; suite 352.
 Release 206 MB RSS / 155 MB PSS / 217 MB peak, 83 MB of headroom. Native visuals
-were not inspected; the OS title bar remains native, so this is content-level
-fidelity rather than literal pixel parity.
+were not inspected; the OS title bar was still native then, so this was
+content-level fidelity rather than literal pixel parity. D81 replaced that title
+bar with the client's own borderless chrome.
 
 Bounded attachment queue (`DECISIONS.md` D79): the paperclip accepts multiple
 files, the composer keeps up to ten removable rows with a running total, and the

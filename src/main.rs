@@ -100,6 +100,9 @@ fn main() -> Result<()> {
         .with_inner_size([1280.0, 800.0])
         .with_min_inner_size([900.0, 600.0])
         .with_title("Rustcord")
+        // The client draws Discord's thin title strip itself; the in-app
+        // titlebar supplies drag, resize and the three window buttons.
+        .with_decorations(false)
         // Lets the compositor keep the window's transparent pixels, so the
         // blurred backdrop and rounded corners are not flattened to black.
         .with_transparent(true);

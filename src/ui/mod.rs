@@ -6,4 +6,5 @@ pub mod settings;
 pub mod sidebar;
 pub mod switcher;
 pub mod theme;
+pub mod titlebar;
 pub mod virtual_list;

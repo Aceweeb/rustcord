@@ -3406,10 +3406,15 @@ impl eframe::App for RustcordApp {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
 
+        // The window is borderless, so this strip carries the drag region and
+        // window buttons on both the login page and the workspace.
+        ui::titlebar::show(self, ui);
+
         if self.login.visible {
             // Sign-in replaces the whole workspace: with no session there is no
             // guild, channel or message worth drawing behind it.
             ui::login::show(self, ui);
+            ui::titlebar::resize_edges(&ctx);
             return;
         }
 
@@ -3425,6 +3430,7 @@ impl eframe::App for RustcordApp {
             self.images.prepare(&profile_images);
         }
         ui::log::show(self, &ctx);
+        ui::titlebar::resize_edges(&ctx);
     }
 }
 

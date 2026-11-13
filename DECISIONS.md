@@ -2255,6 +2255,38 @@ their place would violate the project's no-fake-controls rule.
 Two tests cover highest-coloured-role selection and boost-tier progress; the
 suite is 352. The 20 s release sample measured 206 MB RSS / 155 MB PSS / 217 MB
 peak, 83 MB below the ceiling. The native UI was not visually inspected in this
-environment. The OS title bar remains native, and the reference's invite widget,
-voice footer controls and hidden boost goal configuration are not reproduced, so
-this is content-level fidelity rather than literal 1:1 pixel parity.
+environment. The OS title bar was still native at that point (D81 replaced it),
+and the reference's invite widget, voice footer controls and hidden boost goal
+configuration are not reproduced, so this is content-level fidelity rather than
+literal 1:1 pixel parity.
+
+## D81. The window is borderless with an in-app title strip
+
+The reference has Discord's own thin window chrome, but the client was still
+using OS decorations. The main window now opts out of decorations and draws a
+compact title strip instead; this is real window management, not a decorative
+mock-up.
+
+`src/ui/titlebar.rs` draws a 32 px top panel in the current theme's `surface_alt`
+so the transparent/veiled palette still reads through. The selected guild name
+is centered. The left and center region is a drag surface; double-clicking it
+toggles maximize/restore. The right side has three painted buttons whose hit
+areas use egui interaction, and each sends a `ViewportCommand` (minimize,
+maximize/restore, or close). Glyphs are painted rather than font characters, so
+they stay crisp and do not depend on emoji coverage. The strip is also present
+on the sign-in page, where closing the window must still be possible.
+
+Because borderless windows lose compositor resize borders, eight transparent
+foreground `Area` hit targets cover the edges and corners. Dragging one sends
+`ViewportCommand::BeginResize` with the matching direction; hovering sets the
+appropriate resize cursor. The grips are disabled while maximized or fullscreen
+and are inserted after all panels so they remain reachable. This deliberately
+uses one small area per edge/corner rather than one full-screen overlay, which
+would swallow normal clicks.
+
+Two tests cover the three buttons' geometry and all eight resize handles. The
+suite is 354. The 20 s release sample measured 198 MB RSS / 138 MB PSS / 198 MB
+peak, 102 MB below the ceiling. The app launched repeatedly and stayed alive for
+the check. Native drag, maximize, close and resize gestures could not be driven
+from this headless review environment; they use egui's viewport commands and
+compile cleanly, but should be exercised once on the Wayland desktop.
