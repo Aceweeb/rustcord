@@ -303,8 +303,9 @@ was made with; the tokens themselves stay in the keyring.
 
 ### Spotify now-playing
 
-The `spotify-status` plugin can follow what you are actually playing instead of the
-demo track: create an application at the Spotify developer dashboard, add
+The `spotify-status` plugin follows what you are actually playing; the strip stays
+hidden until a track is playing. Create an application at the Spotify developer
+dashboard, add
 `http://127.0.0.1:53135/callback` as a redirect URI, then paste the client id into
 Settings → Notifications → Spotify application id and press **Connect Spotify**. The
 PKCE flow asks only for `user-read-currently-playing`, keeps the tokens in the OS

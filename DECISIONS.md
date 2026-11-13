@@ -1569,3 +1569,17 @@ rather than changing meaning, the message-row avatar call replaces only the draw
 lines, and the profile card is a hover tooltip with no stored state. Parsing is
 unchanged for payloads without the new keys, and one model test pins the URL shapes,
 the display-name fallback and the default-avatar index.
+
+## D52. The now-playing strip starts empty
+
+`SpotifyStatusPlugin::init` seeded a fake track — "Smooth Operator" by Sade at
+0:42/4:30 — so the UI had something to draw before OAuth existed. That left the
+strip and its progress bar on screen for everyone, including people who never
+connected Spotify, and it looked like playback that was not happening.
+
+The seed is gone. `init` now clears the state and the strip only has something to
+show after `spotify_sync` delivers a track. That poller already returns `None` when
+Spotify reports `is_playing: false`, which the app maps to `clear_spotify`, so
+pausing hides the strip as well; a failed poll leaves the last known track alone
+rather than blanking it on a transient network error. A test initialises the plugin
+with default settings and asserts there is no current track.

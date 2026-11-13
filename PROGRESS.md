@@ -529,6 +529,10 @@ Priority order for the next session:
   decorations parsed from gateway and REST user objects, hover profile card.
   Additive fields on `User`; 1 new test; suite 307.
 
+- Removed the seeded "Smooth Operator" demo track (D52). The now-playing strip now
+  appears only after the Spotify poller reports an actually-playing track, and
+  `clear_spotify` on idle/pause hides it. 1 new test; suite 308.
+
 ---
 
 ## 7. Notes for the next agent

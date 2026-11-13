@@ -7,12 +7,17 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 302 lib + 5 bin tests passing (307)
+- `cargo test --all-targets`: 303 lib + 5 bin tests passing (308)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Now-playing strip starts empty (`DECISIONS.md` D52):
+
+- `src/plugins/spotify_status.rs` — removed the seeded Sade track from `init`,
+  replaced with `clear()`; 1 test.
 
 Profile pictures and Nitro cosmetics (`DECISIONS.md` D51):
 

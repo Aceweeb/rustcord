@@ -117,16 +117,9 @@ impl Plugin for SpotifyStatusPlugin {
 
     fn init(&mut self, ctx: &mut PluginContext<'_>) -> anyhow::Result<()> {
         self.enabled = ctx.settings.spotify_status_sync;
-
-        // Demo track so the UI has something to render before OAuth is wired.
-        self.set_track(
-            "Smooth Operator",
-            "Sade",
-            "Diamond Life",
-            "spotify:track:4hK9y0m6X6g0bXJ0Wn8m7K",
-            42_000,
-            270_000,
-        );
+        // Start empty: the now-playing strip belongs to real playback, so it must
+        // not appear until the poller reports a track that is actually playing.
+        self.clear();
 
         Ok(())
     }
@@ -150,5 +143,23 @@ impl Plugin for SpotifyStatusPlugin {
                 *activity = current.clone();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nothing_playing_until_spotify_reports_a_track() {
+        let mut plugin = SpotifyStatusPlugin::new();
+        let mut settings = Settings::default();
+        plugin
+            .init(&mut PluginContext {
+                settings: &mut settings,
+            })
+            .expect("init");
+        assert!(plugin.current().is_none());
+        assert_eq!(plugin.duration_ms(), 0);
     }
 }
