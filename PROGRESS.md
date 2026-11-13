@@ -606,6 +606,10 @@ Priority order for the next session:
   avatars requested. 1 new test; suite 329. Live roster/thread behaviour not
   exercised without a bot session.
 
+- Discord header/chrome pass (D70): channel topics parsed and displayed, working
+  search/member toggle, settings moved to user panel. 1 new test; suite 330.
+  Release peak 256 MB, under the 300 MB ceiling. Rendering not visually checked.
+
 ---
 
 ## 7. Notes for the next agent

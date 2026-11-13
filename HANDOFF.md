@@ -7,12 +7,16 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 324 lib + 5 bin tests passing (329)
+- `cargo test --all-targets`: 325 lib + 5 bin tests passing (330)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Discord header/chrome pass (`DECISIONS.md` D70): parsed channel topics, working
+search and member-list buttons, settings in the user panel. Release peak measured
+at 256 MB, under the 300 MB ceiling.
 
 Roster-backed channel members (`DECISIONS.md` D69):
 

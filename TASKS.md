@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Discord header fidelity (`DECISIONS.md` D70): channel topic, functional
+  search/member buttons, bottom user settings. 1 new test; release peak 256 MB.
+  Rendering not visually checked.
 - [x] Roster-backed channel members (`DECISIONS.md` D69): all loaded guild
   members, plus authors and voice participants; virtualised 34 px rows and
   visible-only avatar requests. 1 new test; live roster not exercised.

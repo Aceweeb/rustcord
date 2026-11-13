@@ -1,12 +1,12 @@
 # CURRENT_STATE.md
 
-Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland session.
+Last verified: 2026-11-13, CachyOS, NVIDIA (proprietary 620.70.06), Wayland session.
 
 ## Build and test
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **329 passed (324 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **330 passed (325 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -15,14 +15,18 @@ Last verified: 2026-11-12, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 Release binary, 1280×800 window, default settings, theme file loaded.
 
-| Metric | Before | After | How measured |
-| --- | --- | --- | --- |
-| RSS | 190–195 MB | **159 MB** | `/proc/<pid>/status` `VmRSS` |
-| PSS | 64.6 MB | **57–61 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
-| Peak (`VmHWM`) | 196 MB | **160 MB** | kernel high-water mark |
-| Idle CPU | 3–8% after ~10 s (repaint loop) | **0.0% (0.2 fps)** | ticks/s; frames at debug |
-| Threads | 2 | 2 | `/proc/<pid>/status` |
-| Sign-in screen | — | **104–141 MB / 45–58 MB PSS** | varies with driver page residency |
+| Metric | Latest | How measured |
+| --- | --- | --- |
+| RSS | **233 MB** | `/proc/<pid>/status` `VmRSS`, 20 s sample |
+| PSS | **157 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
+| Peak (`VmHWM`) | **256 MB** | kernel high-water mark |
+| Idle CPU | **0.0% at end of sample** | ticks/s; pointer bursts occur while hovering |
+| Threads | **10–11** | `/proc/<pid>/status` |
+| Sign-in screen | lower than a channel session | no channel surface is built |
+
+The 300 MB ceiling holds with about 44 MB of headroom. The earlier 159 MB figure
+predates animated guild icons, the roster-backed member panel, and periodic count
+refreshes; re-measure after any surface that adds textures or caches.
 
 Reproduce with `scripts/measure-memory.sh 20`. The script prints RSS, PSS, peak,
 CPU ticks and thread count per second.

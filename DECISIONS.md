@@ -1947,3 +1947,18 @@ avatar widgets and DM buttons, and only those visible avatars are requested from
 the image cache (after the panel closure, because rows borrow the roster while the
 cache is mutable). Deduplicated, name-sorted references replace cloning the roster
 every frame; the merge is covered by a unit test.
+
+## D70. Discord header chrome is functional, not painted decoration
+
+The channel header carried the name and two static glyphs; the topic was discarded
+at the gateway and the search/member icons did nothing. It now parses `topic` into
+`Channel`, shows it inline after a muted divider with truncation and a full-text
+hover card, and turns the right side into real controls: search opens the existing
+palette, and the people icon toggles the member panel (`show_member_list`, session
+state). The user settings gear moved from the server header to Discord's user-panel
+position at the bottom left. No new dependencies or image assets were needed.
+
+The whole release binary measures 233 MB RSS / 157 MB PSS / 256 MB peak in a 20 s
+idle sample, keeping the project under its 300 MB ceiling. This is a fidelity pass
+over the most visible chrome, not a claim that every Discord surface exists: threads,
+pinned-message browsing, uploads and mention autocomplete are still separate work.

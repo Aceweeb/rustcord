@@ -663,6 +663,7 @@ fn parse_channel(value: &Value, guild_id: &str) -> Option<Channel> {
         guild_id: guild_id.to_string(),
         parent_id: value["parent_id"].as_str().map(str::to_string),
         position: value["position"].as_i64(),
+        topic: value["topic"].as_str().map(str::to_string),
     })
 }
 
@@ -838,6 +839,24 @@ mod tests {
         .expect("text");
         assert_eq!(text.parent_id.as_deref(), Some("90"));
         assert_eq!(text.position, Some(4));
+    }
+
+    #[test]
+    fn text_channel_topics_are_parsed() {
+        let channel = parse_channel(
+            &json!({
+                "id": "92",
+                "name": "general",
+                "type": 0,
+                "topic": "Keep it cozy"
+            }),
+            "1",
+        )
+        .expect("text");
+        assert_eq!(channel.topic.as_deref(), Some("Keep it cozy"));
+        let missing =
+            parse_channel(&json!({ "id": "93", "name": "dev", "type": 0 }), "1").expect("text");
+        assert_eq!(missing.topic, None);
     }
 
     #[test]

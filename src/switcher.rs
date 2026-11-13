@@ -181,6 +181,7 @@ mod tests {
             guild_id: guild_id.to_string(),
             parent_id: None,
             position: None,
+            topic: None,
         }
     }
 

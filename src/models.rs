@@ -141,6 +141,9 @@ pub struct Channel {
     /// Discord's sort position within the guild/category; lower comes first.
     #[serde(default)]
     pub position: Option<i64>,
+    /// The channel's topic, shown in Discord's header for text channels.
+    #[serde(default)]
+    pub topic: Option<String>,
 }
 
 /// How many reacting users are remembered per emoji. `count` stays

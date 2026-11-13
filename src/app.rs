@@ -204,6 +204,9 @@ pub struct RustcordApp {
     /// Category ids collapsed in the channel list. Session-only: the collapsed
     /// state is cheap to recreate and not worth a settings migration.
     pub(crate) collapsed_categories: std::collections::BTreeSet<String>,
+    /// Whether the right-hand channel member panel is shown. Discord's header
+    /// button toggles the same panel; session-only.
+    pub(crate) show_member_list: bool,
     pub(crate) metrics: RowMetrics,
     pub(crate) metrics_channel: Option<String>,
     history_tx: Sender<HistoryResult>,
@@ -359,6 +362,7 @@ impl RustcordApp {
                 guild_id: "1".to_string(),
                 parent_id: None,
                 position: Some(1),
+                topic: None,
             },
             Channel {
                 id: "10".to_string(),
@@ -367,6 +371,7 @@ impl RustcordApp {
                 guild_id: "1".to_string(),
                 parent_id: Some("100".to_string()),
                 position: Some(2),
+                topic: Some("Welcome to Rustcord — keep it cozy.".to_string()),
             },
             Channel {
                 id: "11".to_string(),
@@ -375,6 +380,7 @@ impl RustcordApp {
                 guild_id: "1".to_string(),
                 parent_id: Some("100".to_string()),
                 position: Some(3),
+                topic: Some("egui, Rust, and the occasional yak shave.".to_string()),
             },
             Channel {
                 id: "12".to_string(),
@@ -383,6 +389,7 @@ impl RustcordApp {
                 guild_id: "1".to_string(),
                 parent_id: None,
                 position: None,
+                topic: None,
             },
             Channel {
                 id: "13".to_string(),
@@ -391,6 +398,7 @@ impl RustcordApp {
                 guild_id: "1".to_string(),
                 parent_id: None,
                 position: None,
+                topic: None,
             },
             Channel {
                 id: "20".to_string(),
@@ -399,6 +407,7 @@ impl RustcordApp {
                 guild_id: "2".to_string(),
                 parent_id: None,
                 position: None,
+                topic: None,
             },
             Channel {
                 id: "21".to_string(),
@@ -407,6 +416,7 @@ impl RustcordApp {
                 guild_id: "2".to_string(),
                 parent_id: None,
                 position: None,
+                topic: None,
             },
             Channel {
                 id: "30".to_string(),
@@ -415,6 +425,7 @@ impl RustcordApp {
                 guild_id: "3".to_string(),
                 parent_id: None,
                 position: None,
+                topic: None,
             },
         ];
 
@@ -563,6 +574,7 @@ impl RustcordApp {
             dm_loaded: false,
             dm_loading: false,
             collapsed_categories: std::collections::BTreeSet::new(),
+            show_member_list: true,
             metrics: RowMetrics::new(),
             metrics_channel: None,
             history_tx,

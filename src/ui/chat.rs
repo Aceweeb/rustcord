@@ -66,20 +66,29 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             .request_repaint_after(std::time::Duration::from_millis(120));
     }
 
-    // Discord's 48 px channel header: a muted #, the name, then the icons.
+    // Header buttons only read `app` inside the panel; apply their actions after
+    // the closure so the borrow checker stays out of the layout code.
+    let mut open_search = false;
+    let mut toggle_members = false;
+
+    // Discord's 48 px channel header: a muted #, the name, topic, then icons.
     egui::Panel::top("chat_top").show(ui, |ui| {
         ui.set_height(48.0);
         ui.horizontal_centered(|ui| {
             ui.add_space(8.0);
-            let channel = app
-                .selected_channel_name()
-                .map(str::to_string)
-                .unwrap_or_else(|| "No channel selected".to_string());
-            let is_dm = app
+            let selected = app
                 .selected_channel
                 .as_deref()
-                .and_then(|id| app.channels.iter().find(|known| known.id == id))
-                .is_some_and(|known| known.guild_id == crate::models::DM_GUILD_ID);
+                .and_then(|id| app.channels.iter().find(|known| known.id == id));
+            let channel = selected
+                .map(|known| known.name.clone())
+                .unwrap_or_else(|| "No channel selected".to_string());
+            let is_dm = selected.is_some_and(|known| known.guild_id == crate::models::DM_GUILD_ID);
+            let topic = selected
+                .and_then(|known| known.topic.as_deref())
+                .map(str::trim)
+                .filter(|topic| !topic.is_empty())
+                .map(str::to_string);
             ui.label(
                 RichText::new(if is_dm { "@" } else { "#" })
                     .size(20.0)
@@ -91,6 +100,26 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     .strong()
                     .color(app.plugins.theme().text),
             );
+            if let Some(topic) = topic.filter(|_| !is_dm) {
+                ui.add_space(4.0);
+                ui.label(
+                    RichText::new("│")
+                        .size(14.0)
+                        .color(crate::utils::lift(app.plugins.theme().background, -20)),
+                );
+                ui.scope(|ui| {
+                    ui.set_max_width(260.0);
+                    ui.add(
+                        egui::Label::new(
+                            RichText::new(&topic)
+                                .size(12.0)
+                                .color(app.plugins.theme().muted),
+                        )
+                        .truncate(),
+                    )
+                    .on_hover_text(topic);
+                });
+            }
 
             // The same live indicator as the composer, so a glance at the header
             // is enough when the input field is scrolled out of view.
@@ -129,16 +158,38 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
-                ui.label(
-                    RichText::new("🔍")
-                        .size(16.0)
-                        .color(app.plugins.theme().muted),
-                );
-                ui.label(
-                    RichText::new("☰")
-                        .size(16.0)
-                        .color(app.plugins.theme().muted),
-                );
+                if ui
+                    .add(
+                        egui::Button::new(
+                            RichText::new("🔍")
+                                .size(16.0)
+                                .color(app.plugins.theme().muted),
+                        )
+                        .frame(false),
+                    )
+                    .on_hover_text("Search messages (Ctrl+F)")
+                    .clicked()
+                {
+                    open_search = true;
+                }
+                if ui
+                    .add(
+                        egui::Button::new(
+                            RichText::new("👥")
+                                .size(16.0)
+                                .color(app.plugins.theme().muted),
+                        )
+                        .frame(false),
+                    )
+                    .on_hover_text(if app.show_member_list {
+                        "Hide member list"
+                    } else {
+                        "Show member list"
+                    })
+                    .clicked()
+                {
+                    toggle_members = true;
+                }
             });
         });
         ui.painter().hline(
@@ -147,6 +198,13 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             egui::Stroke::new(1.0, crate::utils::lift(app.plugins.theme().background, -10)),
         );
     });
+
+    if open_search {
+        app.open_search();
+    }
+    if toggle_members {
+        app.show_member_list = !app.show_member_list;
+    }
 
     // In-app alert banner (memory budget, test alerts). Dismissal mutates app
     // state, so it is applied after the panel closure returns.
@@ -176,202 +234,210 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     // roster, so the mutable image cache is filled after the closure returns.
     let mut visible_avatars: Vec<String> = Vec::new();
 
-    egui::Panel::right("member_list")
-        .exact_size(240.0)
-        .resizable(false)
-        .frame(
-            egui::Frame::new()
-                .fill(app.plugins.theme().surface)
-                .inner_margin(egui::Margin::symmetric(8, 0)),
-        )
-        .show(ui, |ui| {
-            let theme = app.plugins.theme().clone();
-            ui.add_space(12.0);
+    if app.show_member_list {
+        egui::Panel::right("member_list")
+            .exact_size(240.0)
+            .resizable(false)
+            .frame(
+                egui::Frame::new()
+                    .fill(app.plugins.theme().surface)
+                    .inner_margin(egui::Margin::symmetric(8, 0)),
+            )
+            .show(ui, |ui| {
+                let theme = app.plugins.theme().clone();
+                ui.add_space(12.0);
 
-            // Discord's panel is scoped to the open channel, but the API has no
-            // endpoint that lists everyone who can read a text channel. The loaded
-            // guild roster is the nearest evidence for members who have not spoken
-            // yet; thread participants who are still guild members are in it too.
-            // Authors and voice users cover gaps from a capped/unavailable roster.
-            let channel_id = app.selected_channel.clone();
-            let mut authors: Vec<crate::models::User> = Vec::new();
-            let mut seen_authors = std::collections::BTreeSet::new();
-            for message in app.messages.iter().rev() {
-                if message.channel_id.as_deref() != channel_id.as_deref() {
-                    continue;
+                // Discord's panel is scoped to the open channel, but the API has no
+                // endpoint that lists everyone who can read a text channel. The loaded
+                // guild roster is the nearest evidence for members who have not spoken
+                // yet; thread participants who are still guild members are in it too.
+                // Authors and voice users cover gaps from a capped/unavailable roster.
+                let channel_id = app.selected_channel.clone();
+                let mut authors: Vec<crate::models::User> = Vec::new();
+                let mut seen_authors = std::collections::BTreeSet::new();
+                for message in app.messages.iter().rev() {
+                    if message.channel_id.as_deref() != channel_id.as_deref() {
+                        continue;
+                    }
+                    if seen_authors.insert(message.author.id.clone()) {
+                        authors.push(message.author.clone());
+                    }
                 }
-                if seen_authors.insert(message.author.id.clone()) {
-                    authors.push(message.author.clone());
+
+                let mut voice_members: Vec<crate::models::VoiceMember> = channel_id
+                    .as_deref()
+                    .map(|id| app.voice.members(id).to_vec())
+                    .unwrap_or_default();
+                voice_members
+                    .sort_by(|a, b| a.username.to_lowercase().cmp(&b.username.to_lowercase()));
+
+                let mut extras = authors;
+                for member in voice_members {
+                    if !extras.iter().any(|known| known.id == member.user_id) {
+                        extras.push(crate::models::User {
+                            id: member.user_id,
+                            username: member.username,
+                            status: Presence::Online,
+                            ..crate::models::User::default()
+                        });
+                    }
                 }
-            }
+                let members = channel_member_rows(app.roster(), &extras);
 
-            let mut voice_members: Vec<crate::models::VoiceMember> = channel_id
-                .as_deref()
-                .map(|id| app.voice.members(id).to_vec())
-                .unwrap_or_default();
-            voice_members.sort_by(|a, b| a.username.to_lowercase().cmp(&b.username.to_lowercase()));
+                if members.is_empty() {
+                    let hint = if channel_id.is_none() {
+                        "Open a channel to see who is in it."
+                    } else if !app.live_data {
+                        "Members appear once a bot token is connected."
+                    } else if app.member_intent_missing {
+                        "Enable the Server Members Intent to load the roster."
+                    } else {
+                        "No channel members to show."
+                    };
+                    ui.add_space(4.0);
+                    ui.add(
+                        egui::Label::new(RichText::new(hint).size(11.0).color(theme.muted)).wrap(),
+                    );
+                }
 
-            let mut extras = authors;
-            for member in voice_members {
-                if !extras.iter().any(|known| known.id == member.user_id) {
-                    extras.push(crate::models::User {
-                        id: member.user_id,
-                        username: member.username,
-                        status: Presence::Online,
-                        ..crate::models::User::default()
+                let counts = app
+                    .selected_guild
+                    .as_ref()
+                    .and_then(|id| app.guild_counts.get(id));
+                // Discord's approximate counts cover members beyond the roster cap.
+                // Without them fall back to the guild payload and then the roster.
+                let active = counts
+                    .and_then(|counts| counts.active)
+                    .map(|count| count as usize)
+                    .unwrap_or_else(|| {
+                        members
+                            .iter()
+                            .filter(|member| member.status != crate::models::Presence::Offline)
+                            .count()
                     });
-                }
-            }
-            let members = channel_member_rows(app.roster(), &extras);
-
-            if members.is_empty() {
-                let hint = if channel_id.is_none() {
-                    "Open a channel to see who is in it."
-                } else if !app.live_data {
-                    "Members appear once a bot token is connected."
-                } else if app.member_intent_missing {
-                    "Enable the Server Members Intent to load the roster."
-                } else {
-                    "No channel members to show."
-                };
-                ui.add_space(4.0);
-                ui.add(egui::Label::new(RichText::new(hint).size(11.0).color(theme.muted)).wrap());
-            }
-
-            let counts = app
-                .selected_guild
-                .as_ref()
-                .and_then(|id| app.guild_counts.get(id));
-            // Discord's approximate counts cover members beyond the roster cap.
-            // Without them fall back to the guild payload and then the roster.
-            let active = counts
-                .and_then(|counts| counts.active)
-                .map(|count| count as usize)
-                .unwrap_or_else(|| {
-                    members
-                        .iter()
-                        .filter(|member| member.status != crate::models::Presence::Offline)
-                        .count()
-                });
-            let total = counts
-                .and_then(|counts| counts.total)
-                .map(|count| count as usize)
-                .or_else(|| {
-                    app.selected_guild
-                        .as_ref()
-                        .and_then(|id| app.guilds.iter().find(|guild| &guild.id == id))
-                        .and_then(|guild| guild.member_count)
-                        .map(|count| count as usize)
-                })
-                .unwrap_or(members.len())
-                .max(members.len());
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(format!("MEMBERS \u{2014} {total}"))
-                        .size(11.0)
-                        .strong()
-                        .color(theme.muted),
-                );
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let total = counts
+                    .and_then(|counts| counts.total)
+                    .map(|count| count as usize)
+                    .or_else(|| {
+                        app.selected_guild
+                            .as_ref()
+                            .and_then(|id| app.guilds.iter().find(|guild| &guild.id == id))
+                            .and_then(|guild| guild.member_count)
+                            .map(|count| count as usize)
+                    })
+                    .unwrap_or(members.len())
+                    .max(members.len());
+                ui.horizontal(|ui| {
                     ui.label(
-                        RichText::new(format!("{active} active"))
-                            .size(10.0)
+                        RichText::new(format!("MEMBERS \u{2014} {total}"))
+                            .size(11.0)
+                            .strong()
                             .color(theme.muted),
                     );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(
+                            RichText::new(format!("{active} active"))
+                                .size(10.0)
+                                .color(theme.muted),
+                        );
+                    });
                 });
-            });
 
-            ui.label(
-                RichText::new(format!("IN CHANNEL \u{2014} {}", members.len()))
-                    .size(10.0)
-                    .color(theme.muted),
-            )
-            .on_hover_text(
-                "Loaded guild roster plus participants in this channel. Discord does \
+                ui.label(
+                    RichText::new(format!("IN CHANNEL \u{2014} {}", members.len()))
+                        .size(10.0)
+                        .color(theme.muted),
+                )
+                .on_hover_text(
+                    "Loaded guild roster plus participants in this channel. Discord does \
                  not expose per-channel access, so this is the closest available list.",
-            );
+                );
 
-            ui.add_space(6.0);
-            // Discord splits the list into ONLINE and OFFLINE groups. A full
-            // roster can hold thousands of users, so the section rows are
-            // virtualised: only the visible slice builds avatars and buttons.
-            let mut rows: Vec<MemberListRow> = Vec::with_capacity(members.len() + 2);
-            for (title, offline) in [("ONLINE", false), ("OFFLINE", true)] {
-                let group: Vec<&crate::models::User> = members
-                    .iter()
-                    .copied()
-                    .filter(|member| (member.status == crate::models::Presence::Offline) == offline)
-                    .collect();
-                if group.is_empty() {
-                    continue;
+                ui.add_space(6.0);
+                // Discord splits the list into ONLINE and OFFLINE groups. A full
+                // roster can hold thousands of users, so the section rows are
+                // virtualised: only the visible slice builds avatars and buttons.
+                let mut rows: Vec<MemberListRow> = Vec::with_capacity(members.len() + 2);
+                for (title, offline) in [("ONLINE", false), ("OFFLINE", true)] {
+                    let group: Vec<&crate::models::User> = members
+                        .iter()
+                        .copied()
+                        .filter(|member| {
+                            (member.status == crate::models::Presence::Offline) == offline
+                        })
+                        .collect();
+                    if group.is_empty() {
+                        continue;
+                    }
+                    rows.push(MemberListRow::Header(title, group.len()));
+                    rows.extend(group.into_iter().map(MemberListRow::Member));
                 }
-                rows.push(MemberListRow::Header(title, group.len()));
-                rows.extend(group.into_iter().map(MemberListRow::Member));
-            }
 
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show_rows(ui, MEMBER_ROW_HEIGHT, rows.len(), |ui, range| {
-                    for row in &rows[range] {
-                        match row {
-                            MemberListRow::Header(title, count) => {
-                                ui.allocate_ui_with_layout(
-                                    egui::vec2(ui.available_width(), MEMBER_ROW_HEIGHT),
-                                    egui::Layout::left_to_right(egui::Align::Center),
-                                    |ui| {
-                                        ui.add_space(4.0);
-                                        ui.label(
-                                            RichText::new(format!("{title} \u{2014} {count}"))
-                                                .size(10.0)
-                                                .strong()
-                                                .color(theme.muted),
-                                        );
-                                    },
-                                );
-                            }
-                            MemberListRow::Member(member) => {
-                                let hover = ui.painter().add(egui::Shape::Noop);
-                                let response = ui
-                                    .allocate_ui_with_layout(
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show_rows(ui, MEMBER_ROW_HEIGHT, rows.len(), |ui, range| {
+                        for row in &rows[range] {
+                            match row {
+                                MemberListRow::Header(title, count) => {
+                                    ui.allocate_ui_with_layout(
                                         egui::vec2(ui.available_width(), MEMBER_ROW_HEIGHT),
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
-                                            if let Some(url) = member.avatar_url() {
-                                                visible_avatars.push(url);
-                                            }
-                                            let _ = avatar_with_status(app, ui, member, 32.0);
+                                            ui.add_space(4.0);
                                             ui.label(
-                                                RichText::new(&member.username)
-                                                    .size(14.0)
-                                                    .color(theme.text),
+                                                RichText::new(format!("{title} \u{2014} {count}"))
+                                                    .size(10.0)
+                                                    .strong()
+                                                    .color(theme.muted),
                                             );
-                                            if app.live_data && member.id != app.current_user.id {
-                                                if ui
-                                                    .small_button("DM")
-                                                    .on_hover_text("Open a direct message")
-                                                    .clicked()
-                                                {
-                                                    dm_target = Some((*member).clone());
-                                                }
-                                            }
                                         },
-                                    )
-                                    .response;
-                                if response.hovered() {
-                                    ui.painter().set(
-                                        hover,
-                                        egui::Shape::rect_filled(
-                                            response.rect.expand2(egui::vec2(4.0, 1.0)),
-                                            egui::CornerRadius::same(4),
-                                            crate::utils::lift(theme.surface, 10),
-                                        ),
                                     );
+                                }
+                                MemberListRow::Member(member) => {
+                                    let hover = ui.painter().add(egui::Shape::Noop);
+                                    let response = ui
+                                        .allocate_ui_with_layout(
+                                            egui::vec2(ui.available_width(), MEMBER_ROW_HEIGHT),
+                                            egui::Layout::left_to_right(egui::Align::Center),
+                                            |ui| {
+                                                if let Some(url) = member.avatar_url() {
+                                                    visible_avatars.push(url);
+                                                }
+                                                let _ = avatar_with_status(app, ui, member, 32.0);
+                                                ui.label(
+                                                    RichText::new(&member.username)
+                                                        .size(14.0)
+                                                        .color(theme.text),
+                                                );
+                                                if app.live_data && member.id != app.current_user.id
+                                                {
+                                                    if ui
+                                                        .small_button("DM")
+                                                        .on_hover_text("Open a direct message")
+                                                        .clicked()
+                                                    {
+                                                        dm_target = Some((*member).clone());
+                                                    }
+                                                }
+                                            },
+                                        )
+                                        .response;
+                                    if response.hovered() {
+                                        ui.painter().set(
+                                            hover,
+                                            egui::Shape::rect_filled(
+                                                response.rect.expand2(egui::vec2(4.0, 1.0)),
+                                                egui::CornerRadius::same(4),
+                                                crate::utils::lift(theme.surface, 10),
+                                            ),
+                                        );
+                                    }
                                 }
                             }
                         }
-                    }
-                });
-        });
+                    });
+            });
+    }
 
     // Visible avatars share the attachment byte budget; the loader deduplicates
     // URLs, so requesting the same row every frame is a cache lookup.

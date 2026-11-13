@@ -536,6 +536,7 @@ impl DiscordDmListEntry {
             guild_id: crate::models::DM_GUILD_ID.to_string(),
             parent_id: None,
             position: None,
+            topic: None,
         })
     }
 }
@@ -564,6 +565,7 @@ impl DiscordDmChannel {
             guild_id: crate::models::DM_GUILD_ID.to_string(),
             parent_id: None,
             position: None,
+            topic: None,
         })
     }
 }

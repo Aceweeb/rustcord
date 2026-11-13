@@ -102,6 +102,8 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
   not spoken are included alongside message authors and current voice members;
   thread participants who remain guild members come in through the same roster.
   Presence dots, virtualised rows and Discord-style hover complete the list.
+- Discord channel-header chrome: parsed channel topics, a working search button
+  (Ctrl+F), and a member-list toggle; user settings sit in the bottom user panel.
 - Collapsible Discord channel categories, ordered by the guild's `position`, with
   uncategorised text and voice channels kept in their usual groups.
 - Discord's hover action bar on messages: quick reactions, reply and the full
@@ -132,14 +134,15 @@ Measured on the development machine (Arch, Wayland, release build):
 | Metric | Result |
 | --- | --- |
 | Binary size | ~11 MB stripped |
-| Idle RSS (release, 1280×800) | 159 MB (`VmRSS`) |
-| Idle PSS (fair per-process figure) | 57–61 MB (`smaps_rollup`) |
-| Peak RSS | 160 MB (`VmHWM`) |
-| Steady-state CPU | 0.0%, 0.2 fps while idle |
-| Threads (no gateway token, no images) | 2 |
+| Idle RSS (release, 1280×800) | 233 MB (`VmRSS`) |
+| Idle PSS (fair per-process figure) | 157 MB (`smaps_rollup`) |
+| Peak RSS (20 s sample) | 256 MB (`VmHWM`) |
+| Steady-state CPU | 0.0% at the end of the idle sample |
+| Threads | 10–11 |
 
-The sign-in screen measures lower (100–141 MB RSS / 45–58 MB PSS) because no
-channel surface is built until there is a session.
+The sign-in screen measures lower because no channel surface is built until there
+is a session. Peak RSS stays below the project's 300 MB ceiling with ~44 MB of
+headroom; the figure includes the shared NVIDIA driver mappings described below.
 
 RSS for a GL application counts shared library pages in full, and on this machine
 ~100 MB of it is the proprietary NVIDIA driver stack (`libnvidia-gpucomp`,
