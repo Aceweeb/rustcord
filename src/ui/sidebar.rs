@@ -1234,6 +1234,10 @@ pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
         return;
     };
     let theme = app.plugins.theme().clone();
+    let banner_url = guild.banner_url();
+    if let Some(url) = &banner_url {
+        app.images.prepare(std::slice::from_ref(url));
+    }
 
     const MAX_TEXT: usize = 8;
     const MAX_VOICE: usize = 5;
@@ -1258,7 +1262,7 @@ pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
         .collect();
 
     // Keep the panel on screen when the icon is near the bottom of the window.
-    let max_top = (ctx.content_rect().bottom() - 240.0).max(8.0);
+    let max_top = (ctx.content_rect().bottom() - 300.0).max(8.0);
     let position = egui::pos2(icon.right() + 10.0, icon.top().min(max_top));
     let mut clicked: Option<String> = None;
 
@@ -1274,6 +1278,33 @@ pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
                 .show(ui, |ui| {
                     ui.set_min_width(188.0);
                     ui.set_max_width(230.0);
+
+                    if let Some(url) = banner_url.as_deref() {
+                        let (rect, _) = ui.allocate_exact_size(
+                            egui::vec2(ui.available_width(), 64.0),
+                            egui::Sense::hover(),
+                        );
+                        match crate::ui::chat::animated_texture(app, ui, url) {
+                            Some(texture) => {
+                                ui.put(
+                                    rect,
+                                    egui::Image::new(egui::load::SizedTexture::new(
+                                        texture.id(),
+                                        rect.size(),
+                                    ))
+                                    .corner_radius(egui::CornerRadius::same(6)),
+                                );
+                            }
+                            None => {
+                                ui.painter().rect_filled(
+                                    rect,
+                                    egui::CornerRadius::same(6),
+                                    lift(theme.surface_alt, 12),
+                                );
+                            }
+                        }
+                        ui.add_space(6.0);
+                    }
 
                     ui.label(
                         RichText::new(&guild.name)

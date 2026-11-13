@@ -6,7 +6,7 @@ Last verified: 2026-11-13, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **330 passed (325 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **333 passed (328 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -18,10 +18,10 @@ Release binary, 1280×800 window, default settings, theme file loaded.
 | Metric | Latest | How measured |
 | --- | --- | --- |
 | RSS | **233 MB** | `/proc/<pid>/status` `VmRSS`, 20 s sample |
-| PSS | **157 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
+| PSS | **168 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
 | Peak (`VmHWM`) | **256 MB** | kernel high-water mark |
-| Idle CPU | **0.0% at end of sample** | ticks/s; pointer bursts occur while hovering |
-| Threads | **10–11** | `/proc/<pid>/status` |
+| CPU | **0.0% without animation; ~27% while animated avatars/icons are visible** | ticks/s; animation redraws at 12.5 fps |
+| Threads | **7–11** | `/proc/<pid>/status` |
 | Sign-in screen | lower than a channel session | no channel surface is built |
 
 The 300 MB ceiling holds with about 44 MB of headroom. The earlier 159 MB figure

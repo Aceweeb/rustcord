@@ -773,9 +773,6 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 if let Some(url) = message.author.avatar_url() {
                     wanted.push(url);
                 }
-                if let Some(url) = message.author.banner_url() {
-                    wanted.push(url);
-                }
                 if let Some(url) = message.author.decoration_url() {
                     wanted.push(url);
                 }
@@ -1250,6 +1247,42 @@ fn message_row_body(
 /// it decodes. The placeholder uses Discord's reported dimensions so the row
 /// does not jump when the texture arrives.
 
+const PROFILE_IMAGE_REQUESTS: &str = "rustcord-profile-image-requests";
+
+fn queue_profile_image(ctx: &egui::Context, url: &str) {
+    ctx.data_mut(|data| {
+        data.get_temp_mut_or_default::<Vec<String>>(egui::Id::new(PROFILE_IMAGE_REQUESTS))
+            .push(url.to_string());
+    });
+}
+
+/// Take the profile-card images requested while drawing this frame. The app
+/// feeds these to the image loader once all UI closures have finished borrowing
+/// it, so the cache is not mutated from inside a hover card.
+pub(crate) fn take_profile_image_requests(ctx: &egui::Context) -> Vec<String> {
+    ctx.data_mut(|data| {
+        std::mem::take(
+            data.get_temp_mut_or_default::<Vec<String>>(egui::Id::new(PROFILE_IMAGE_REQUESTS)),
+        )
+    })
+}
+
+/// The texture for `url` at the current frame. Animated CDN assets keep the
+/// client awake only while they are actually on screen.
+pub(crate) fn animated_texture<'a>(
+    app: &'a RustcordApp,
+    ui: &egui::Ui,
+    url: &str,
+) -> Option<&'a egui::TextureHandle> {
+    let now = ui.input(|input| input.time);
+    let texture = app.images.frame(url, now);
+    if app.images.is_animated(url) {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(80));
+    }
+    texture
+}
+
 /// Draw a user's avatar at `size`, falling back to the initial when the CDN image
 /// is not loaded yet (or the user has none). Hovering opens the profile card,
 /// which is where Discord's Nitro cosmetics — banner, accent colour and avatar
@@ -1309,10 +1342,10 @@ fn avatar_visual(app: &RustcordApp, ui: &mut egui::Ui, user: &User, size: f32) -
     let theme = app.plugins.theme();
     let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
 
-    match user
-        .avatar_url()
+    let avatar_url = user.avatar_url();
+    match avatar_url
         .as_deref()
-        .and_then(|url| app.images.peek(url))
+        .and_then(|url| animated_texture(app, ui, url))
     {
         Some(texture) => {
             let image = egui::Image::new(egui::load::SizedTexture::new(texture.id(), rect.size()))
@@ -1372,10 +1405,17 @@ fn profile_card(app: &RustcordApp, ui: &mut egui::Ui, user: &User) {
     ui.set_min_width(280.0);
 
     let (banner, _) = ui.allocate_exact_size(egui::vec2(280.0, 72.0), egui::Sense::hover());
-    match user
-        .banner_url()
+    let banner_url = user.banner_url();
+    if let Some(url) = banner_url.as_deref() {
+        // Banners can be several megabytes of GIF frames. Queue one only while
+        // its profile card is open instead of preloading every visible author.
+        if app.images.peek(url).is_none() {
+            queue_profile_image(ui.ctx(), url);
+        }
+    }
+    match banner_url
         .as_deref()
-        .and_then(|url| app.images.peek(url))
+        .and_then(|url| animated_texture(app, ui, url))
     {
         Some(texture) => {
             ui.painter().image(
@@ -1746,6 +1786,16 @@ mod tests {
         let ids: Vec<&str> = rows.iter().map(|user| user.id.as_str()).collect();
         assert_eq!(ids, ["2", "3", "1"]);
         assert_eq!(rows.len(), 3);
+    }
+
+    #[test]
+    fn profile_image_requests_are_queued_and_drained_once() {
+        let ctx = egui::Context::default();
+        let url = "https://cdn.discordapp.com/banners/1/a_banner.gif?size=240";
+        queue_profile_image(&ctx, url);
+        queue_profile_image(&ctx, url);
+        assert_eq!(take_profile_image_requests(&ctx), vec![url, url]);
+        assert!(take_profile_image_requests(&ctx).is_empty());
     }
 
     #[test]

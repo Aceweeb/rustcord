@@ -625,6 +625,7 @@ fn parse_guild(value: &Value) -> Option<(Guild, Vec<Channel>)> {
         .unwrap_or("Unnamed guild")
         .to_string();
     let icon = value["icon"].as_str().map(str::to_string);
+    let banner = value["banner"].as_str().map(str::to_string);
     let member_count = value["member_count"].as_u64();
 
     let channels = value["channels"]
@@ -642,6 +643,7 @@ fn parse_guild(value: &Value) -> Option<(Guild, Vec<Channel>)> {
             id,
             name,
             icon,
+            banner,
             member_count,
         },
         channels,
@@ -865,11 +867,13 @@ mod tests {
             "id": "10",
             "name": "Rustaceans",
             "icon": "abc123",
+            "banner": "banner456",
             "member_count": 42,
             "channels": []
         }))
         .expect("guild");
         assert_eq!(guild.icon.as_deref(), Some("abc123"));
+        assert_eq!(guild.banner.as_deref(), Some("banner456"));
         assert_eq!(guild.member_count, Some(42));
         assert_eq!(
             guild.icon_url().as_deref(),

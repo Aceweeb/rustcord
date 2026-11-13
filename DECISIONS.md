@@ -1873,7 +1873,9 @@ picks the current frame and `is_animated` tells the rail to request the next
 repaint. The rail uses egui's input clock and repaints at most every 80 ms, so an
 idle client with no animated icons stays idle. Animation decoding is deliberately
 limited to guild icons: animated attachments and embeds keep their first-frame
-behaviour and cannot fill the cache with frames the UI never draws.
+behaviour and cannot fill the cache with frames the UI never draws. (D71 later
+broadened the animated CDN surfaces to avatars and banners; attachments and
+embeds still keep their first frame.)
 
 ## D67. Approximate guild counts refresh every five minutes, in the background
 
@@ -1962,3 +1964,42 @@ The whole release binary measures 233 MB RSS / 157 MB PSS / 256 MB peak in a 20 
 idle sample, keeping the project under its 300 MB ceiling. This is a fidelity pass
 over the most visible chrome, not a claim that every Discord surface exists: threads,
 pinned-message browsing, uploads and mention autocomplete are still separate work.
+
+
+## D71. Animated avatars and banners reuse the guild-icon frame pipeline
+
+D66 built the multi-frame decoder for guild icons but limited it to `/icons/`,
+and both `User::avatar_url` and `User::banner_url` always requested `.png`. Guild
+banners were not parsed at all, so there was nowhere for a server banner to
+animate. Nitro animated avatars and banners therefore arrived as stills.
+
+The `a_` hash convention now selects `.gif` for user avatars, user profile banners
+and guild banners. Animated profile and guild banners are requested at 240 px:
+the profile card is 280×72 and the guild peek banner is 64 px tall, so full 480 px
+frames would spend roughly four times the memory for no visible gain. Static
+banners keep their 480 px request. `Guild` gained a `banner` field parsed from
+`GUILD_CREATE`, and the guild hover peek draws a 64 px banner above the channel
+list, with an accent placeholder until it loads.
+
+The GIF predicate now accepts `/icons/`, `/avatars/` and `/banners/` only.
+Attachments and embeds still decode their first frame, so a GIF posted in chat
+cannot fill the cache with frames the message list never advances. A shared
+`animated_texture` helper returns the current frame and schedules the next
+repaint at most 80 ms out only when the URL is actually animated and on screen.
+It is used by message avatars, roster avatars, the profile card, the bottom user
+panel and the guild peek. Profile banners are deliberately not preloaded for
+every visible author: a card queues its banner through `egui` temp data, and the
+app drains that queue after all UI closures have released the image loader. A
+busy channel therefore cannot fill the texture cache with frames nobody is
+looking at.
+
+Three focused tests cover animated cosmetic endpoints, the GIF-path allowlist and
+the profile-request queue (the guild-banner assertions extend the existing D66
+test); the suite is 333. The
+release binary measures 233 MB RSS / 168 MB PSS / 256 MB peak in a 20 s sample,
+leaving about 44 MB below the 300 MB ceiling. The 240 px animated-banner request
+is what keeps a single banner's frame set well inside the 32 MB image cache.
+Motion and the new server banner have not been visually checked: there is no
+signed-in bot session in this environment. While animated avatars or guild icons
+are on screen the client redraws at 12.5 fps and CPU rises to roughly 27%; with no
+animation visible it returns to 0%.

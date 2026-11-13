@@ -338,18 +338,21 @@ impl RustcordApp {
                 id: "1".to_string(),
                 name: "Rustcord Lounge".to_string(),
                 icon: None,
+                banner: None,
                 member_count: None,
             },
             Guild {
                 id: "2".to_string(),
                 name: "Arch Linux".to_string(),
                 icon: None,
+                banner: None,
                 member_count: None,
             },
             Guild {
                 id: "3".to_string(),
                 name: "Rustaceans".to_string(),
                 icon: None,
+                banner: None,
                 member_count: None,
             },
         ];
@@ -1203,6 +1206,7 @@ impl RustcordApp {
                     id: crate::models::DM_GUILD_ID.to_string(),
                     name: "Direct Messages".to_string(),
                     icon: None,
+                    banner: None,
                     member_count: None,
                 },
             );
@@ -3195,6 +3199,10 @@ impl eframe::App for RustcordApp {
         ui::switcher::show(self, &ctx);
         ui::sidebar::rename_dialog(self, &ctx);
         ui::sidebar::hover_peek(self, &ctx);
+        let profile_images = ui::chat::take_profile_image_requests(&ctx);
+        if !profile_images.is_empty() {
+            self.images.prepare(&profile_images);
+        }
         ui::log::show(self, &ctx);
     }
 }

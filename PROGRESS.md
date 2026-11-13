@@ -610,6 +610,12 @@ Priority order for the next session:
   search/member toggle, settings moved to user panel. 1 new test; suite 330.
   Release peak 256 MB, under the 300 MB ceiling. Rendering not visually checked.
 
+- Animated avatars and banners (D71): `a_` avatar, profile-banner and guild-banner
+  hashes use GIF URLs, the existing frame pipeline decodes them, all avatar
+  surfaces and profile cards draw the current frame, and the guild hover peek
+  gained a server banner. 3 new tests; suite 333. Release peak 256 MB, 44 MB of
+  headroom. Motion and appearance not visually checked.
+
 ---
 
 ## 7. Notes for the next agent

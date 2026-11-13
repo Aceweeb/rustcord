@@ -529,7 +529,7 @@ fn download(client: &reqwest::blocking::Client, url: &str) -> Result<Decoded, St
         return Err("image exceeded the download cap".to_string());
     }
 
-    if is_animated_icon_url(url) {
+    if is_animated_cdn_url(url) {
         decode_gif(&bytes)
     } else {
         let image =
@@ -555,11 +555,15 @@ fn is_gif_url(url: &str) -> bool {
         .ends_with(".gif")
 }
 
-/// Only guild icons are animated. Other GIFs (attachments, embeds) keep their
-/// existing first-frame treatment so a large animation cannot fill the texture
-/// cache with frames the UI never draws.
-fn is_animated_icon_url(url: &str) -> bool {
-    is_gif_url(url) && url.contains("/icons/")
+/// Discord's animated cosmetics (guild icons, avatars and banners) are served as
+/// GIFs. Other GIFs (attachments, embeds) keep their existing first-frame
+/// treatment so a large animation cannot fill the texture cache with frames the
+/// UI never draws.
+fn is_animated_cdn_url(url: &str) -> bool {
+    is_gif_url(url)
+        && ["/icons/", "/avatars/", "/banners/"]
+            .iter()
+            .any(|asset| url.contains(asset))
 }
 
 fn check_dimensions(width: u32, height: u32) -> Result<(), String> {
@@ -811,6 +815,25 @@ mod tests {
         assert_eq!(decoded.frames[1].delay_ms, 40);
         assert_eq!(decoded.frames[0].rgba[..4], [255, 0, 0, 255]);
         assert_eq!(decoded.frames[1].rgba[..4], [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn only_cosmetic_gif_paths_are_animated() {
+        assert!(is_animated_cdn_url(
+            "https://cdn.discordapp.com/icons/1/a_x.gif?size=96"
+        ));
+        assert!(is_animated_cdn_url(
+            "https://cdn.discordapp.com/avatars/1/a_x.gif?size=80"
+        ));
+        assert!(is_animated_cdn_url(
+            "https://cdn.discordapp.com/banners/1/a_x.gif?size=240"
+        ));
+        assert!(!is_animated_cdn_url(
+            "https://cdn.discordapp.com/avatars/1/x.png?size=80"
+        ));
+        assert!(!is_animated_cdn_url(
+            "https://cdn.discordapp.com/attachments/1/2/a_x.gif"
+        ));
     }
 
     #[test]

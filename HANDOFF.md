@@ -7,12 +7,18 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 325 lib + 5 bin tests passing (330)
+- `cargo test --all-targets`: 328 lib + 5 bin tests passing (333)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
+- Runtime: 233 MB RSS, 168 MB PSS, 256 MB peak, 7–11 threads; CPU is 0.0% without animation and ~27% while animated avatars/icons redraw
 
 ## What changed most recently
+
+Animated avatars and banners (`DECISIONS.md` D71): user avatar and profile-banner
+hashes with `a_` request GIFs, guild banners are parsed and shown in the rail
+hover peek, and every avatar surface plus both banner surfaces draw the current
+GIF frame. Profile banners are fetched only while their card is open. Release peak
+measured at 256 MB, under the 300 MB ceiling.
 
 Discord header/chrome pass (`DECISIONS.md` D70): parsed channel topics, working
 search and member-list buttons, settings in the user panel. Release peak measured
@@ -32,6 +38,17 @@ Periodic guild counts (`DECISIONS.md` D67):
 - `src/app.rs` — five-minute count pass for all guilds, idle repaint scheduling,
   counts independent of roster eviction.
 - `src/api/discord.rs` — non-destructive `GuildCounts::merge`, 1 test.
+
+Animated avatars and banners (`DECISIONS.md` D71):
+
+- `src/models.rs` — user avatar/profile-banner and guild-banner URLs use GIF for
+  `a_` hashes; animated banners are fetched at 240 px.
+- `src/api/gateway.rs` — guild `banner` parsed from `GUILD_CREATE`.
+- `src/images.rs` — GIF frame pipeline accepts `/avatars/` and `/banners/` too.
+- `src/ui/chat.rs` — `animated_texture` draws the current frame and repaints only
+  while visible; all avatars and the profile banner use it. Profile-banner loads
+  are queued from the hover card and drained after the UI closures finish.
+- `src/ui/sidebar.rs` — 64 px server banner at the top of the guild hover peek.
 
 Animated guild icons (`DECISIONS.md` D66):
 

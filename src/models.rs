@@ -66,8 +66,9 @@ impl User {
     /// bundled numbered default instead — no network round trip on first paint.
     pub fn avatar_url(&self) -> Option<String> {
         self.avatar.as_ref().map(|hash| {
+            let extension = if hash.starts_with("a_") { "gif" } else { "png" };
             format!(
-                "https://cdn.discordapp.com/avatars/{}/{hash}.png?size=80",
+                "https://cdn.discordapp.com/avatars/{}/{hash}.{extension}?size=80",
                 self.id
             )
         })
@@ -76,8 +77,15 @@ impl User {
     /// CDN URL for the profile banner, when the user has one.
     pub fn banner_url(&self) -> Option<String> {
         self.banner.as_ref().map(|hash| {
+            // Animated profile banners are large; 240 px is ample for the 72 px
+            // profile card and bounds a frame set to a few megabytes.
+            let (extension, size) = if hash.starts_with("a_") {
+                ("gif", 240)
+            } else {
+                ("png", 480)
+            };
             format!(
-                "https://cdn.discordapp.com/banners/{}/{hash}.png?size=480",
+                "https://cdn.discordapp.com/banners/{}/{hash}.{extension}?size={size}",
                 self.id
             )
         })
@@ -100,6 +108,9 @@ pub struct Guild {
     pub id: String,
     pub name: String,
     pub icon: Option<String>,
+    /// Banner hash for the guild. Animated server banners use an `a_` hash.
+    #[serde(default)]
+    pub banner: Option<String>,
     /// Discord's total member count for the guild, when the payload carried it.
     /// It is larger than the loaded roster for big servers, so the member panel
     /// shows this as the total and the roster length only as a fallback.
@@ -108,6 +119,17 @@ pub struct Guild {
 }
 
 impl Guild {
+    /// CDN URL for the guild's banner, when it has one.
+    pub fn banner_url(&self) -> Option<String> {
+        self.banner.as_ref().map(|hash| {
+            let extension = if hash.starts_with("a_") { "gif" } else { "png" };
+            format!(
+                "https://cdn.discordapp.com/banners/{}/{hash}.{extension}?size=240",
+                self.id
+            )
+        })
+    }
+
     /// CDN URL for the guild's icon, when it has one.
     pub fn icon_url(&self) -> Option<String> {
         self.icon.as_ref().map(|hash| {
@@ -1426,6 +1448,7 @@ mod tests {
             id: "1".to_string(),
             name: "test".to_string(),
             icon: Some("a_animated".to_string()),
+            banner: Some("a_animated_banner".to_string()),
             member_count: None,
         };
         assert!(guild
@@ -1433,8 +1456,47 @@ mod tests {
             .as_deref()
             .unwrap()
             .contains("/a_animated.gif"));
+        assert!(guild
+            .banner_url()
+            .as_deref()
+            .unwrap()
+            .contains("/a_animated_banner.gif"));
         guild.icon = Some("static".to_string());
         assert!(guild.icon_url().as_deref().unwrap().contains("/static.png"));
+        guild.banner = Some("static_banner".to_string());
+        assert!(guild
+            .banner_url()
+            .as_deref()
+            .unwrap()
+            .contains("/static_banner.png"));
+    }
+
+    #[test]
+    fn animated_user_cosmetics_use_gif_endpoints() {
+        let mut user = User {
+            id: "42".to_string(),
+            avatar: Some("a_avatar".to_string()),
+            banner: Some("a_banner".to_string()),
+            ..User::default()
+        };
+        assert!(user
+            .avatar_url()
+            .as_deref()
+            .unwrap()
+            .contains("/a_avatar.gif"));
+        assert!(user
+            .banner_url()
+            .as_deref()
+            .unwrap()
+            .contains("/a_banner.gif"));
+        user.avatar = Some("still".to_string());
+        user.banner = Some("still_banner".to_string());
+        assert!(user.avatar_url().as_deref().unwrap().contains("/still.png"));
+        assert!(user
+            .banner_url()
+            .as_deref()
+            .unwrap()
+            .contains("/still_banner.png"));
     }
 }
 
