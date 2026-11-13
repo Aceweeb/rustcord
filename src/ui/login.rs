@@ -634,11 +634,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
                 ui.add_space(8.0);
-                ui.label(
-                    RichText::new("Signed in as")
-                        .small()
-                        .color(theme_muted),
-                );
+                ui.label(RichText::new("Signed in as").small().color(theme_muted));
                 ui.add_space(4.0);
                 if let Some(identity) = &app.identity {
                     ui.horizontal(|ui| {
@@ -649,11 +645,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             RichText::new(format!(
                                 "{} (token: {})",
                                 identity.identity.username,
-                                if app.token_is_bot {
-                                    "bot"
-                                } else {
-                                    "personal"
-                                },
+                                if app.token_is_bot { "bot" } else { "personal" },
                             ))
                             .small()
                             .color(theme_text),
@@ -677,9 +669,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 if ui
                     .add(
                         egui::Button::new(
-                            RichText::new("Sign out")
-                                .color(theme_background)
-                                .size(15.0),
+                            RichText::new("Sign out").color(theme_background).size(15.0),
                         )
                         .fill(theme_danger.gamma_multiply(0.15))
                         .min_size(egui::vec2(ui.available_width(), 34.0)),
@@ -696,7 +686,6 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 );
             });
     }
-
 }
 
 /// Action returned by the QR panel.
@@ -740,21 +729,16 @@ fn show_qr_panel(
     // QR code image.
     if let Some(image) = &login.qr.image {
         let size = ui.available_width().min(280.0);
-        let texture = ui.ctx().load_texture(
-            "qr_code",
-            image.clone(),
-            egui::TextureOptions::default(),
-        );
+        let texture =
+            ui.ctx()
+                .load_texture("qr_code", image.clone(), egui::TextureOptions::default());
         let rect = ui
             .allocate_exact_size(egui::vec2(size, size), egui::Sense::hover())
             .0;
         ui.painter().image(
             texture.id(),
             rect,
-            egui::Rect::from_min_max(
-                egui::pos2(0.0, 0.0),
-                egui::pos2(1.0, 1.0),
-            ),
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             egui::Color32::WHITE,
         );
     }

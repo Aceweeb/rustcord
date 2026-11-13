@@ -2098,21 +2098,21 @@ impl RustcordApp {
                 let token = raw.strip_prefix("Bot ").unwrap_or(&raw).trim().to_string();
 
                 if token.is_empty() {
-                    self.login.error =
-                        Some("Paste an account token to sign in.".to_string());
+                    self.login.error = Some("Paste an account token to sign in.".to_string());
                     return;
                 }
 
                 if !crate::ui::login::looks_like_personal_token(&token) {
-                    self.login.error =
-                        Some("That does not look like a valid token.".to_string());
+                    self.login.error = Some("That does not look like a valid token.".to_string());
                     return;
                 }
 
                 self.token_status = match auth::store_personal_token(&token) {
                     Ok(()) => "Personal token saved to keyring".to_string(),
                     Err(err) => {
-                        format!("Keyring unavailable ({err:#}); the token will only last this session")
+                        format!(
+                            "Keyring unavailable ({err:#}); the token will only last this session"
+                        )
                     }
                 };
 

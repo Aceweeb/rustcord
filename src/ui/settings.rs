@@ -1423,7 +1423,10 @@ impl RustcordApp {
             self.settings_ui.confirm_reset = false;
             self.settings_ui.hex_draft.clear();
             dirty = true;
-            self.status_line = Some("settings reset to defaults".to_string());
+        }
+
+        dirty
+    }
 
     fn section_account(&mut self, ui: &mut egui::Ui, theme: &AppTheme) -> bool {
         section_heading(
@@ -1507,10 +1510,6 @@ impl RustcordApp {
                 self.sign_out_identity();
             }
         });
-
-        dirty
-    }
-        }
 
         dirty
     }
