@@ -99,6 +99,8 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
   and online count in the member panel.
 - A member panel scoped to the open channel: its message authors and current voice
   members, with presence dots and Discord-style row hover.
+- Collapsible Discord channel categories, ordered by the guild's `position`, with
+  uncategorised text and voice channels kept in their usual groups.
 - Real profile pictures with Discord's numbered defaults drawn immediately (no
   initial flash while a custom avatar loads), plus a hover profile card with
   display name, accent colour, banner and avatar decoration when Discord sends them.

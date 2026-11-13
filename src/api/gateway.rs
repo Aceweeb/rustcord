@@ -661,6 +661,8 @@ fn parse_channel(value: &Value, guild_id: &str) -> Option<Channel> {
         name: value["name"].as_str().unwrap_or("unnamed").to_string(),
         kind,
         guild_id: guild_id.to_string(),
+        parent_id: value["parent_id"].as_str().map(str::to_string),
+        position: value["position"].as_i64(),
     })
 }
 
@@ -812,6 +814,30 @@ mod tests {
         assert!(!is_disallowed_intents(Some(4004)));
         assert!(!is_disallowed_intents(Some(1000)));
         assert!(!is_disallowed_intents(None));
+    }
+
+    #[test]
+    fn categories_carry_their_position_and_children_carry_a_parent() {
+        let category = parse_channel(
+            &json!({ "id": "90", "name": "projects", "type": 4, "position": 3 }),
+            "1",
+        )
+        .expect("category");
+        assert_eq!(category.kind, ChannelKind::Category);
+        assert_eq!(category.position, Some(3));
+        let text = parse_channel(
+            &json!({
+                "id": "91",
+                "name": "rust",
+                "type": 0,
+                "parent_id": "90",
+                "position": 4
+            }),
+            "1",
+        )
+        .expect("text");
+        assert_eq!(text.parent_id.as_deref(), Some("90"));
+        assert_eq!(text.position, Some(4));
     }
 
     #[test]

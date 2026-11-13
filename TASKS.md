@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Server channel categories (`DECISIONS.md` D65): type-4 categories with
+  parent/position parsing, collapsible headers, uncategorised fallbacks, matching
+  keyboard order. 1 new test; appearance not visually checked.
 - [x] Immediate Discord numbered default avatars (`DECISIONS.md` D64): six embedded
   PNGs preloaded at startup, custom-only CDN URLs, no initial flash. 2 new tests;
   appearance not visually checked.

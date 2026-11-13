@@ -133,6 +133,12 @@ pub struct Channel {
     pub name: String,
     pub kind: ChannelKind,
     pub guild_id: String,
+    /// Category this channel belongs to (`type 4` channels are categories).
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    /// Discord's sort position within the guild/category; lower comes first.
+    #[serde(default)]
+    pub position: Option<i64>,
 }
 
 /// How many reacting users are remembered per emoji. `count` stays

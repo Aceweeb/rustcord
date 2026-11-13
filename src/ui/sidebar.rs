@@ -576,6 +576,7 @@ fn folder_icon(
 fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
     let theme = app.plugins.theme().clone();
     let mut clicked: Option<String> = None;
+    let mut toggle_category: Option<String> = None;
     let mut open_settings = false;
 
     let guild_name = app
@@ -631,77 +632,148 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     let mut nav_index = 0usize;
                     let is_dm_guild =
                         app.selected_guild.as_deref() == Some(crate::models::DM_GUILD_ID);
-                    category_label(
-                        ui,
-                        &theme,
-                        if is_dm_guild {
-                            "DIRECT MESSAGES"
-                        } else {
-                            "TEXT CHANNELS"
-                        },
-                    );
-                    for channel in app.channels.iter().filter(|channel| {
-                        Some(&channel.guild_id) == app.selected_guild.as_ref()
-                            && channel.kind == ChannelKind::Text
-                    }) {
-                        let selected = app.selected_channel.as_deref() == Some(channel.id.as_str());
-                        let focused = app.navigator.on_channel(nav_index);
-                        nav_index += 1;
-                        if channel_row(
-                            ui,
-                            &theme,
-                            selected,
-                            if is_dm_guild { "@" } else { "#" },
-                            &channel.name,
-                            app.unread.get(&channel.id),
-                            focused,
-                        ) {
-                            clicked = Some(channel.id.clone());
-                        }
-                    }
-
-                    if !is_dm_guild {
-                        ui.add_space(14.0);
-                        category_label(ui, &theme, "VOICE CHANNELS");
-                        for channel in app.channels.iter().filter(|channel| {
+                    let guild_channels: Vec<&crate::models::Channel> = app
+                        .channels
+                        .iter()
+                        .filter(|channel| {
                             Some(&channel.guild_id) == app.selected_guild.as_ref()
-                                && channel.kind == ChannelKind::Voice
-                        }) {
-                            let selected =
-                                app.selected_channel.as_deref() == Some(channel.id.as_str());
-                            let focused = app.navigator.on_channel(nav_index);
-                            nav_index += 1;
-                            if channel_row(
+                                && matches!(channel.kind, ChannelKind::Text | ChannelKind::Voice)
+                        })
+                        .collect();
+
+                    if is_dm_guild {
+                        category_label(ui, &theme, "DIRECT MESSAGES");
+                        for channel in &guild_channels {
+                            draw_channel(
+                                app,
                                 ui,
                                 &theme,
-                                selected,
-                                "🔊",
-                                &channel.name,
-                                app.unread.get(&channel.id),
-                                focused,
-                            ) {
-                                clicked = Some(channel.id.clone());
-                            }
-
-                            // Who is in the channel, as Discord lists them under it.
-                            // Live gateway data only: there is no audio here (D24).
-                            for member in app.voice.members(&channel.id) {
-                                voice_member_row(ui, &theme, &member.username);
-                            }
+                                channel,
+                                true,
+                                &mut nav_index,
+                                &mut clicked,
+                            );
                         }
-                    }
-                    if is_dm_guild
-                        && !app
-                            .channels
-                            .iter()
-                            .any(|channel| channel.guild_id == crate::models::DM_GUILD_ID)
-                    {
-                        ui.add_space(4.0);
-                        ui.label(
-                            RichText::new("No direct messages yet — open one with DM on a member.")
+                        if guild_channels.is_empty() {
+                            ui.add_space(4.0);
+                            ui.label(
+                                RichText::new(
+                                    "No direct messages yet — open one with DM on a member.",
+                                )
                                 .size(11.0)
                                 .color(theme.muted),
-                        );
+                            );
+                        }
+                    } else {
+                        // Categories are channels of type 4. Children name their
+                        // parent, and Discord's `position` orders both the
+                        // categories and the rows inside each one.
+                        let mut categories: Vec<&crate::models::Channel> = app
+                            .channels
+                            .iter()
+                            .filter(|channel| {
+                                channel.guild_id == app.selected_guild.clone().unwrap_or_default()
+                                    && channel.kind == ChannelKind::Category
+                            })
+                            .collect();
+                        categories.sort_by_key(|category| {
+                            (category.position.unwrap_or(i64::MAX), category.id.clone())
+                        });
+                        let category_ids: std::collections::BTreeSet<&str> = categories
+                            .iter()
+                            .map(|category| category.id.as_str())
+                            .collect();
+
+                        for category in categories {
+                            let mut children: Vec<&crate::models::Channel> = guild_channels
+                                .iter()
+                                .copied()
+                                .filter(|channel| {
+                                    channel.parent_id.as_deref() == Some(category.id.as_str())
+                                })
+                                .collect();
+                            if children.is_empty() {
+                                continue;
+                            }
+                            children.sort_by_key(|channel| {
+                                (channel.position.unwrap_or(i64::MAX), channel.id.clone())
+                            });
+
+                            let collapsed = app.collapsed_categories.contains(&category.id);
+                            if category_header(ui, &theme, &category.name, collapsed) {
+                                toggle_category = Some(category.id.clone());
+                            }
+                            if !collapsed {
+                                for channel in children {
+                                    draw_channel(
+                                        app,
+                                        ui,
+                                        &theme,
+                                        channel,
+                                        false,
+                                        &mut nav_index,
+                                        &mut clicked,
+                                    );
+                                }
+                            }
+                        }
+
+                        // Channels with no category (or one whose category was
+                        // hidden from the bot) keep Discord's two default groups.
+                        let mut uncategorized: Vec<&crate::models::Channel> = guild_channels
+                            .iter()
+                            .copied()
+                            .filter(|channel| {
+                                channel
+                                    .parent_id
+                                    .as_deref()
+                                    .is_none_or(|parent| !category_ids.contains(parent))
+                            })
+                            .collect();
+                        uncategorized.sort_by_key(|channel| {
+                            (channel.position.unwrap_or(i64::MAX), channel.id.clone())
+                        });
+                        if uncategorized
+                            .iter()
+                            .any(|channel| channel.kind == ChannelKind::Text)
+                        {
+                            category_label(ui, &theme, "TEXT CHANNELS");
+                            for channel in uncategorized
+                                .iter()
+                                .filter(|channel| channel.kind == ChannelKind::Text)
+                            {
+                                draw_channel(
+                                    app,
+                                    ui,
+                                    &theme,
+                                    channel,
+                                    false,
+                                    &mut nav_index,
+                                    &mut clicked,
+                                );
+                            }
+                        }
+                        if uncategorized
+                            .iter()
+                            .any(|channel| channel.kind == ChannelKind::Voice)
+                        {
+                            ui.add_space(14.0);
+                            category_label(ui, &theme, "VOICE CHANNELS");
+                            for channel in uncategorized
+                                .iter()
+                                .filter(|channel| channel.kind == ChannelKind::Voice)
+                            {
+                                draw_channel(
+                                    app,
+                                    ui,
+                                    &theme,
+                                    channel,
+                                    false,
+                                    &mut nav_index,
+                                    &mut clicked,
+                                );
+                            }
+                        }
                     }
                     ui.add_space(8.0);
                 });
@@ -715,6 +787,11 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 });
         });
 
+    if let Some(id) = toggle_category {
+        if !app.collapsed_categories.remove(&id) {
+            app.collapsed_categories.insert(id);
+        }
+    }
     if let Some(id) = clicked {
         // A click takes over from the keyboard focus.
         app.navigator.stop();
@@ -858,6 +935,69 @@ fn voice_member_row(ui: &mut egui::Ui, theme: &AppTheme, username: &str) {
         egui::FontId::proportional(13.0),
         theme.muted,
     );
+}
+
+/// Draw one text/voice channel row and, for a voice channel, the people in it.
+/// Shared by the category sections, uncategorised groups and the DM list.
+fn draw_channel(
+    app: &RustcordApp,
+    ui: &mut egui::Ui,
+    theme: &AppTheme,
+    channel: &crate::models::Channel,
+    is_dm_guild: bool,
+    nav_index: &mut usize,
+    clicked: &mut Option<String>,
+) {
+    let selected = app.selected_channel.as_deref() == Some(channel.id.as_str());
+    let focused = app.navigator.on_channel(*nav_index);
+    *nav_index += 1;
+    let icon = match channel.kind {
+        ChannelKind::Voice => "🔊",
+        ChannelKind::Text if is_dm_guild => "@",
+        ChannelKind::Text => "#",
+        ChannelKind::Category => return,
+    };
+    if channel_row(
+        ui,
+        theme,
+        selected,
+        icon,
+        &channel.name,
+        app.unread.get(&channel.id),
+        focused,
+    ) {
+        *clicked = Some(channel.id.clone());
+    }
+    if channel.kind == ChannelKind::Voice {
+        for member in app.voice.members(&channel.id) {
+            voice_member_row(ui, theme, &member.username);
+        }
+    }
+}
+
+/// A collapsible category header. Returns whether it was clicked.
+fn category_header(ui: &mut egui::Ui, theme: &AppTheme, name: &str, collapsed: bool) -> bool {
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 28.0), egui::Sense::click());
+    if response.hovered() {
+        ui.painter()
+            .rect_filled(rect, egui::CornerRadius::same(4), lift(theme.surface, 8));
+    }
+    ui.painter().text(
+        rect.left_center() + egui::vec2(8.0, 2.0),
+        egui::Align2::LEFT_CENTER,
+        if collapsed { "▸" } else { "▾" },
+        egui::FontId::proportional(10.0),
+        theme.muted,
+    );
+    ui.painter().text(
+        rect.left_center() + egui::vec2(22.0, 2.0),
+        egui::Align2::LEFT_CENTER,
+        name.to_uppercase(),
+        egui::FontId::proportional(11.0),
+        theme.muted,
+    );
+    response.clicked()
 }
 
 fn category_label(ui: &mut egui::Ui, theme: &AppTheme, label: &str) {

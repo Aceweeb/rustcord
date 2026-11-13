@@ -189,6 +189,9 @@ pub struct RustcordApp {
     dm_loaded: bool,
     dm_loading: bool,
     /// Measured row heights for the virtualised message list.
+    /// Category ids collapsed in the channel list. Session-only: the collapsed
+    /// state is cheap to recreate and not worth a settings migration.
+    pub(crate) collapsed_categories: std::collections::BTreeSet<String>,
     pub(crate) metrics: RowMetrics,
     pub(crate) metrics_channel: Option<String>,
     history_tx: Sender<HistoryResult>,
@@ -328,46 +331,68 @@ impl RustcordApp {
 
         let channels = vec![
             Channel {
+                id: "100".to_string(),
+                name: "community".to_string(),
+                kind: ChannelKind::Category,
+                guild_id: "1".to_string(),
+                parent_id: None,
+                position: Some(1),
+            },
+            Channel {
                 id: "10".to_string(),
                 name: "general".to_string(),
                 kind: ChannelKind::Text,
                 guild_id: "1".to_string(),
+                parent_id: Some("100".to_string()),
+                position: Some(2),
             },
             Channel {
                 id: "11".to_string(),
                 name: "dev".to_string(),
                 kind: ChannelKind::Text,
                 guild_id: "1".to_string(),
+                parent_id: Some("100".to_string()),
+                position: Some(3),
             },
             Channel {
                 id: "12".to_string(),
                 name: "voice-lounge".to_string(),
                 kind: ChannelKind::Voice,
                 guild_id: "1".to_string(),
+                parent_id: None,
+                position: None,
             },
             Channel {
                 id: "13".to_string(),
                 name: "off-topic".to_string(),
                 kind: ChannelKind::Text,
                 guild_id: "1".to_string(),
+                parent_id: None,
+                position: None,
             },
             Channel {
                 id: "20".to_string(),
                 name: "pacman".to_string(),
                 kind: ChannelKind::Text,
                 guild_id: "2".to_string(),
+                parent_id: None,
+                position: None,
             },
             Channel {
                 id: "21".to_string(),
                 name: "wayland".to_string(),
                 kind: ChannelKind::Text,
                 guild_id: "2".to_string(),
+                parent_id: None,
+                position: None,
             },
             Channel {
                 id: "30".to_string(),
                 name: "cargo".to_string(),
                 kind: ChannelKind::Text,
                 guild_id: "3".to_string(),
+                parent_id: None,
+                position: None,
             },
         ];
 
@@ -510,6 +535,7 @@ impl RustcordApp {
             dm_results,
             dm_loaded: false,
             dm_loading: false,
+            collapsed_categories: std::collections::BTreeSet::new(),
             metrics: RowMetrics::new(),
             metrics_channel: None,
             history_tx,
@@ -1644,18 +1670,83 @@ impl RustcordApp {
     // Keyboard navigation
     // -----------------------------------------------------------------------
 
-    /// Channel ids in the sidebar's own order: text channels, then voice.
+    /// Channel ids in the sidebar's own order. Categories are sorted by Discord's
+    /// position and contribute their visible children; then uncategorised text,
+    /// then uncategorised voice. Collapsed categories are skipped so keyboard
+    /// focus never lands on a row that is not drawn.
     fn navigable_channels(&self) -> Vec<String> {
-        let selected = self.selected_guild.as_ref();
-        let text = self.channels.iter().filter(|channel| {
-            Some(&channel.guild_id) == selected && channel.kind == ChannelKind::Text
-        });
-        let voice = self.channels.iter().filter(|channel| {
-            Some(&channel.guild_id) == selected && channel.kind == ChannelKind::Voice
-        });
-        text.chain(voice)
-            .map(|channel| channel.id.clone())
-            .collect()
+        let Some(selected) = self.selected_guild.as_deref() else {
+            return Vec::new();
+        };
+        let guild_channels: Vec<&Channel> = self
+            .channels
+            .iter()
+            .filter(|channel| {
+                channel.guild_id == selected
+                    && matches!(channel.kind, ChannelKind::Text | ChannelKind::Voice)
+            })
+            .collect();
+        if selected == crate::models::DM_GUILD_ID {
+            return guild_channels
+                .into_iter()
+                .map(|channel| channel.id.clone())
+                .collect();
+        }
+
+        let mut categories: Vec<&Channel> = self
+            .channels
+            .iter()
+            .filter(|channel| channel.guild_id == selected && channel.kind == ChannelKind::Category)
+            .collect();
+        categories
+            .sort_by_key(|category| (category.position.unwrap_or(i64::MAX), category.id.clone()));
+
+        let mut ids = Vec::new();
+        for category in categories {
+            if self.collapsed_categories.contains(&category.id) {
+                continue;
+            }
+            let mut children: Vec<&Channel> = guild_channels
+                .iter()
+                .copied()
+                .filter(|channel| channel.parent_id.as_deref() == Some(category.id.as_str()))
+                .collect();
+            children
+                .sort_by_key(|channel| (channel.position.unwrap_or(i64::MAX), channel.id.clone()));
+            ids.extend(children.into_iter().map(|channel| channel.id.clone()));
+        }
+
+        let category_ids: std::collections::BTreeSet<&str> = self
+            .channels
+            .iter()
+            .filter(|channel| channel.guild_id == selected && channel.kind == ChannelKind::Category)
+            .map(|category| category.id.as_str())
+            .collect();
+        let mut uncategorized: Vec<&Channel> = guild_channels
+            .iter()
+            .copied()
+            .filter(|channel| {
+                channel
+                    .parent_id
+                    .as_deref()
+                    .is_none_or(|parent| !category_ids.contains(parent))
+            })
+            .collect();
+        uncategorized
+            .sort_by_key(|channel| (channel.position.unwrap_or(i64::MAX), channel.id.clone()));
+        ids.extend(
+            uncategorized
+                .iter()
+                .filter(|channel| channel.kind == ChannelKind::Text)
+                .map(|channel| channel.id.clone()),
+        );
+        ids.extend(
+            uncategorized
+                .iter()
+                .filter(|channel| channel.kind == ChannelKind::Voice)
+                .map(|channel| channel.id.clone()),
+        );
+        ids
     }
 
     fn rail_items(&self) -> Vec<crate::rail::RailItem> {

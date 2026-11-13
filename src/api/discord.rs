@@ -534,6 +534,8 @@ impl DiscordDmListEntry {
                 .unwrap_or_else(|| "Direct message".to_string()),
             kind: crate::models::ChannelKind::Text,
             guild_id: crate::models::DM_GUILD_ID.to_string(),
+            parent_id: None,
+            position: None,
         })
     }
 }
@@ -560,6 +562,8 @@ impl DiscordDmChannel {
             // tracking; the synthetic guild id is what distinguishes them.
             kind: crate::models::ChannelKind::Text,
             guild_id: crate::models::DM_GUILD_ID.to_string(),
+            parent_id: None,
+            position: None,
         })
     }
 }

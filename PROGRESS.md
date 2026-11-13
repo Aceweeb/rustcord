@@ -584,6 +584,10 @@ Priority order for the next session:
   at startup, `avatar_url` now custom-only, first frame never shows initials for a
   snowflake id. 2 new tests; suite 319. Appearance not visually checked.
 
+- Channel categories (D65): `Channel.parent_id`/`position` parsed, collapsible
+  category sections ordered by Discord position, uncategorised fallback groups,
+  keyboard order matches. 1 new test; suite 320. Appearance not visually checked.
+
 ---
 
 ## 7. Notes for the next agent

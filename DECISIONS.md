@@ -1834,3 +1834,23 @@ snowflake still falls back to the initial, which is limited to demo placeholders
 The assets are the same artwork as `cdn.discordapp.com/embed/avatars/{0-5}.png`,
 embedded at roughly 8 KB total. A corrupt asset is skipped and the initial remains a
 last-resort fallback; a test decodes all six.
+
+## D65. Categories are parsed from the gateway and drawn as collapsible sections
+
+`ChannelKind::Category` existed only so type-4 channels could be skipped. The
+channel list had no notion of `parent_id` or `position`, so every text channel was
+flattened under one `TEXT CHANNELS` heading and every voice channel under another.
+
+`Channel` now carries both fields, parsed from the same gateway payload that already
+provided the id and name. The sidebar sorts categories and their children by
+`position` (unpositioned rows last, id as tie-break), draws each non-empty category
+as a clickable `▾ NAME` header, and hides its children when collapsed. Collapse state
+is session-only (`collapsed_categories`), like the rail's expanded folders. Channels
+whose parent is missing or hidden from the bot fall back to the original
+`TEXT CHANNELS`/`VOICE CHANNELS` groups, sorted the same way. Voice member rows and
+unread indicators follow their channel into whichever section owns it.
+
+Keyboard navigation uses the same ordering, including skipping collapsed children,
+so the highlighted row and the activated channel cannot drift apart. The demo guild
+now includes a `COMMUNITY` category covering `#general` and `#dev`; DMs stay a flat
+`DIRECT MESSAGES` list because Discord's DM rail has no categories.

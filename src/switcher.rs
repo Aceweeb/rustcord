@@ -179,6 +179,8 @@ mod tests {
             name: name.to_string(),
             kind,
             guild_id: guild_id.to_string(),
+            parent_id: None,
+            position: None,
         }
     }
 

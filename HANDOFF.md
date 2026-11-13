@@ -7,12 +7,20 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 314 lib + 5 bin tests passing (319)
+- `cargo test --all-targets`: 315 lib + 5 bin tests passing (320)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Channel categories (`DECISIONS.md` D65):
+
+- `src/models.rs` — `Channel.parent_id`/`position`.
+- `src/api/gateway.rs` — parses both, 1 test.
+- `src/ui/sidebar.rs` — collapsible category sections, shared row drawing.
+- `src/app.rs` — category collapse state, keyboard order mirrors the sidebar,
+  demo `COMMUNITY` category.
 
 Immediate numbered defaults (`DECISIONS.md` D64):
 
