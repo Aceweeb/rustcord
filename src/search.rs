@@ -365,6 +365,7 @@ mod tests {
                 username: author.to_string(),
                 avatar: None,
                 status: crate::models::Presence::default(),
+                ..User::default()
             },
             content,
         );

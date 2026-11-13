@@ -23,6 +23,7 @@ fn main() -> anyhow::Result<()> {
             username: "example".to_string(),
             avatar: None,
             status: Presence::default(),
+            ..User::default()
         },
         "Hello from Rustcord — this is a plugin test.",
     );

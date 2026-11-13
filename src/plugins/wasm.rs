@@ -455,6 +455,7 @@ mod tests {
                 username: "alice".to_string(),
                 avatar: None,
                 status: crate::models::Presence::default(),
+                ..Default::default()
             },
             "original",
         );
@@ -550,6 +551,7 @@ mod tests {
                 username: "alice".to_string(),
                 avatar: None,
                 status: crate::models::Presence::default(),
+                ..Default::default()
             },
             "original",
         );

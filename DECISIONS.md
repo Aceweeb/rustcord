@@ -1539,3 +1539,33 @@ the expense virtualisation exists to avoid.
 **Scope.** Pure range computation is unit-tested (case-insensitivity, repeated
 occurrences, overlap merging, empty inputs, the lowercase-length edge case) and the
 estimator has its own test; no network, index or new thread is involved.
+
+## D51. Profile pictures and Nitro cosmetics come from the user object, not a new request
+
+Message rows drew a coloured circle with an initial, so a server looked nothing like
+Discord even though every message already carried the author's avatar hash.
+
+**Avatars.** `User::avatar_url` builds the CDN URL from that hash (PNG even for
+animated `a_…` hashes, so the decoder never needs a frame clock). Users without a
+custom avatar get Discord's numbered default avatar from
+`embed/avatars/{(id >> 22) % 6}.png`, matching the modern client. The existing
+bounded `ImageLoader` fetches them: only visible rows request avatars, textures are
+LRU-evicted against the same byte budget, and the old initial remains the fallback
+while an image is missing, pending or refused.
+
+**Nitro cosmetics.** `User` gained optional `global_name`, `banner`,
+`accent_color` and `avatar_decoration`, parsed from both the gateway author object
+and the REST message author (which already ignored unknown fields). Hovering an
+avatar opens a profile card: banner image when cached, otherwise the accent colour
+or a neutral fill; the avatar with its decoration drawn over it; the display name,
+handle and small labels for which cosmetics are present. No extra endpoint is
+called — bots cannot fetch arbitrary user profiles, so only fields Discord actually
+includes appear. In practice that means avatars, display names and decorations show
+up for ordinary messages; banners and accent colours appear only when the payload
+carries them.
+
+**Additive by construction.** Every existing literal gained `..User::default()`
+rather than changing meaning, the message-row avatar call replaces only the drawing
+lines, and the profile card is a hover tooltip with no stored state. Parsing is
+unchanged for payloads without the new keys, and one model test pins the URL shapes,
+the display-name fallback and the default-avatar index.

@@ -441,6 +441,20 @@ struct DiscordUser {
     id: String,
     username: String,
     avatar: Option<String>,
+    #[serde(default)]
+    global_name: Option<String>,
+    #[serde(default)]
+    banner: Option<String>,
+    #[serde(default)]
+    accent_color: Option<u32>,
+    #[serde(default)]
+    avatar_decoration_data: Option<DiscordDecoration>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DiscordDecoration {
+    #[serde(default)]
+    asset: Option<String>,
 }
 
 impl From<DiscordUser> for User {
@@ -449,6 +463,12 @@ impl From<DiscordUser> for User {
             id: raw.id,
             username: raw.username,
             avatar: raw.avatar,
+            global_name: raw.global_name,
+            banner: raw.banner,
+            accent_color: raw.accent_color,
+            avatar_decoration: raw
+                .avatar_decoration_data
+                .and_then(|decoration| decoration.asset),
             status: Presence::Offline,
         }
     }

@@ -16,6 +16,18 @@ pub struct User {
     pub id: String,
     pub username: String,
     pub avatar: Option<String>,
+    /// Discord's display name (Nitro users can set one independent of the handle).
+    #[serde(default)]
+    pub global_name: Option<String>,
+    /// Banner hash. Nitro users get an image; everyone else can have an accent.
+    #[serde(default)]
+    pub banner: Option<String>,
+    /// Profile accent colour as packed `0xRRGGBB`.
+    #[serde(default)]
+    pub accent_color: Option<u32>,
+    /// Avatar-decoration preset asset hash (the Nitro ornament around the avatar).
+    #[serde(default)]
+    pub avatar_decoration: Option<String>,
     #[serde(default)]
     pub status: Presence,
 }
@@ -26,8 +38,54 @@ impl Default for User {
             id: "0".to_string(),
             username: "Unknown".to_string(),
             avatar: None,
+            global_name: None,
+            banner: None,
+            accent_color: None,
+            avatar_decoration: None,
             status: Presence::Offline,
         }
+    }
+}
+
+impl User {
+    /// The name Discord shows: the display name when set, else the handle.
+    pub fn display_name(&self) -> &str {
+        self.global_name.as_deref().unwrap_or(&self.username)
+    }
+
+    /// CDN URL for the avatar. Animated hashes (`a_…`) are fetched as PNG so the
+    /// decoder never needs a frame clock; Discord serves a still frame for them.
+    /// Users without a custom avatar fall back to Discord's numbered default
+    /// avatar, exactly as the official client does.
+    pub fn avatar_url(&self) -> Option<String> {
+        if let Some(hash) = &self.avatar {
+            return Some(format!(
+                "https://cdn.discordapp.com/avatars/{}/{hash}.png?size=80",
+                self.id
+            ));
+        }
+        let id: u64 = self.id.parse().ok()?;
+        let index = (id >> 22) % 6;
+        Some(format!(
+            "https://cdn.discordapp.com/embed/avatars/{index}.png"
+        ))
+    }
+
+    /// CDN URL for the profile banner, when the user has one.
+    pub fn banner_url(&self) -> Option<String> {
+        self.banner.as_ref().map(|hash| {
+            format!(
+                "https://cdn.discordapp.com/banners/{}/{hash}.png?size=480",
+                self.id
+            )
+        })
+    }
+
+    /// CDN URL for the avatar-decoration preset (Nitro ornament).
+    pub fn decoration_url(&self) -> Option<String> {
+        self.avatar_decoration.as_ref().map(|asset| {
+            format!("https://cdn.discordapp.com/avatar-decoration-presets/{asset}.png")
+        })
     }
 }
 
@@ -1266,6 +1324,51 @@ mod tests {
         // a frame rather than panicking or indexing out of range.
         assert_eq!(typing_dots(TYPING_FRAME_SECONDS * 3.5), ".");
         assert_eq!(typing_dots(-1.0), ".");
+    }
+
+    #[test]
+    fn profile_cosmetics_build_discord_cdn_urls() {
+        let user = User {
+            id: "42".to_string(),
+            username: "jane".to_string(),
+            avatar: Some("abc".to_string()),
+            global_name: Some("Jane".to_string()),
+            banner: Some("bannerhash".to_string()),
+            accent_color: Some(0x11_22_33),
+            avatar_decoration: Some("deco".to_string()),
+            status: Presence::Online,
+        };
+        assert_eq!(user.display_name(), "Jane");
+        assert_eq!(
+            user.avatar_url().as_deref(),
+            Some("https://cdn.discordapp.com/avatars/42/abc.png?size=80")
+        );
+        assert_eq!(
+            user.banner_url().as_deref(),
+            Some("https://cdn.discordapp.com/banners/42/bannerhash.png?size=480")
+        );
+        assert_eq!(
+            user.decoration_url().as_deref(),
+            Some("https://cdn.discordapp.com/avatar-decoration-presets/deco.png")
+        );
+
+        // No cosmetics: the handle is the name, the default avatar still loads,
+        // and there is no banner or decoration to fetch.
+        let plain = User::default();
+        assert_eq!(plain.display_name(), "Unknown");
+        assert_eq!(
+            plain.avatar_url().as_deref(),
+            Some("https://cdn.discordapp.com/embed/avatars/0.png")
+        );
+        assert!(plain.banner_url().is_none());
+        assert!(plain.decoration_url().is_none());
+
+        // An unparseable id cannot be mapped to a default avatar.
+        let anonymous = User {
+            id: String::new(),
+            ..User::default()
+        };
+        assert!(anonymous.avatar_url().is_none());
     }
 
     #[test]

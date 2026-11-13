@@ -1,5 +1,5 @@
 use crate::app::RustcordApp;
-use crate::models::{Embed, Message};
+use crate::models::{Embed, Message, User};
 use crate::utils::initial;
 use chrono::{DateTime, Datelike, FixedOffset, Local, Utc};
 use egui::RichText;
@@ -534,6 +534,15 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     saw_target = true;
                 }
                 wanted.extend(message.image_urls().map(str::to_string));
+                if let Some(url) = message.author.avatar_url() {
+                    wanted.push(url);
+                }
+                if let Some(url) = message.author.banner_url() {
+                    wanted.push(url);
+                }
+                if let Some(url) = message.author.decoration_url() {
+                    wanted.push(url);
+                }
 
                 let focused = app.jump_highlight.as_ref().is_some_and(|(id, until)| {
                     id == &message.id && std::time::Instant::now() < *until
@@ -734,19 +743,7 @@ fn message_row_body(
 
     ui.horizontal_top(|ui| {
         // Discord's message row: 40 px avatar, 16 px name line, 12 px timestamp.
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(40.0, 40.0), egui::Sense::hover());
-        ui.painter().circle_filled(
-            rect.center(),
-            20.0,
-            crate::utils::lift(theme.background, 20),
-        );
-        ui.painter().text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            initial(&message.author.username),
-            egui::FontId::proportional(15.0),
-            theme.text,
-        );
+        avatar(app, ui, &message.author, 40.0);
 
         ui.vertical(|ui| {
             ui.horizontal(|ui| {
@@ -843,6 +840,141 @@ fn message_row_body(
 /// Draw an attachment or embed image, or a placeholder of the same size while
 /// it decodes. The placeholder uses Discord's reported dimensions so the row
 /// does not jump when the texture arrives.
+
+/// Draw a user's avatar at `size`, falling back to the initial when the CDN image
+/// is not loaded yet (or the user has none). Hovering opens the profile card,
+/// which is where Discord's Nitro cosmetics — banner, accent colour and avatar
+/// decoration — are shown.
+fn avatar(app: &RustcordApp, ui: &mut egui::Ui, user: &User, size: f32) -> egui::Response {
+    let response = avatar_visual(app, ui, user, size);
+    response.on_hover_ui(|ui| profile_card(app, ui, user))
+}
+
+/// The avatar without the hover card, so the card can draw one without nesting
+/// another card inside itself.
+fn avatar_visual(app: &RustcordApp, ui: &mut egui::Ui, user: &User, size: f32) -> egui::Response {
+    let theme = app.plugins.theme();
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+
+    match user
+        .avatar_url()
+        .as_deref()
+        .and_then(|url| app.images.peek(url))
+    {
+        Some(texture) => {
+            let image = egui::Image::new(egui::load::SizedTexture::new(texture.id(), rect.size()))
+                .corner_radius(egui::CornerRadius::same((size / 2.0) as u8));
+            ui.put(rect, image);
+        }
+        None => {
+            ui.painter().circle_filled(
+                rect.center(),
+                size / 2.0,
+                crate::utils::lift(theme.background, 20),
+            );
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                initial(&user.username),
+                egui::FontId::proportional(size * 0.375),
+                theme.text,
+            );
+        }
+    }
+
+    // The decoration is a transparent PNG drawn slightly outside the avatar.
+    if let Some(texture) = user
+        .decoration_url()
+        .as_deref()
+        .and_then(|url| app.images.peek(url))
+    {
+        ui.painter().image(
+            texture.id(),
+            rect.expand(size * 0.16),
+            egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            egui::Color32::WHITE,
+        );
+    }
+
+    response
+}
+
+/// A compact version of Discord's profile popout: banner (or accent colour),
+/// avatar with its decoration, display name and handle. Everything is drawn from
+/// the user object the gateway/REST already sent; no extra request is made.
+fn profile_card(app: &RustcordApp, ui: &mut egui::Ui, user: &User) {
+    let theme = app.plugins.theme();
+    ui.set_min_width(280.0);
+
+    let (banner, _) = ui.allocate_exact_size(egui::vec2(280.0, 72.0), egui::Sense::hover());
+    match user
+        .banner_url()
+        .as_deref()
+        .and_then(|url| app.images.peek(url))
+    {
+        Some(texture) => {
+            ui.painter().image(
+                texture.id(),
+                banner,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+        None => {
+            let fill = user
+                .accent_color
+                .map(accent_color)
+                .unwrap_or_else(|| crate::utils::lift(theme.surface_alt, 12));
+            ui.painter()
+                .rect_filled(banner, egui::CornerRadius::same(6), fill);
+        }
+    }
+
+    ui.add_space(4.0);
+    ui.horizontal(|ui| {
+        avatar_visual(app, ui, user, 48.0);
+        ui.vertical(|ui| {
+            ui.label(
+                RichText::new(user.display_name())
+                    .size(16.0)
+                    .strong()
+                    .color(theme.text),
+            );
+            ui.label(
+                RichText::new(format!("@{}", user.username))
+                    .size(12.0)
+                    .color(theme.muted),
+            );
+            let mut tags = Vec::new();
+            if user.banner.is_some() {
+                tags.push("profile banner");
+            }
+            if user.accent_color.is_some() {
+                tags.push("accent colour");
+            }
+            if user.avatar_decoration.is_some() {
+                tags.push("avatar decoration");
+            }
+            if !tags.is_empty() {
+                ui.label(
+                    RichText::new(tags.join(" · "))
+                        .size(11.0)
+                        .color(theme.muted),
+                );
+            }
+        });
+    });
+}
+
+/// Packed `0xRRGGBB` to an egui colour.
+fn accent_color(packed: u32) -> egui::Color32 {
+    egui::Color32::from_rgb(
+        ((packed >> 16) & 0xff) as u8,
+        ((packed >> 8) & 0xff) as u8,
+        (packed & 0xff) as u8,
+    )
+}
+
 fn image_block(app: &RustcordApp, ui: &mut egui::Ui, url: &str, known: Option<(u32, u32)>) {
     let theme = app.plugins.theme();
 

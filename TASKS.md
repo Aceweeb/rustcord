@@ -237,6 +237,10 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Profile pictures and Nitro cosmetics (`DECISIONS.md` D51): custom avatars and
+  Discord default avatars via `ImageLoader`, `global_name`/`banner`/`accent_color`/
+  `avatar_decoration` on `User`, hover profile card. 1 new test; not yet seen on
+  screen (D28), and banners only render when the payload includes them.
 - [x] Example WASM plugin (`examples/wasm-uppercase`): ABI-documented `.wat`, a
   prebuilt 272-byte `.wasm`, `build_plugin` and `check_plugin` examples. Verified
   headlessly: "Hello from Rustcord — this is a plugin test." becomes uppercase.

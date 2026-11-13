@@ -93,6 +93,9 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
   textures to stay inside the budget.
 - Bot-token authentication stored in the OS keyring (`src/auth.rs`). Tokens are
   never written to `settings.json`.
+- Real profile pictures with a hover profile card (display name, accent colour,
+  banner and avatar decoration when Discord sends them), loaded through the
+  bounded image cache.
 - Local full-text search (Ctrl+F) across every message cached this session, from
   every channel opened so far, with `from:name`, `in:#channel` (or `#channel`) and
   `before:` / `after:` date filters (exclusive, UTC). Results show the channel, author, time and a snippet, and clicking one

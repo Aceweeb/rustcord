@@ -524,6 +524,11 @@ Priority order for the next session:
   so the sandbox can be exercised without a Discord session. Not yet dropped into
   the live config folder or seen in the UI.
 
+- Avatars and Nitro-style profile cards (D51): custom/default CDN avatars through
+  the existing image cache, display names, banners, accent colours and avatar
+  decorations parsed from gateway and REST user objects, hover profile card.
+  Additive fields on `User`; 1 new test; suite 307.
+
 ---
 
 ## 7. Notes for the next agent

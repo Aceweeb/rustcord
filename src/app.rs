@@ -350,6 +350,7 @@ impl RustcordApp {
             username: "jason".to_string(),
             avatar: None,
             status: Presence::Online,
+            ..User::default()
         };
 
         let messages = demo_messages(&current_user);
@@ -2758,18 +2759,21 @@ fn demo_messages(current_user: &User) -> Vec<Message> {
         username: "alice".to_string(),
         avatar: None,
         status: Presence::Online,
+        ..User::default()
     };
     let bob = User {
         id: "3".to_string(),
         username: "bob".to_string(),
         avatar: None,
         status: Presence::Idle,
+        ..User::default()
     };
     let carol = User {
         id: "4".to_string(),
         username: "carol".to_string(),
         avatar: None,
         status: Presence::Dnd,
+        ..User::default()
     };
 
     let mut messages = vec![

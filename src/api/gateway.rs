@@ -647,6 +647,12 @@ fn parse_message(value: &Value) -> Result<Message> {
         id: author["id"].as_str().unwrap_or_default().to_string(),
         username: author["username"].as_str().unwrap_or("unknown").to_string(),
         avatar: author["avatar"].as_str().map(str::to_string),
+        global_name: author["global_name"].as_str().map(str::to_string),
+        banner: author["banner"].as_str().map(str::to_string),
+        accent_color: author["accent_color"].as_u64().map(|value| value as u32),
+        avatar_decoration: author["avatar_decoration_data"]["asset"]
+            .as_str()
+            .map(str::to_string),
         status: Presence::Offline,
     };
 

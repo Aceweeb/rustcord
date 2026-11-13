@@ -7,12 +7,21 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 299 lib + 5 bin tests passing (304)
+- `cargo test --all-targets`: 302 lib + 5 bin tests passing (307)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Profile pictures and Nitro cosmetics (`DECISIONS.md` D51):
+
+- `src/models.rs` — `User` gains `global_name`, `banner`, `accent_color`,
+  `avatar_decoration`; `display_name`, `avatar_url` (custom or Discord default),
+  `banner_url`, `decoration_url`; 1 test.
+- `src/api/gateway.rs`, `src/api/discord.rs` — parse the new fields.
+- `src/ui/chat.rs` — avatar helper, decoration overlay, hover profile card; visible
+  rows request avatar/banner/decoration images through `ImageLoader`.
 
 Search match highlighting and jump-to-message (`DECISIONS.md` D50):
 
