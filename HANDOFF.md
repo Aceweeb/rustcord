@@ -14,6 +14,12 @@ repository state before changing anything.
 
 ## What changed most recently
 
+Resource bounds (`DECISIONS.md` D63):
+
+- `src/main.rs` — glibc `mallopt(M_ARENA_MAX, 2)` before startup.
+- `src/settings.rs` — default image cache 32 MB.
+- `src/app.rs` — evict rosters beyond the selected guild and two others.
+
 Channel-scoped member panel (`DECISIONS.md` D62):
 
 - `src/ui/chat.rs` — member rows filtered to channel authors/voice members,

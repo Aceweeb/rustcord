@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Lower resident usage without slowing the UI (`DECISIONS.md` D63): glibc
+  arena cap, 32 MB default image cache, three-guild roster cache. Measured ~17 MB
+  lower mean RSS in the idle demo; CPU unchanged.
 - [x] Channel-scoped member list (`DECISIONS.md` D62): authors from the open
   channel plus its voice members, roster records merged in, `IN CHANNEL — n`, and
   hover fills on message/member rows. Appearance not visually checked.

@@ -50,6 +50,11 @@ pub(crate) struct Backdrop {
 /// that text keeps its contrast, low enough that the wallpaper reads through.
 pub(crate) const GLASS_ALPHA: u8 = 205;
 
+/// Rosters are expensive: a capped guild can hold 5000 users. Keep only the
+/// selected guild plus a couple of recently visited ones so browsing many
+/// servers cannot grow the cache without bound.
+const MEMBER_CACHE_GUILDS: usize = 3;
+
 /// The Spotify authorisation round trip: listener, state and, once the code
 /// arrives, the token exchange running on a worker thread (D43).
 struct SpotifyConnect {
@@ -1201,6 +1206,21 @@ impl RustcordApp {
                     self.members_loading.remove(&guild_id);
                     self.members.insert(guild_id.clone(), members);
                     self.guild_counts.insert(guild_id, counts);
+                    // Evict other guilds' rosters rather than accumulating one
+                    // capped 5000-member list per server visited this session.
+                    while self.members.len() > MEMBER_CACHE_GUILDS {
+                        let selected = self.selected_guild.clone();
+                        let victim = self
+                            .members
+                            .keys()
+                            .find(|id| Some(id.as_str()) != selected.as_deref())
+                            .cloned();
+                        let Some(victim) = victim else {
+                            break;
+                        };
+                        self.members.remove(&victim);
+                        self.guild_counts.remove(&victim);
+                    }
                 }
                 MemberResult::Failed { guild_id, error } => {
                     self.members_loading.remove(&guild_id);

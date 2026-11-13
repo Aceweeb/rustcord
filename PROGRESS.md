@@ -576,6 +576,10 @@ Priority order for the next session:
   its voice members, merged with roster data, `IN CHANNEL — n`; Discord-style hover
   fills on message and member rows. Suite unchanged at 318; UI not visually checked.
 
+- Resource bounds (D63): glibc arena cap, image cache default 32 MB, at most three
+  cached guild rosters. Measured idle demo RSS ~246 MB -> ~229 MB mean; CPU
+  unchanged at ~0.2-0.4%. Suite unchanged at 318.
+
 ---
 
 ## 7. Notes for the next agent

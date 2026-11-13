@@ -30,6 +30,30 @@ fn pick_egl_vendor(
     Some(nvidia_vendor_json.to_path_buf())
 }
 
+/// Keep glibc's per-thread arenas from multiplying the resident footprint.
+///
+/// The client runs at least nine threads (winit, GL, gateway, image decode), and
+/// glibc allows each to reserve its own arena; two keeps freed image and history
+/// buffers from being retained once per thread. Other libcs and platforms keep
+/// their defaults.
+#[cfg(target_env = "gnu")]
+fn tune_allocator() {
+    use std::ffi::c_int;
+    unsafe extern "C" {
+        fn mallopt(param: c_int, value: c_int) -> c_int;
+    }
+    // glibc's <malloc.h>: M_ARENA_MAX = -8.
+    const M_ARENA_MAX: c_int = -8;
+    // SAFETY: M_ARENA_MAX is a documented glibc tuning knob; the return value
+    // only says whether the tunable was recognised.
+    unsafe {
+        mallopt(M_ARENA_MAX, 2);
+    }
+}
+
+#[cfg(not(target_env = "gnu"))]
+fn tune_allocator() {}
+
 fn maybe_pin_egl_vendor() {
     let existing = std::env::var_os(EGL_VENDOR_VAR);
     if let Some(vendor) = pick_egl_vendor(
@@ -59,6 +83,9 @@ fn load_icon() -> Option<egui::IconData> {
 }
 
 fn main() -> Result<()> {
+    // Before any worker threads or allocations exist.
+    tune_allocator();
+
     // Capture logs both on stderr and in the in-memory ring used by the
     // Diagnostics page.
     rustcord::logbuf::install("info");

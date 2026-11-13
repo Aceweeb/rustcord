@@ -1794,3 +1794,23 @@ are older than the loaded page appears after "Load older messages". A text chann
 with no loaded messages has nobody to list, and says so rather than falling back to
 the full roster. Presence dots and message/member row hover fills complete the
 Discord-like presentation; all fills keep the veiled theme's alpha.
+
+## D63. Bound allocator arenas and long-session caches
+
+Idle CPU was already low (~0.2% after startup images settle), but the resident set
+sat around 250 MB for a text-only demo. Two causes were under the app's control:
+glibc gives each of the client's threads its own malloc arena, and rosters for every
+guild visited were retained for the whole session.
+
+`main` now calls `mallopt(M_ARENA_MAX, 2)` before any allocation on glibc. The same
+idle scenario measured a mean of roughly 246 MB before and 229 MB after across
+alternating runs (individual runs ranged 233–259 MB before and 226–232 MB after, so
+the environment is noisy). Other libcs and platforms keep their defaults.
+
+The decoded-image cache default drops from 48 MB to 32 MB; the setting still lets a
+user raise it. Only the selected guild plus two others keep their rosters (a capped
+5000-member guild is the expensive case), with counts evicted alongside. Message
+history was already bounded by `ResourcePriority::history_cap()`.
+
+No timer or animation was slowed: the idle repaint interval and message-delivery
+latency are unchanged, so this does not trade responsiveness for the memory win.

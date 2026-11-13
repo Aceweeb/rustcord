@@ -77,7 +77,7 @@ const MIN_BUDGET_MB: u32 = 100;
 const MAX_BUDGET_MB: u32 = 2000;
 /// Decoded attachment/embed textures, bounded independently of the message
 /// buffer so a channel full of screenshots cannot blow the RSS budget.
-const DEFAULT_IMAGE_CACHE_MB: u32 = 48;
+const DEFAULT_IMAGE_CACHE_MB: u32 = 32;
 const MIN_IMAGE_CACHE_MB: u32 = 8;
 const MAX_IMAGE_CACHE_MB: u32 = 512;
 
