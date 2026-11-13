@@ -261,6 +261,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [x] Role-grouped member panel (`DECISIONS.md` D76): gateway/REST role lookup,
   highest-hoisted-role sections with colours, and ONLINE/OFFLINE fallbacks.
   3 new tests; peak 250 MB. Live rendering not visually checked.
+- [x] Message date and NEW dividers (`DECISIONS.md` D77): local-date separators,
+  first-unread tracking, measured virtual rows and grouping boundaries. 4 new
+  tests; peak 236 MB. Visual rendering not checked.
 - [x] Roster-backed channel members (`DECISIONS.md` D69): all loaded guild
   members, plus authors and voice participants; virtualised 34 px rows and
   visible-only avatar requests. 1 new test; live roster not exercised.

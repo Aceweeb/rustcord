@@ -217,6 +217,8 @@ pub struct RustcordApp {
     pub(crate) switcher: crate::switcher::SwitcherState,
     /// Locally tracked unread/mention counters; bots get no server read state.
     pub(crate) unread: crate::models::UnreadTracker,
+    /// First unread message in the open channel, drawn as Discord's NEW divider.
+    pub(crate) new_divider: Option<String>,
     /// Guild rosters, fetched over REST with the Members intent. Keyed by guild.
     pub(crate) members: std::collections::BTreeMap<String, Vec<User>>,
     members_loading: std::collections::BTreeSet<String>,
@@ -630,6 +632,7 @@ impl RustcordApp {
             ),
             history: HashMap::new(),
             unread: crate::models::UnreadTracker::default(),
+            new_divider: None,
             members: std::collections::BTreeMap::new(),
             members_loading: std::collections::BTreeSet::new(),
             member_intent_missing: false,
@@ -2125,8 +2128,12 @@ impl RustcordApp {
         }
     }
 
-    /// Open a channel and treat it as read from that moment on.
+    /// Open a channel and treat it as read from that moment on. Keep the first
+    /// unread id so the list can draw a NEW divider after the badge is cleared.
     pub(crate) fn select_channel(&mut self, channel_id: String) {
+        if self.selected_channel.as_deref() != Some(channel_id.as_str()) {
+            self.new_divider = self.unread.take_first_unread(&channel_id);
+        }
         self.unread.mark_read(&channel_id);
         self.selected_channel = Some(channel_id);
         self.refresh_presence();
@@ -2160,6 +2167,9 @@ impl RustcordApp {
             .find(|channel| channel.id == channel_id)
             .cloned()
         {
+            if self.selected_channel.as_deref() != Some(channel.id.as_str()) {
+                self.new_divider = self.unread.take_first_unread(&channel.id);
+            }
             self.selected_guild = Some(channel.guild_id);
             self.unread.mark_read(&channel.id);
             self.selected_channel = Some(channel.id);
@@ -2491,7 +2501,8 @@ impl RustcordApp {
                         self.bot_user_id.as_deref().unwrap_or(""),
                     );
 
-                    self.unread.observe(&channel, is_mention, is_open, is_own);
+                    self.unread
+                        .observe_message(&channel, &message.id, is_mention, is_open, is_own);
 
                     self.messages.push(*message);
                     received_message = true;
@@ -2989,6 +3000,7 @@ impl RustcordApp {
         self.typing.clear();
         self.voice.clear();
         self.unread.clear();
+        self.new_divider = None;
         self.message_log.clear();
         self.message_log_open = false;
         self.log_filter.clear();

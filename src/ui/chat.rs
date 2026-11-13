@@ -54,6 +54,24 @@ pub(crate) fn message_timestamp(
     (stamp, detail)
 }
 
+/// The centered label on a date divider: Today, Yesterday, then the local date.
+/// Kept separate from the per-message stamp so the divider is readable even when
+/// the user has turned timestamps off.
+pub(crate) fn date_divider_label(timestamp: DateTime<Utc>, now: DateTime<FixedOffset>) -> String {
+    let local = timestamp.with_timezone(now.offset());
+    let date = local.date_naive();
+    let today = now.date_naive();
+    if date == today {
+        "Today".to_string()
+    } else if Some(date) == today.pred_opt() {
+        "Yesterday".to_string()
+    } else if date.year() == today.year() {
+        local.format("%-d %B").to_string()
+    } else {
+        local.format("%-d %B %Y").to_string()
+    }
+}
+
 /// Discord stacks consecutive messages from one author into a single block for
 /// seven minutes: only the first row carries the avatar, name and full stamp.
 /// Replies start a new block even when the author and minute match.
@@ -788,6 +806,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
 
         // Discord groups each author's consecutive messages; computed for the
         // whole channel so a viewport that starts mid-block still draws compact.
+        let now = Local::now().fixed_offset();
         let grouped: Vec<bool> = visible
             .iter()
             .enumerate()
@@ -797,13 +816,16 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 }
                 let current = &app.messages[*index];
                 let previous = &app.messages[visible[row - 1]];
-                same_message_group(
-                    &previous.author.id,
-                    previous.timestamp,
-                    &current.author.id,
-                    current.timestamp,
-                    current.reply_to.is_some(),
-                )
+                let same_day = previous.timestamp.with_timezone(now.offset()).date_naive()
+                    == current.timestamp.with_timezone(now.offset()).date_naive();
+                same_day
+                    && same_message_group(
+                        &previous.author.id,
+                        previous.timestamp,
+                        &current.author.id,
+                        current.timestamp,
+                        current.reply_to.is_some(),
+                    )
             })
             .collect();
 
@@ -833,11 +855,18 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         }
 
         let gap = if app.settings.compact_mode { 4.0 } else { 10.0 };
+        let list_rows = build_message_rows(
+            &visible,
+            &app.messages,
+            &grouped,
+            app.new_divider.as_deref(),
+            now,
+        );
 
         // Take the metrics out so the closure can borrow `app` immutably while
         // recording measurements into a local.
         let mut metrics = std::mem::take(&mut app.metrics);
-        metrics.ensure_len(visible.len());
+        metrics.ensure_len(list_rows.len());
 
         // Image URLs seen while drawing. Filled inside the viewport closure and
         // acted on afterwards, because requesting a download needs `&mut app`.
@@ -851,10 +880,19 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         let mut jump_offset = None;
         let mut jump_target = None;
         if let Some(target) = app.scroll_to_message.clone() {
-            if let Some(row) = visible
+            let target_row = visible
                 .iter()
                 .position(|index| app.messages[*index].id == target)
-            {
+                .and_then(|visible_row| {
+                    list_rows.iter().position(|row| {
+                        matches!(
+                            row,
+                            MessageListRow::Message { index, .. }
+                                if *index == visible[visible_row]
+                        )
+                    })
+                });
+            if let Some(row) = target_row {
                 // Heights above the target are estimates on the first frame; the
                 // estimate improves as rows around the landing get measured, so
                 // keep asking until the row is actually drawn (bounded).
@@ -904,39 +942,60 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             ));
 
             for row in range.clone() {
-                let index = visible[row];
-                let message = &app.messages[index];
-                if jump_target.as_deref() == Some(message.id.as_str()) {
-                    saw_target = true;
-                }
-                wanted.extend(message.image_urls().map(str::to_string));
-                if let Some(url) = message.author.avatar_url() {
-                    wanted.push(url);
-                }
-                if let Some(url) = message.author.decoration_url() {
-                    wanted.push(url);
-                }
-
-                let focused = app.jump_highlight.as_ref().is_some_and(|(id, until)| {
-                    id == &message.id && std::time::Instant::now() < *until
-                });
-                let response = ui.scope(|ui| {
-                    if focused {
-                        egui::Frame::new()
-                            .fill(app.plugins.theme().accent.gamma_multiply(0.22))
-                            .corner_radius(6.0)
-                            .inner_margin(egui::Margin::symmetric(6, 3))
-                            .show(ui, |ui| {
-                                message_row(app, ui, message, &mut row_action, grouped[row]);
-                            });
-                    } else {
-                        message_row(app, ui, message, &mut row_action, grouped[row]);
+                match &list_rows[row] {
+                    MessageListRow::Date { label } => {
+                        let theme = app.plugins.theme();
+                        let response = ui.scope(|ui| {
+                            divider_row(ui, label, theme.muted, 26.0);
+                        });
+                        metrics.set_height(row, response.response.rect.height() + 4.0);
                     }
-                });
-                // A stacked row hugs the one below it the way Discord's blocks do.
-                let next_grouped = grouped.get(row + 1).copied().unwrap_or(false);
-                let row_gap = if next_grouped { 0.0 } else { gap };
-                metrics.set_height(row, response.response.rect.height() + row_gap);
+                    MessageListRow::New => {
+                        let theme = app.plugins.theme();
+                        let response = ui.scope(|ui| {
+                            divider_row(ui, "NEW", theme.accent, 26.0);
+                        });
+                        metrics.set_height(row, response.response.rect.height() + 4.0);
+                    }
+                    MessageListRow::Message { index, grouped } => {
+                        let message = &app.messages[*index];
+                        if jump_target.as_deref() == Some(message.id.as_str()) {
+                            saw_target = true;
+                        }
+                        wanted.extend(message.image_urls().map(str::to_string));
+                        if let Some(url) = message.author.avatar_url() {
+                            wanted.push(url);
+                        }
+                        if let Some(url) = message.author.decoration_url() {
+                            wanted.push(url);
+                        }
+
+                        let focused = app.jump_highlight.as_ref().is_some_and(|(id, until)| {
+                            id == &message.id && std::time::Instant::now() < *until
+                        });
+                        let response = ui.scope(|ui| {
+                            if focused {
+                                egui::Frame::new()
+                                    .fill(app.plugins.theme().accent.gamma_multiply(0.22))
+                                    .corner_radius(6.0)
+                                    .inner_margin(egui::Margin::symmetric(6, 3))
+                                    .show(ui, |ui| {
+                                        message_row(app, ui, message, &mut row_action, *grouped);
+                                    });
+                            } else {
+                                message_row(app, ui, message, &mut row_action, *grouped);
+                            }
+                        });
+                        // A stacked row hugs the one below it the way Discord's
+                        // blocks do. Divider rows are never part of a block.
+                        let next_grouped = matches!(
+                            list_rows.get(row + 1),
+                            Some(MessageListRow::Message { grouped: true, .. })
+                        );
+                        let row_gap = if next_grouped { 0.0 } else { gap };
+                        metrics.set_height(row, response.response.rect.height() + row_gap);
+                    }
+                }
             }
 
             let consumed = metrics.offset_of(range.end);
@@ -1045,6 +1104,90 @@ pub(crate) enum RowAction {
 /// The quick reactions in the context menu, in the order Discord shows them.
 pub(crate) const QUICK_REACTIONS: [&str; 4] =
     ["\u{1f44d}", "\u{2764}\u{fe0f}", "\u{1f602}", "\u{1f389}"];
+
+/// One row in the virtualised message list. Date and NEW dividers participate
+/// in the same measured layout as messages, so scrolling and search jumps keep
+/// their offsets.
+#[derive(Debug, PartialEq, Eq)]
+enum MessageListRow {
+    Date { label: String },
+    New,
+    Message { index: usize, grouped: bool },
+}
+
+/// Expand a channel's message indices into display rows, inserting a date
+/// divider whenever the local calendar day changes and a NEW divider immediately
+/// before the first unread message. Pure so divider placement is testable.
+fn build_message_rows(
+    visible: &[usize],
+    messages: &[Message],
+    grouped: &[bool],
+    new_divider: Option<&str>,
+    now: DateTime<FixedOffset>,
+) -> Vec<MessageListRow> {
+    let mut rows = Vec::with_capacity(visible.len() + 2);
+    let mut last_day = None;
+    let mut new_placed = false;
+
+    for (position, index) in visible.iter().copied().enumerate() {
+        let Some(message) = messages.get(index) else {
+            continue;
+        };
+        let day = message.timestamp.with_timezone(now.offset()).date_naive();
+        let mut starts_block = false;
+        if last_day != Some(day) {
+            rows.push(MessageListRow::Date {
+                label: date_divider_label(message.timestamp, now),
+            });
+            last_day = Some(day);
+            starts_block = true;
+        }
+        if !new_placed && new_divider == Some(message.id.as_str()) {
+            rows.push(MessageListRow::New);
+            new_placed = true;
+            starts_block = true;
+        }
+        rows.push(MessageListRow::Message {
+            index,
+            grouped: !starts_block && grouped.get(position).copied().unwrap_or(false),
+        });
+    }
+
+    rows
+}
+
+/// Draw one centered divider. The line stops short of the label on both sides;
+/// callers choose the muted date colour or the accent NEW colour.
+fn divider_row(ui: &mut egui::Ui, label: &str, color: egui::Color32, height: f32) {
+    let width = ui.available_width().max(40.0);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let galley =
+        ui.painter()
+            .layout_no_wrap(label.to_string(), egui::FontId::proportional(11.0), color);
+    let center = rect.center();
+    let text_half = galley.size().x / 2.0;
+    let gap = 10.0;
+    let stroke = egui::Stroke::new(1.0, color.gamma_multiply(0.35));
+    ui.painter().line_segment(
+        [
+            egui::pos2(rect.left() + 8.0, center.y),
+            egui::pos2(center.x - text_half - gap, center.y),
+        ],
+        stroke,
+    );
+    ui.painter().line_segment(
+        [
+            egui::pos2(center.x + text_half + gap, center.y),
+            egui::pos2(rect.right() - 8.0, center.y),
+        ],
+        stroke,
+    );
+    ui.painter().galley(
+        egui::pos2(center.x - text_half, center.y - galley.size().y / 2.0),
+        galley,
+        color,
+    );
+}
 
 /// A single message row, separated so the virtualised list can measure it.
 fn message_row(
@@ -1906,6 +2049,80 @@ mod tests {
         DateTime::parse_from_rfc3339(text)
             .expect("fixed timestamp")
             .with_timezone(&Utc)
+    }
+
+    fn message_at(id: &str, timestamp: DateTime<Utc>) -> Message {
+        let mut message = Message::new(crate::models::User::default(), "");
+        message.id = id.to_string();
+        message.timestamp = timestamp;
+        message
+    }
+
+    #[test]
+    fn date_divider_labels_follow_the_local_calendar() {
+        let now = DateTime::parse_from_rfc3339("2026-11-12T21:04:00Z")
+            .expect("now")
+            .fixed_offset();
+        assert_eq!(
+            date_divider_label(utc("2026-11-12T09:05:00Z"), now),
+            "Today"
+        );
+        assert_eq!(
+            date_divider_label(utc("2026-11-11T23:59:00Z"), now),
+            "Yesterday"
+        );
+        assert_eq!(
+            date_divider_label(utc("2026-01-03T07:00:00Z"), now),
+            "3 January"
+        );
+        assert_eq!(
+            date_divider_label(utc("2025-12-31T23:00:00Z"), now),
+            "31 December 2025"
+        );
+    }
+
+    #[test]
+    fn message_rows_add_date_dividers_and_a_new_separator() {
+        let now = DateTime::parse_from_rfc3339("2026-11-12T21:04:00Z")
+            .expect("now")
+            .fixed_offset();
+        let older = message_at("older", utc("2026-11-11T23:00:00Z"));
+        let first = message_at("first", utc("2026-11-12T09:00:00Z"));
+        let second = message_at("second", utc("2026-11-12T09:01:00Z"));
+        let messages = [older, first, second];
+
+        let rows = build_message_rows(
+            &[0, 1, 2],
+            &messages,
+            &[false, false, true],
+            Some("second"),
+            now,
+        );
+
+        assert_eq!(rows.len(), 6);
+        assert!(matches!(&rows[0], MessageListRow::Date { label } if label == "Yesterday"));
+        assert!(matches!(rows[1], MessageListRow::Message { index: 0, .. }));
+        assert!(matches!(&rows[2], MessageListRow::Date { label } if label == "Today"));
+        assert!(matches!(rows[3], MessageListRow::Message { index: 1, .. }));
+        assert_eq!(rows[4], MessageListRow::New);
+        // A divider starts a new block, so the first row after it keeps its
+        // author header even when the caller thought it was a continuation.
+        assert!(matches!(
+            rows[5],
+            MessageListRow::Message {
+                index: 2,
+                grouped: false
+            }
+        ));
+        // The NEW marker only appears once, even if the id is repeated in the
+        // caller's row list.
+        assert!(
+            rows[1..]
+                .iter()
+                .filter(|row| **row == MessageListRow::New)
+                .count()
+                == 1
+        );
     }
 
     #[test]

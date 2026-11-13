@@ -2142,3 +2142,30 @@ role ignored, and the no-role fallback; the suite is 343. The 20 s release sampl
 measured 211 MB RSS / 164 MB PSS / 250 MB peak, 50 MB below the ceiling. The
 role-grouped panel was not visually checked, and the grouping was not observed
 in the running UI.
+
+
+## D77. Date and NEW dividers are measured rows in the message virtual list
+
+The message list only had per-message timestamps. Long histories had no visual
+date breaks, and opening a channel cleared its unread badge without showing where
+the new messages began.
+
+The virtual list now expands a channel's messages into three row kinds: message,
+local-date divider and NEW divider. Date dividers are emitted whenever the local
+calendar day changes and read Today, Yesterday, or the date; they are independent
+of the optional per-message timestamp. The first unread id is recorded in
+`UnreadTracker` from live gateway messages, snapshotted when the channel opens,
+and consumed as a NEW row immediately before that message. Rest history cannot
+supply this because bots have no server read state.
+
+Divider rows are measured through `RowMetrics`, so variable-height scrolling and
+the bounded search jump use display-row offsets rather than message positions.
+Any divider forces the following message to start a new author block; without
+that, a continuation could appear under a date or NEW line with no name. The NEW
+line remains while its channel is open and is replaced on the next channel
+switch. If the marker's message is not in the loaded page, no line is invented.
+
+Four tests cover date labels, divider placement including a NEW insertion, first-
+unread retention, and open/own messages not creating a marker; the suite is 347.
+The 20 s release sample measured 221 MB RSS / 171 MB PSS / 236 MB peak, 64 MB
+below the ceiling. The dividers were not visually checked.

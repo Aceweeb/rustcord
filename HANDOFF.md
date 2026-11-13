@@ -7,12 +7,17 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 338 lib + 5 bin tests passing (343)
+- `cargo test --all-targets`: 342 lib + 5 bin tests passing (347)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 211 MB RSS, 164 MB PSS, 250 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
+- Runtime: 221 MB RSS, 171 MB PSS, 236 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
 
 ## What changed most recently
+
+Message dividers (`DECISIONS.md` D77): local-date separators and a NEW line at
+the first live-unread message, rendered as measured virtual rows; divider rows
+break author grouping. Release peak measured at 236 MB, under the 300 MB ceiling.
+Visual rendering was not checked.
 
 Role-grouped member panel (`DECISIONS.md` D76): guild roles come from the gateway
 and are refreshed over REST with the roster; online/offline catch-alls remain for
@@ -60,6 +65,12 @@ Periodic guild counts (`DECISIONS.md` D67):
 - `src/app.rs` — five-minute count pass for all guilds, idle repaint scheduling,
   counts independent of roster eviction.
 - `src/api/discord.rs` — non-destructive `GuildCounts::merge`, 1 test.
+
+Message dividers (`DECISIONS.md` D77):
+
+- `src/models.rs` — first-unread id in `UnreadTracker`.
+- `src/app.rs` — snapshot the first unread when opening a channel.
+- `src/ui/chat.rs` — date/NEW virtual rows, local labels and divider drawing.
 
 Role-grouped member panel (`DECISIONS.md` D76):
 

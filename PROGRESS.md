@@ -643,6 +643,11 @@ Priority order for the next session:
   unhoisted members. 3 new tests; suite 343. Release 211 MB RSS / 164 MB PSS /
   250 MB peak, 50 MB of headroom. Live rendering not visually checked.
 
+- Message dividers (D77): local-date separators and a NEW line at the first
+  live-unread message, integrated into the variable-height virtual list and
+  breaking author grouping. 4 new tests; suite 347. Release 221 MB RSS / 171 MB
+  PSS / 236 MB peak, 64 MB of headroom. Dividers not visually checked.
+
 ---
 
 ## 7. Notes for the next agent

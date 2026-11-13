@@ -610,6 +610,10 @@ impl Unread {
 #[derive(Debug, Default, Clone)]
 pub struct UnreadTracker {
     channels: std::collections::BTreeMap<String, Unread>,
+    /// The first message that made a channel unread. Kept separately from the
+    /// counters because opening the channel clears the badge but still needs a
+    /// NEW divider at that message.
+    first_unread: std::collections::BTreeMap<String, String>,
 }
 
 impl UnreadTracker {
@@ -627,8 +631,32 @@ impl UnreadTracker {
         }
     }
 
+    /// Count a message and remember the first one that made the channel unread.
+    /// The divider is consumed when the channel opens.
+    pub fn observe_message(
+        &mut self,
+        channel_id: &str,
+        message_id: &str,
+        is_mention: bool,
+        is_open: bool,
+        is_own: bool,
+    ) {
+        let was_unread = self.get(channel_id).is_unread();
+        self.observe(channel_id, is_mention, is_open, is_own);
+        if !was_unread && !is_open && !is_own && !channel_id.is_empty() && !message_id.is_empty() {
+            self.first_unread
+                .insert(channel_id.to_string(), message_id.to_string());
+        }
+    }
+
+    /// Take the first unread message for a channel, if one was recorded.
+    pub fn take_first_unread(&mut self, channel_id: &str) -> Option<String> {
+        self.first_unread.remove(channel_id)
+    }
+
     pub fn mark_read(&mut self, channel_id: &str) {
         self.channels.remove(channel_id);
+        self.first_unread.remove(channel_id);
     }
 
     pub fn get(&self, channel_id: &str) -> Unread {
@@ -649,6 +677,7 @@ impl UnreadTracker {
 
     pub fn clear(&mut self) {
         self.channels.clear();
+        self.first_unread.clear();
     }
 }
 
@@ -1151,6 +1180,29 @@ mod tests {
         unread.mark_read("10");
         assert!(!unread.get("10").is_unread());
         assert!(unread.get("10").badge().is_none());
+    }
+
+    #[test]
+    fn the_first_unread_message_is_remembered_once() {
+        let mut unread = UnreadTracker::default();
+        unread.observe_message("10", "m1", false, false, false);
+        unread.observe_message("10", "m2", true, false, false);
+        assert_eq!(unread.get("10").messages, 2);
+        assert_eq!(unread.take_first_unread("10").as_deref(), Some("m1"));
+        assert_eq!(unread.take_first_unread("10"), None);
+        // The counters are still intact for the badge until the channel opens.
+        assert_eq!(unread.get("10").mentions, 1);
+        unread.mark_read("10");
+        assert_eq!(unread.get("10"), Unread::default());
+    }
+
+    #[test]
+    fn open_and_own_messages_do_not_set_a_new_divider() {
+        let mut unread = UnreadTracker::default();
+        unread.observe_message("10", "open", false, true, false);
+        unread.observe_message("10", "own", false, false, true);
+        assert_eq!(unread.take_first_unread("10"), None);
+        assert!(!unread.get("10").is_unread());
     }
 
     #[test]

@@ -6,7 +6,7 @@ Last verified: 2026-11-13, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **343 passed (338 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **347 passed (342 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -17,14 +17,14 @@ Release binary, 1280×800 window, default settings, theme file loaded.
 
 | Metric | Latest | How measured |
 | --- | --- | --- |
-| RSS | **211 MB** | `/proc/<pid>/status` `VmRSS`, 20 s sample |
-| PSS | **164 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
-| Peak (`VmHWM`) | **250 MB** | kernel high-water mark |
+| RSS | **221 MB** | `/proc/<pid>/status` `VmRSS`, 20 s sample |
+| PSS | **171 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
+| Peak (`VmHWM`) | **236 MB** | kernel high-water mark |
 | CPU | **0.0% without animation; nonzero while animated surfaces are visible** | ticks/s; 12.5 fps redraws; guild icons stop when unfocused |
 | Threads | **7–11** | `/proc/<pid>/status` |
 | Sign-in screen | lower than a channel session | no channel surface is built |
 
-The 300 MB ceiling holds with about 50 MB of headroom. The earlier 159 MB figure
+The 300 MB ceiling holds with about 64 MB of headroom. The earlier 159 MB figure
 predates animated guild icons, the roster-backed member panel, and periodic count
 refreshes; re-measure after any surface that adds textures or caches.
 
@@ -227,6 +227,21 @@ Covered by 25 tests, all with synthetic payloads; no token required. Verified:
 every event, unicode and custom emoji, missing fields, wrong channel, unknown id,
 replayed/malformed payloads, multiple typers and expiry.
 
+## Message list dividers
+
+The virtualised message list now carries three row kinds (message, local-date
+divider and NEW divider) through the same measured layout. A date divider appears
+whenever the local calendar day changes; its label is Today, Yesterday, or the
+date, independent of the per-message timestamp setting. A NEW divider is placed
+immediately before the first message that made a closed channel unread. Divider
+rows break Discord's author stacking and are included in search-jump offsets.
+
+The first-unread id is tracked locally from live gateway messages and consumed
+when the channel is opened, after which the unread badge is cleared. There is no
+server read state for a bot, so REST history that predates this session never
+creates a NEW divider. The NEW line remains while the channel stays open and is
+replaced on the next channel switch.
+
 ## REST rate limits
 
 Every REST call now goes through `api/ratelimit.rs` (`DECISIONS.md` D16):
@@ -313,6 +328,8 @@ guild emoji are not listed yet.
    session to prove Discord accepts it.
 7. Role sections are refreshed with the roster, not on `GUILD_ROLE_*` gateway
    events; role changes wait for a reconnect or a fresh roster load.
+8. NEW markers only cover messages received live in this session; bots have no
+   server-side read state, so unread backlog loaded from REST cannot be marked.
 
 ## Environment quirks
 
