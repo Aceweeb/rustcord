@@ -580,6 +580,10 @@ Priority order for the next session:
   cached guild rosters. Measured idle demo RSS ~246 MB -> ~229 MB mean; CPU
   unchanged at ~0.2-0.4%. Suite unchanged at 318.
 
+- Immediate numbered defaults (D64): six Discord default PNGs embedded and uploaded
+  at startup, `avatar_url` now custom-only, first frame never shows initials for a
+  snowflake id. 2 new tests; suite 319. Appearance not visually checked.
+
 ---
 
 ## 7. Notes for the next agent

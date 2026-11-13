@@ -7,12 +7,20 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 313 lib + 5 bin tests passing (318)
+- `cargo test --all-targets`: 314 lib + 5 bin tests passing (319)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Immediate numbered defaults (`DECISIONS.md` D64):
+
+- `assets/default-avatars/0-5.png` — embedded Discord defaults.
+- `src/images.rs` — preload/decode API, 1 asset test.
+- `src/models.rs` — `default_avatar_index`, `avatar_url` custom-only.
+- `src/ui/chat.rs` — default texture before the initial fallback.
+- `src/app.rs` — preload once at startup.
 
 Resource bounds (`DECISIONS.md` D63):
 

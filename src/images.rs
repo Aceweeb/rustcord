@@ -21,6 +21,18 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 pub const MAX_DOWNLOAD_BYTES: u64 = 12 * 1024 * 1024;
 pub const MAX_DIMENSION: u32 = 4096;
 
+/// Discord's six numbered default avatars, embedded so a missing or still-loading
+/// custom avatar can draw the real fallback on the first frame instead of an
+/// initial. Same artwork the CDN serves at `embed/avatars/{n}.png`.
+const DEFAULT_AVATAR_PNGS: [&[u8]; 6] = [
+    include_bytes!("../assets/default-avatars/0.png"),
+    include_bytes!("../assets/default-avatars/1.png"),
+    include_bytes!("../assets/default-avatars/2.png"),
+    include_bytes!("../assets/default-avatars/3.png"),
+    include_bytes!("../assets/default-avatars/4.png"),
+    include_bytes!("../assets/default-avatars/5.png"),
+];
+
 /// Hosts Rustcord will download images from. A crafted embed cannot make the
 /// client fetch arbitrary URLs.
 const ALLOWED_HOSTS: &[&str] = &[
@@ -193,6 +205,9 @@ pub struct ImageLoader {
     worker: Option<(Sender<Job>, Receiver<Loaded>)>,
     uploads: u64,
     rejected: u64,
+    /// Uploaded once at startup from the embedded PNGs, so the fallback is
+    /// available before the first frame and independent of the network.
+    defaults: [Option<egui::TextureHandle>; 6],
 }
 
 impl ImageLoader {
@@ -205,7 +220,38 @@ impl ImageLoader {
             worker: None,
             uploads: 0,
             rejected: 0,
+            defaults: std::array::from_fn(|_| None),
         }
+    }
+
+    /// Decode and upload the six bundled default avatars. Idempotent; called once
+    /// when the app is created, not per frame.
+    pub fn load_default_avatars(&mut self, ctx: &egui::Context) {
+        if self.defaults.iter().all(Option::is_some) {
+            return;
+        }
+        for (index, bytes) in DEFAULT_AVATAR_PNGS.iter().enumerate() {
+            if self.defaults[index].is_some() {
+                continue;
+            }
+            let Ok(image) = image::load_from_memory(bytes) else {
+                continue;
+            };
+            let image = image.to_rgba8();
+            let color = egui::ColorImage::from_rgba_unmultiplied(
+                [image.width() as usize, image.height() as usize],
+                image.as_raw(),
+            );
+            self.defaults[index] = Some(ctx.load_texture(
+                format!("default-avatar:{index}"),
+                color,
+                egui::TextureOptions::LINEAR,
+            ));
+        }
+    }
+
+    pub fn default_avatar(&self, index: usize) -> Option<&egui::TextureHandle> {
+        self.defaults.get(index)?.as_ref()
     }
 
     pub fn budget(&self) -> usize {
@@ -505,6 +551,17 @@ mod tests {
         cache.clear();
         assert_eq!(cache.used(), 0);
         assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn bundled_default_avatars_decode() {
+        assert_eq!(DEFAULT_AVATAR_PNGS.len(), 6);
+        for (index, bytes) in DEFAULT_AVATAR_PNGS.iter().enumerate() {
+            let image = image::load_from_memory(bytes)
+                .unwrap_or_else(|err| panic!("default avatar {index}: {err}"))
+                .to_rgba8();
+            assert_eq!(image.dimensions(), (256, 256), "avatar {index}");
+        }
     }
 
     /// The decode path, without the network: a 2×2 PNG costs exactly 16 bytes

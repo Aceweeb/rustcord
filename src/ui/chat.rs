@@ -1127,18 +1127,30 @@ fn avatar_visual(app: &RustcordApp, ui: &mut egui::Ui, user: &User, size: f32) -
             ui.put(rect, image);
         }
         None => {
-            ui.painter().circle_filled(
-                rect.center(),
-                size / 2.0,
-                crate::utils::lift(theme.background, 20),
-            );
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                initial(&user.username),
-                egui::FontId::proportional(size * 0.375),
-                theme.text,
-            );
+            // The numbered default is preloaded, so it appears on the first frame
+            // while a custom avatar downloads — no initial flash. Only an id that
+            // cannot map to a Discord slot (demo placeholders) keeps the initial.
+            let index = user.default_avatar_index();
+            if let Some(texture) = index.and_then(|index| app.images.default_avatar(index)) {
+                ui.put(
+                    rect,
+                    egui::Image::new(egui::load::SizedTexture::new(texture.id(), rect.size()))
+                        .corner_radius(egui::CornerRadius::same((size / 2.0) as u8)),
+                );
+            } else {
+                ui.painter().circle_filled(
+                    rect.center(),
+                    size / 2.0,
+                    crate::utils::lift(theme.background, 20),
+                );
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    initial(&user.username),
+                    egui::FontId::proportional(size * 0.375),
+                    theme.text,
+                );
+            }
         }
     }
 

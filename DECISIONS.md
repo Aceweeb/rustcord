@@ -1814,3 +1814,23 @@ history was already bounded by `ResourcePriority::history_cap()`.
 
 No timer or animation was slowed: the idle repaint interval and message-delivery
 latency are unchanged, so this does not trade responsiveness for the memory win.
+
+## D64. Numbered defaults are embedded, not fetched per avatar
+
+The default-avatar URL was previously fetched from Discord's CDN, so a user
+without a custom avatar—or one whose custom avatar was still decoding—showed a
+circle and an initial for the first frames. `avatar_url` now returns only a real
+uploaded avatar; the numbered fallback is selected by `default_avatar_index`
+(`(id >> 22) % 6`, the official formula) and drawn from six PNGs embedded in the
+binary.
+
+`ImageLoader::load_default_avatars` decodes and uploads them once when the app is
+created, outside the per-frame path and outside the byte-budget LRU because they are
+six fixed 256×256 textures. `avatar_visual` prefers a loaded custom texture and
+otherwise paints the matching default on the first frame, so there is no initial
+flash and no CDN request for a default at all. An id that cannot map to a Discord
+snowflake still falls back to the initial, which is limited to demo placeholders.
+
+The assets are the same artwork as `cdn.discordapp.com/embed/avatars/{0-5}.png`,
+embedded at roughly 8 KB total. A corrupt asset is skipped and the initial remains a
+last-resort fallback; a test decodes all six.

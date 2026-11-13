@@ -528,6 +528,7 @@ impl RustcordApp {
             spotify_tokens: None,
             spotify_client_used: None,
         };
+        app.images.load_default_avatars(&cc.egui_ctx);
         app.refresh_presence();
         app.restore_spotify();
         app

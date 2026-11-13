@@ -99,9 +99,9 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
   and online count in the member panel.
 - A member panel scoped to the open channel: its message authors and current voice
   members, with presence dots and Discord-style row hover.
-- Real profile pictures with a hover profile card (display name, accent colour,
-  banner and avatar decoration when Discord sends them), loaded through the
-  bounded image cache.
+- Real profile pictures with Discord's numbered defaults drawn immediately (no
+  initial flash while a custom avatar loads), plus a hover profile card with
+  display name, accent colour, banner and avatar decoration when Discord sends them.
 - Local full-text search (Ctrl+F) across every message cached this session, from
   every channel opened so far, with `from:name`, `in:#channel` (or `#channel`) and
   `before:` / `after:` date filters (exclusive, UTC). Results show the channel, author, time and a snippet, and clicking one

@@ -53,22 +53,24 @@ impl User {
         self.global_name.as_deref().unwrap_or(&self.username)
     }
 
-    /// CDN URL for the avatar. Animated hashes (`a_…`) are fetched as PNG so the
-    /// decoder never needs a frame clock; Discord serves a still frame for them.
-    /// Users without a custom avatar fall back to Discord's numbered default
-    /// avatar, exactly as the official client does.
+    /// Discord's numbered default-avatar slot for this user, derived from the
+    /// snowflake exactly as the official client does. `None` for non-numeric ids.
+    pub fn default_avatar_index(&self) -> Option<usize> {
+        let id: u64 = self.id.parse().ok()?;
+        Some(((id >> 22) % 6) as usize)
+    }
+
+    /// CDN URL for a user-uploaded avatar. Animated hashes (`a_…`) are fetched as
+    /// PNG so the decoder never needs a frame clock; Discord serves a still frame
+    /// for them. `None` means the user has no custom avatar and the UI draws the
+    /// bundled numbered default instead — no network round trip on first paint.
     pub fn avatar_url(&self) -> Option<String> {
-        if let Some(hash) = &self.avatar {
-            return Some(format!(
+        self.avatar.as_ref().map(|hash| {
+            format!(
                 "https://cdn.discordapp.com/avatars/{}/{hash}.png?size=80",
                 self.id
-            ));
-        }
-        let id: u64 = self.id.parse().ok()?;
-        let index = (id >> 22) % 6;
-        Some(format!(
-            "https://cdn.discordapp.com/embed/avatars/{index}.png"
-        ))
+            )
+        })
     }
 
     /// CDN URL for the profile banner, when the user has one.
@@ -1377,12 +1379,16 @@ mod tests {
         // and there is no banner or decoration to fetch.
         let plain = User::default();
         assert_eq!(plain.display_name(), "Unknown");
-        assert_eq!(
-            plain.avatar_url().as_deref(),
-            Some("https://cdn.discordapp.com/embed/avatars/0.png")
-        );
+        assert_eq!(plain.avatar_url(), None);
+        assert_eq!(plain.default_avatar_index(), Some(0));
         assert!(plain.banner_url().is_none());
         assert!(plain.decoration_url().is_none());
+
+        let numbered = User {
+            id: (35u64 << 22).to_string(),
+            ..User::default()
+        };
+        assert_eq!(numbered.default_avatar_index(), Some(5));
 
         // An unparseable id cannot be mapped to a default avatar.
         let anonymous = User {
