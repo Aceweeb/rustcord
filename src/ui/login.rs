@@ -638,7 +638,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 ui.add_space(4.0);
                 if let Some(identity) = &app.identity {
                     ui.horizontal(|ui| {
-                        if let Some(avatar_url) = &identity.identity.avatar {
+                        if identity.identity.avatar.is_some() {
                             ui.add_space(20.0);
                         }
                         ui.label(

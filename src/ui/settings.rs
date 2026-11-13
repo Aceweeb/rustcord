@@ -1435,7 +1435,8 @@ impl RustcordApp {
             "Account",
             "Tokens are stored in the OS keyring, never in settings or logs.",
         );
-        let mut dirty = false;
+        // This page edits credentials and sessions, never persisted settings.
+        let dirty = false;
 
         // ── Active session ────────────────────────────────────────────
         ui.add_space(4.0);
