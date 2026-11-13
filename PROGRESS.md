@@ -554,6 +554,11 @@ Priority order for the next session:
   the synthetic rail entry once per connection, with empty state and merge with
   member-opened DMs. 1 new test; suite 313. Live fetch unverified (D28).
 
+- Discord-style message blocks (D58): consecutive messages from one author within
+  seven minutes share one avatar/name block with a gutter clock and no gap; replies
+  break blocks. Member list split into ONLINE/OFFLINE sections. 1 new test; suite
+  314. UI not visually inspected.
+
 ---
 
 ## 7. Notes for the next agent

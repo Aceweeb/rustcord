@@ -37,6 +37,19 @@ pub(crate) fn message_timestamp(
     (stamp, detail)
 }
 
+/// Discord stacks consecutive messages from one author into a single block for
+/// seven minutes: only the first row carries the avatar, name and full stamp.
+/// Replies start a new block even when the author and minute match.
+pub(crate) fn same_message_group(
+    previous_author: &str,
+    previous_at: DateTime<Utc>,
+    author: &str,
+    at: DateTime<Utc>,
+    is_reply: bool,
+) -> bool {
+    !is_reply && previous_author == author && (at - previous_at).num_seconds().abs() < 7 * 60
+}
+
 pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
     // Typing is tracked per channel and expires by itself, so this only reads
     // state. The sentence is built once and shared by the header and composer;
@@ -193,13 +206,6 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     .then_with(|| a.id.cmp(&b.id))
             });
 
-            ui.label(
-                RichText::new(format!("MEMBERS \u{2014} {}", members.len()))
-                    .size(11.0)
-                    .strong()
-                    .color(theme.muted),
-            );
-
             if members.is_empty() {
                 let hint = if app.member_intent_missing {
                     "Enable the Server Members Intent in the Developer Portal to load the roster."
@@ -223,20 +229,43 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    for member in &members {
-                        ui.horizontal(|ui| {
-                            let _ = avatar(app, ui, member, 32.0);
-                            ui.label(RichText::new(&member.username).size(14.0).color(theme.text));
-                            if app.live_data && member.id != app.current_user.id {
-                                if ui
-                                    .small_button("DM")
-                                    .on_hover_text("Open a direct message")
-                                    .clicked()
-                                {
-                                    dm_target = Some(member.clone());
+                    // Discord splits the list into ONLINE and OFFLINE groups. The
+                    // demo roster has no presence data, so it lands under online.
+                    for (title, offline) in [("ONLINE", false), ("OFFLINE", true)] {
+                        let group: Vec<&crate::models::User> = members
+                            .iter()
+                            .filter(|member| {
+                                (member.status == crate::models::Presence::Offline) == offline
+                            })
+                            .collect();
+                        if group.is_empty() {
+                            continue;
+                        }
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new(format!("{title} \u{2014} {}", group.len()))
+                                .size(10.0)
+                                .strong()
+                                .color(theme.muted),
+                        );
+                        ui.add_space(2.0);
+                        for member in group {
+                            ui.horizontal(|ui| {
+                                let _ = avatar(app, ui, member, 32.0);
+                                ui.label(
+                                    RichText::new(&member.username).size(14.0).color(theme.text),
+                                );
+                                if app.live_data && member.id != app.current_user.id {
+                                    if ui
+                                        .small_button("DM")
+                                        .on_hover_text("Open a direct message")
+                                        .clicked()
+                                    {
+                                        dm_target = Some(member.clone());
+                                    }
                                 }
-                            }
-                        });
+                            });
+                        }
                     }
                 });
         });
@@ -445,6 +474,27 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             .map(|(index, _)| index)
             .collect();
 
+        // Discord groups each author's consecutive messages; computed for the
+        // whole channel so a viewport that starts mid-block still draws compact.
+        let grouped: Vec<bool> = visible
+            .iter()
+            .enumerate()
+            .map(|(row, index)| {
+                if row == 0 {
+                    return false;
+                }
+                let current = &app.messages[*index];
+                let previous = &app.messages[visible[row - 1]];
+                same_message_group(
+                    &previous.author.id,
+                    previous.timestamp,
+                    &current.author.id,
+                    current.timestamp,
+                    current.reply_to.is_some(),
+                )
+            })
+            .collect();
+
         // Heights measured for a different channel would be wrong for a frame.
         if app.metrics_channel != channel_id {
             app.metrics.clear();
@@ -568,13 +618,16 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             .corner_radius(6.0)
                             .inner_margin(egui::Margin::symmetric(6, 3))
                             .show(ui, |ui| {
-                                message_row(app, ui, message, &mut row_action);
+                                message_row(app, ui, message, &mut row_action, grouped[row]);
                             });
                     } else {
-                        message_row(app, ui, message, &mut row_action);
+                        message_row(app, ui, message, &mut row_action, grouped[row]);
                     }
                 });
-                metrics.set_height(row, response.response.rect.height() + gap);
+                // A stacked row hugs the one below it the way Discord's blocks do.
+                let next_grouped = grouped.get(row + 1).copied().unwrap_or(false);
+                let row_gap = if next_grouped { 0.0 } else { gap };
+                metrics.set_height(row, response.response.rect.height() + row_gap);
             }
 
             let consumed = metrics.offset_of(range.end);
@@ -690,12 +743,13 @@ fn message_row(
     ui: &mut egui::Ui,
     message: &Message,
     action: &mut Option<RowAction>,
+    grouped: bool,
 ) {
     let response = ui
         // A clickable container so a right-click anywhere on the row opens the
         // context menu; the widgets inside still get their own clicks first.
         .scope_builder(egui::UiBuilder::new().sense(egui::Sense::click()), |ui| {
-            message_row_body(app, ui, message, action);
+            message_row_body(app, ui, message, action, grouped);
         })
         .response;
 
@@ -752,42 +806,61 @@ fn message_row_body(
     ui: &mut egui::Ui,
     message: &Message,
     action: &mut Option<RowAction>,
+    grouped: bool,
 ) {
     let theme = app.plugins.theme();
 
     ui.horizontal_top(|ui| {
-        // Discord's message row: 40 px avatar, 16 px name line, 12 px timestamp.
-        avatar(app, ui, &message.author, 40.0);
+        if grouped {
+            // A continuation row keeps the avatar gutter. Discord only reveals
+            // the clock on hover; a faint always-on clock is kinder to a desktop
+            // client and still reads as part of the block.
+            ui.allocate_ui_with_layout(
+                egui::vec2(40.0, 16.0),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    let (stamp, detail) =
+                        message_timestamp(message.timestamp, Local::now().fixed_offset(), false);
+                    ui.label(RichText::new(stamp).size(10.0).color(theme.muted))
+                        .on_hover_text(detail);
+                },
+            );
+        } else {
+            // Discord's message row: 40 px avatar, 16 px name line, 12 px timestamp.
+            avatar(app, ui, &message.author, 40.0);
+        }
 
         ui.vertical(|ui| {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(&message.author.username)
-                        .size(15.0)
-                        .strong()
-                        .color(theme.text),
-                );
-                let (stamp, detail) = message_timestamp(
-                    message.timestamp,
-                    Local::now().fixed_offset(),
-                    app.settings.message_timestamps,
-                );
-                ui.label(RichText::new(stamp).size(11.0).color(theme.muted))
-                    .on_hover_text(detail);
+            if !grouped {
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new(&message.author.username)
+                            .size(15.0)
+                            .strong()
+                            .color(theme.text),
+                    );
+                    let (stamp, detail) = message_timestamp(
+                        message.timestamp,
+                        Local::now().fixed_offset(),
+                        app.settings.message_timestamps,
+                    );
+                    ui.label(RichText::new(stamp).size(11.0).color(theme.muted))
+                        .on_hover_text(detail);
 
-                if app.can_modify(message) {
-                    ui.menu_button(RichText::new("⋯").color(theme.muted), |ui| {
-                        if ui.button("Edit message").clicked() {
-                            *action = Some(RowAction::Edit(message.id.clone()));
-                            ui.close();
-                        }
-                        if ui.button("Delete message").clicked() {
-                            *action = Some(RowAction::Delete(message.id.clone()));
-                            ui.close();
-                        }
-                    });
-                }
-            });
+                    if app.can_modify(message) {
+                        ui.menu_button(RichText::new("⋯").color(theme.muted), |ui| {
+                            if ui.button("Edit message").clicked() {
+                                *action = Some(RowAction::Edit(message.id.clone()));
+                                ui.close();
+                            }
+                            if ui.button("Delete message").clicked() {
+                                *action = Some(RowAction::Delete(message.id.clone()));
+                                ui.close();
+                            }
+                        });
+                    }
+                });
+            }
             // Discord's reply line: who it answers, then a truncated copy.
             if let Some(reply) = &message.reply_to {
                 ui.label(
@@ -1180,6 +1253,29 @@ mod tests {
         assert_eq!(stamp, "09:05");
         // The tooltip stays exact even when the row is terse.
         assert!(detail.contains("09:05:00"), "{detail}");
+    }
+
+    #[test]
+    fn consecutive_messages_from_one_author_stack() {
+        let at = utc("2026-11-12T09:00:00Z");
+        assert!(same_message_group("42", at, "42", at, false));
+        assert!(same_message_group(
+            "42",
+            at,
+            "42",
+            at + chrono::Duration::minutes(6),
+            false
+        ));
+        assert!(!same_message_group(
+            "42",
+            at,
+            "42",
+            at + chrono::Duration::minutes(8),
+            false
+        ));
+        assert!(!same_message_group("42", at, "43", at, false));
+        // A reply introduces a new block even in the same minute.
+        assert!(!same_message_group("42", at, "42", at, true));
     }
 
     #[test]

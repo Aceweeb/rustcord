@@ -7,12 +7,18 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 308 lib + 5 bin tests passing (313)
+- `cargo test --all-targets`: 309 lib + 5 bin tests passing (314)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Discord-style message/member rhythm (`DECISIONS.md` D58):
+
+- `src/ui/chat.rs` — `same_message_group`, grouped rows with gutter clock, no gap
+  inside a block, ONLINE/OFFLINE member sections.
+- `src/ui/sidebar.rs` — `@` glyph for the Direct Messages rail button.
 
 DM list at startup (`DECISIONS.md` D57):
 

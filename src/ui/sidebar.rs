@@ -357,9 +357,13 @@ fn guild_row(
     };
     let response = ui.add(
         egui::Button::new(
-            RichText::new(initial(&guild.name))
-                .size(18.0)
-                .color(Color32::WHITE),
+            RichText::new(if guild.id == crate::models::DM_GUILD_ID {
+                "@".to_string()
+            } else {
+                initial(&guild.name)
+            })
+            .size(18.0)
+            .color(Color32::WHITE),
         )
         .min_size(egui::vec2(GUILD_ICON, GUILD_ICON))
         .corner_radius(egui::CornerRadius::same(radius))

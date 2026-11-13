@@ -1683,3 +1683,26 @@ list and cached by recipient. Selecting a row uses the ordinary text-channel pat
 so history paging, sending, unread counts and typing work without DM-specific code.
 The empty state explains where DMs come from. The list remains session-only: nothing
 is written to disk.
+
+## D58. Message blocks and member sections follow Discord's rhythm
+
+The frame, rail, channel list, composer and member panel already matched Discord's
+shape; individual rows did not. Every message repeated its avatar and name, and the
+member list was one flat alphabetical column with a total.
+
+**Message blocks.** Consecutive messages from one author within seven minutes are
+now one block: the first row draws the 40 px avatar and the name line, and the
+following rows draw only a faint clock in the avatar gutter and the content, with
+no gap between them. A reply always starts a new block. The grouping decision is a
+pure function (`same_message_group`) so it is tested without an egui context, and
+the virtualised list computes it for the whole channel so a viewport that begins
+mid-block still renders compact.
+
+**Member sections.** The panel now splits into `ONLINE — n` and `OFFLINE — n`
+groups (offline omitted when empty), sorted by username inside each. Presence comes
+from the gateway's member list; without presence data a member counts as online.
+
+**Transparency.** No new opaque colours were introduced: backgrounds still come
+from the veiled theme palette, and no new fills were added — the clock uses the
+existing muted colour. The rail's Direct Messages button now uses `@` instead of an
+initial so it reads with the `@` in the channel header.

@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Discord-style UI rhythm (`DECISIONS.md` D58): grouped message blocks for
+  same-author messages within seven minutes, gutter clock, ONLINE/OFFLINE member
+  sections, `@` DM rail glyph. 1 new test; appearance not visually checked.
 - [x] DM list loaded at startup (`DECISIONS.md` D57): `fetch_dm_channels` reads
   DMs and group DMs once per connection, synthetic rail entry always present, empty
   state, merges member-opened DMs. 1 new test; live fetch unverified (D28).
