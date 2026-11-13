@@ -239,6 +239,18 @@ impl DiscordClient {
         Ok(raw.into())
     }
 
+    /// Every DM and group DM the account is part of, newest activity first as
+    /// Discord returns them.
+    pub async fn fetch_dm_channels(&self, self_id: &str) -> Result<Vec<Channel>> {
+        let body = self.get_text("/users/@me/channels").await?;
+        let raw: Vec<DiscordDmListEntry> =
+            serde_json::from_str(&body).context("could not decode the DM list")?;
+        Ok(raw
+            .into_iter()
+            .filter_map(|entry| entry.into_channel(self_id))
+            .collect())
+    }
+
     /// Open (or reuse) the DM channel with a user. Discord returns the existing
     /// channel when one is already open, so callers can cache the id.
     pub async fn open_dm(&self, recipient_id: &str) -> Result<Channel> {
@@ -457,6 +469,64 @@ struct DiscordDmChannel {
     id: String,
     #[serde(default)]
     recipients: Vec<DiscordUser>,
+}
+
+/// One entry from `GET /users/@me/channels`: a DM (type 1) or group DM (type 3).
+#[derive(Debug, Deserialize)]
+struct DiscordDmListEntry {
+    id: String,
+    #[serde(rename = "type")]
+    kind: u8,
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    recipients: Vec<DiscordUser>,
+}
+
+impl DiscordDmListEntry {
+    /// `self_id` is filtered out so a DM is named after the other person, not
+    /// after the signed-in account.
+    fn into_channel(self, self_id: &str) -> Option<Channel> {
+        if self.id.is_empty() || !matches!(self.kind, 1 | 3) {
+            return None;
+        }
+        let others: Vec<&DiscordUser> = self
+            .recipients
+            .iter()
+            .filter(|user| user.id != self_id)
+            .collect();
+        let name = if self.kind == 3 {
+            self.name
+                .filter(|name| !name.trim().is_empty())
+                .or_else(|| {
+                    (!others.is_empty()).then(|| {
+                        others
+                            .iter()
+                            .map(|user| {
+                                user.global_name
+                                    .clone()
+                                    .unwrap_or_else(|| user.username.clone())
+                            })
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    })
+                })
+        } else {
+            others.first().map(|user| {
+                user.global_name
+                    .clone()
+                    .unwrap_or_else(|| user.username.clone())
+            })
+        };
+        Some(Channel {
+            id: self.id,
+            name: name
+                .filter(|name| !name.trim().is_empty())
+                .unwrap_or_else(|| "Direct message".to_string()),
+            kind: crate::models::ChannelKind::Text,
+            guild_id: crate::models::DM_GUILD_ID.to_string(),
+        })
+    }
 }
 
 impl DiscordDmChannel {
@@ -879,6 +949,35 @@ mod tests {
             ..Attachment::default()
         };
         assert!(!document.is_image());
+    }
+
+    #[test]
+    fn the_dm_list_filters_self_and_ignores_guild_channels() {
+        let raw: Vec<DiscordDmListEntry> = serde_json::from_str(
+            r#"[
+                {"id":"500","type":1,"recipients":[
+                    {"id":"42","username":"jane","global_name":"Jane"},
+                    {"id":"900","username":"rustcord-bot"}
+                ]},
+                {"id":"501","type":3,"name":"","recipients":[
+                    {"id":"900","username":"rustcord-bot"},
+                    {"id":"42","username":"jane"},
+                    {"id":"43","username":"bob","global_name":"Bobby"}
+                ]},
+                {"id":"502","type":0,"recipients":[]}
+            ]"#,
+        )
+        .expect("dm list");
+        let channels: Vec<Channel> = raw
+            .into_iter()
+            .filter_map(|entry| entry.into_channel("900"))
+            .collect();
+        assert_eq!(channels.len(), 2);
+        assert_eq!(channels[0].name, "Jane");
+        assert_eq!(channels[1].name, "jane, Bobby");
+        assert!(channels
+            .iter()
+            .all(|channel| channel.guild_id == crate::models::DM_GUILD_ID));
     }
 
     #[test]

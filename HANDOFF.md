@@ -7,12 +7,20 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 307 lib + 5 bin tests passing (312)
+- `cargo test --all-targets`: 308 lib + 5 bin tests passing (313)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+DM list at startup (`DECISIONS.md` D57):
+
+- `src/api/discord.rs` — `fetch_dm_channels`, `DiscordDmListEntry` (DMs + group
+  DMs, self filtered), 1 test.
+- `src/app.rs` — `ensure_dms`, `dm_loaded`/`dm_loading`, `DmResult::Listed`,
+  rail insert at top, refresh replaces DM channels, empty selection handling.
+- `src/ui/sidebar.rs` — empty-state hint under DIRECT MESSAGES.
 
 DMs from the member list (`DECISIONS.md` D56):
 

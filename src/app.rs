@@ -178,6 +178,9 @@ pub struct RustcordApp {
     dm_channels: HashMap<String, String>,
     dm_tx: Sender<DmResult>,
     dm_results: Receiver<DmResult>,
+    /// Whether the DM list has been requested for this connection.
+    dm_loaded: bool,
+    dm_loading: bool,
     /// Measured row heights for the virtualised message list.
     pub(crate) metrics: RowMetrics,
     pub(crate) metrics_channel: Option<String>,
@@ -224,7 +227,12 @@ enum MemberResult {
 
 /// A DM channel opened (or reused) through REST.
 enum DmResult {
-    Opened { user_id: String, channel: Channel },
+    Opened {
+        user_id: String,
+        channel: Channel,
+    },
+    /// The account's existing DM and group-DM channels.
+    Listed(Vec<Channel>),
     Failed(String),
 }
 
@@ -488,6 +496,8 @@ impl RustcordApp {
             dm_channels: HashMap::new(),
             dm_tx,
             dm_results,
+            dm_loaded: false,
+            dm_loading: false,
             metrics: RowMetrics::new(),
             metrics_channel: None,
             history_tx,
@@ -982,17 +992,7 @@ impl RustcordApp {
         while let Ok(result) = self.dm_results.try_recv() {
             match result {
                 DmResult::Opened { user_id, channel } => {
-                    if !self
-                        .guilds
-                        .iter()
-                        .any(|guild| guild.id == crate::models::DM_GUILD_ID)
-                    {
-                        self.guilds.push(Guild {
-                            id: crate::models::DM_GUILD_ID.to_string(),
-                            name: "Direct Messages".to_string(),
-                            icon: None,
-                        });
-                    }
+                    self.ensure_dm_guild();
                     self.dm_channels.insert(user_id, channel.id.clone());
                     if let Some(existing) = self
                         .channels
@@ -1007,10 +1007,100 @@ impl RustcordApp {
                     self.select_channel(channel.id.clone());
                     self.status_line = Some(format!("opened a DM with {}", channel.name));
                 }
+                DmResult::Listed(channels) => {
+                    self.dm_loading = false;
+                    self.dm_loaded = true;
+                    self.ensure_dm_guild();
+                    let selected = self.selected_channel.clone();
+                    self.channels
+                        .retain(|channel| channel.guild_id != crate::models::DM_GUILD_ID);
+                    self.channels.extend(channels);
+                    self.status_line = Some(format!(
+                        "{} direct message(s)",
+                        self.channels
+                            .iter()
+                            .filter(|channel| channel.guild_id == crate::models::DM_GUILD_ID)
+                            .count()
+                    ));
+                    // Keep a sensible selection if the refresh replaced the open DM.
+                    if selected.is_some()
+                        && !self
+                            .channels
+                            .iter()
+                            .any(|channel| Some(&channel.id) == selected.as_ref())
+                        && self.selected_guild.as_deref() == Some(crate::models::DM_GUILD_ID)
+                    {
+                        self.selected_channel = self
+                            .channels
+                            .iter()
+                            .find(|channel| channel.guild_id == crate::models::DM_GUILD_ID)
+                            .map(|channel| channel.id.clone());
+                    }
+                }
                 DmResult::Failed(error) => {
-                    self.status_line = Some(format!("could not open the DM: {error}"));
+                    self.dm_loading = false;
+                    // Do not retry every frame: one failure is reported, and a
+                    // reconnect clears the flags.
+                    self.dm_loaded = true;
+                    self.status_line = Some(format!("could not load direct messages: {error}"));
                 }
             }
+        }
+    }
+
+    /// Request the account's DM list once per connection. Discord returns DMs and
+    /// group DMs together; both are shown under the synthetic guild.
+    fn ensure_dms(&mut self) {
+        if !self.live_data || self.dm_loaded || self.dm_loading {
+            return;
+        }
+        let Some(runtime) = &self.runtime else {
+            return;
+        };
+        if self.token_draft.is_empty() {
+            return;
+        }
+        let self_id = self
+            .bot_user_id
+            .clone()
+            .unwrap_or_else(|| self.current_user.id.clone());
+        if self_id.is_empty() {
+            return;
+        }
+
+        let token = self.token_draft.clone();
+        let token_is_bot = self.token_is_bot;
+        let tx = self.dm_tx.clone();
+        self.dm_loading = true;
+
+        runtime.spawn(async move {
+            let result = match DiscordClient::new(token, token_is_bot) {
+                Ok(client) => client.fetch_dm_channels(&self_id).await,
+                Err(err) => Err(err),
+            };
+            let _ = tx.send(match result {
+                Ok(channels) => DmResult::Listed(channels),
+                Err(err) => DmResult::Failed(format!("{err:#}")),
+            });
+        });
+    }
+
+    /// Make sure the synthetic guild exists, and keep it at the top of the rail
+    /// where Discord puts DMs.
+    fn ensure_dm_guild(&mut self) {
+        if !self
+            .guilds
+            .iter()
+            .any(|guild| guild.id == crate::models::DM_GUILD_ID)
+        {
+            self.guilds.insert(
+                0,
+                Guild {
+                    id: crate::models::DM_GUILD_ID.to_string(),
+                    name: "Direct Messages".to_string(),
+                    icon: None,
+                },
+            );
         }
     }
 
@@ -1941,6 +2031,11 @@ impl RustcordApp {
                     self.current_user.avatar_decoration = avatar_decoration;
                     self.current_user.status = Presence::Online;
                     self.bot_user_id = Some(user_id);
+                    self.dm_loaded = false;
+                    self.dm_loading = false;
+                    self.dm_channels.clear();
+                    self.dm_loaded = false;
+                    self.dm_loading = false;
                 }
                 GatewayEvent::GuildCreate { guild, channels } => {
                     if !self.live_data {
@@ -2503,6 +2598,8 @@ impl RustcordApp {
         self.members.clear();
         self.members_loading.clear();
         self.dm_channels.clear();
+        self.dm_loaded = false;
+        self.dm_loading = false;
         self.member_intent_missing = false;
         self.cancel_edit();
         self.replying_to = None;
@@ -2738,6 +2835,7 @@ impl eframe::App for RustcordApp {
         self.poll_dm();
         self.ensure_history();
         self.ensure_members();
+        self.ensure_dms();
         self.sync_image_budget();
         if self.images.poll(&ctx) > 0 {
             // Freshly decoded textures only show up on the next frame.

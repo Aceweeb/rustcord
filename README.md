@@ -93,8 +93,8 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
   textures to stay inside the budget.
 - Bot-token authentication stored in the OS keyring (`src/auth.rs`). Tokens are
   never written to `settings.json`.
-- Direct messages opened from the member list, listed under a synthetic "Direct
-  Messages" guild with history, sending, unread and typing.
+- Direct messages and group DMs, loaded at startup into a "Direct Messages" rail
+  entry; open new ones from a member row, with history, sending, unread and typing.
 - Real profile pictures with a hover profile card (display name, accent colour,
   banner and avatar decoration when Discord sends them), loaded through the
   bounded image cache.

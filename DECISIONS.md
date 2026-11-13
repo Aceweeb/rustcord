@@ -1661,3 +1661,25 @@ others, and that error is surfaced in the status line. The DM list is session-on
 nothing is written to disk, so a restart shows no DM history until one is reopened
 from a member. A failed request leaves the status line explaining why, and the
 result channel is polled on the UI thread like the roster fetch.
+
+## D57. The DM list is loaded once per connection and kept in the rail
+
+D56 could only add a DM after opening it from a member, so existing conversations
+were invisible until you happened to click the right person. The client now asks
+Discord for the account's channels at startup.
+
+`GET /users/@me/channels` returns every DM (type 1) and group DM (type 3) together
+with guild channels, so `fetch_dm_channels` filters to those two types, drops the
+signed-in account from the recipient list, and names each row after the other
+person's display name (or the group's name, or a joined recipient list). The
+request runs once per connection, triggered from the update loop after the gateway
+reports `Ready`; `dm_loaded`/`dm_loading` make it idempotent, a failure is reported
+once and not retried until reconnect, and `Ready` resets both flags.
+
+The synthetic guild is created even when the list is empty, at the top of the rail
+where Discord puts DMs. A successful list replaces the DM channels (preserving the
+order Discord returns), while a DM opened from a member row is merged into the same
+list and cached by recipient. Selecting a row uses the ordinary text-channel path,
+so history paging, sending, unread counts and typing work without DM-specific code.
+The empty state explains where DMs come from. The list remains session-only: nothing
+is written to disk.

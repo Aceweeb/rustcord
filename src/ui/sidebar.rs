@@ -658,6 +658,19 @@ fn channel_list(app: &mut RustcordApp, ui: &mut egui::Ui) {
                             }
                         }
                     }
+                    if is_dm_guild
+                        && !app
+                            .channels
+                            .iter()
+                            .any(|channel| channel.guild_id == crate::models::DM_GUILD_ID)
+                    {
+                        ui.add_space(4.0);
+                        ui.label(
+                            RichText::new("No direct messages yet — open one with DM on a member.")
+                                .size(11.0)
+                                .color(theme.muted),
+                        );
+                    }
                     ui.add_space(8.0);
                 });
 

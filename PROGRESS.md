@@ -550,6 +550,10 @@ Priority order for the next session:
   paths; rail/header label them `@`. 1 new test; suite 312. Not exercised against
   Discord (D28); session-only list.
 
+- DM list at startup (D57): `GET /users/@me/channels` loads DMs and group DMs into
+  the synthetic rail entry once per connection, with empty state and merge with
+  member-opened DMs. 1 new test; suite 313. Live fetch unverified (D28).
+
 ---
 
 ## 7. Notes for the next agent
