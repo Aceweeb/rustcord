@@ -60,7 +60,7 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
   Notifications, Shortcuts, Privacy, Diagnostics, About (`Ctrl+,`).
 - 12 built-in theme presets across Dark, Light, Purple and AMOLED, plus custom
   accent colours, painted previews, instant switching and persisted selection.
-- Live memory and CPU figures sampled from `/proc`, with a budget alert.
+- Live memory and CPU figures sampled from `/proc`, shown in Settings with a budget alert.
 - Dark theme with live palette application.
 - Discord Rich Presence (Settings → Extras): publishes "playing Rustcord" with the
   server and, optionally, the open channel to the Discord client running on this
@@ -369,8 +369,8 @@ paste the **bot token**. A bot that is in no server has nothing to read, which i
 the most common reason a correct token appears to do nothing.
 
 The token is stored in the Secret Service keyring under `rustcord` /
-`discord_bot_token` and the gateway starts immediately, with progress in the
-status bar. The field also lives in Settings → Privacy, next to `Connect gateway`
+`discord_bot_token` and the gateway starts immediately, with progress in
+Settings → Privacy. The field also lives there, next to `Connect gateway`
 and `Sign out`, which drops the keyring entry and returns to the sign-in page.
 Tokens are never serialized into `settings.json`.
 

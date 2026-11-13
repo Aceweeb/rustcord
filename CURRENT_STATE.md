@@ -99,6 +99,10 @@ name, draggable move region, double-click maximize/restore, minimize/maximize/
 close buttons, and eight foreground resize grips. The app opts out of OS
 decorations in `src/main.rs`; all actions are egui `ViewportCommand`s.
 
+The old bottom status strip is gone. Gateway state stays in Settings → Privacy,
+and live RSS/CPU/thread/image figures stay in Settings → Performance and
+Diagnostics, so permission and connection errors no longer occupy the chat UI.
+
 Guild icons are circles that become rounded squares when active, with the white
 selection pill; channel rows are painted (8 px inset, 4 px radius, hover and
 selected fills derived from the surface) so they hit 34 px exactly. Type scale is

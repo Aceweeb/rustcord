@@ -2290,3 +2290,17 @@ peak, 102 MB below the ceiling. The app launched repeatedly and stayed alive for
 the check. Native drag, maximize, close and resize gestures could not be driven
 from this headless review environment; they use egui's viewport commands and
 compile cleanly, but should be exercised once on the Wayland desktop.
+
+## D82. The bottom status strip is removed
+
+The client drew a persistent bottom strip under the chat with gateway text,
+roster errors, RSS, CPU, thread count and image-cache statistics. That is
+diagnostic information, not part of Discord's layout, and it made a server-side
+member-permission error look like a permanent workspace status. It also competed
+with the composer for vertical space.
+
+The strip and its formatting block are gone. The underlying fields are retained:
+gateway state is still shown in Settings → Privacy, and live resource and image
+cache figures are still on the Performance, Memory and Diagnostics pages. This is
+a presentation-only change; no connection or diagnostic data was removed and no
+tests changed.

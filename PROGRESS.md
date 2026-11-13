@@ -8,9 +8,10 @@
 
 Last updated: 2026-11-12 (Europe/Berlin)
 
-Latest increment: borderless window chrome (D81) — custom 32 px title strip with
-drag, double-click maximize/restore, working window buttons and eight resize
-grips. Before that: Discord UI fidelity (D80) — banner guild header, real-count
+Latest increment: the diagnostic status strip under the chat was removed (D82);
+gateway, roster-error and resource figures remain in Settings. Before that:
+borderless window chrome (D81) — custom 32 px title strip with drag, double-click
+maximize/restore, working window buttons and eight resize grips. Before that: Discord UI fidelity (D80) — banner guild header, real-count
 boost strip, inline search, role-coloured display names, red NEW rule and tinted
 account strip; a colour per folder, assigned from a palette and editable from
 the folder menu (D38); the server peek's channels are clickable (D37); a native message log of edits and deletions (D36); a
@@ -672,6 +673,10 @@ Priority order for the next session:
   2 new tests; suite 352. Release 206 MB RSS / 155 MB PSS / 217 MB peak, 83 MB
   of headroom. No visual check; the OS title bar was still native then (D81
   replaced it) and unimplemented voice controls were not faked.
+
+- Removed the bottom status strip (D82): gateway text, roster errors and live
+  resource/image figures no longer sit under the chat. The data remains in
+  Settings; no tests changed.
 
 - Borderless window chrome (D81): a 32 px title strip with the guild name, a
   draggable move region, double-click maximize/restore, real minimize/maximize/

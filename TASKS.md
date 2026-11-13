@@ -277,6 +277,8 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [x] Borderless window chrome (`DECISIONS.md` D81): draggable custom title strip,
   double-click maximize/restore, minimize/maximize/close commands and eight
   resize grips. 2 new tests. Native drag/resize gestures not checked.
+- [x] Removed the bottom diagnostic status strip (`DECISIONS.md` D82). Gateway and
+  resource data remain in Settings; no tests changed.
 - [x] Roster-backed channel members (`DECISIONS.md` D69): all loaded guild
   members, plus authors and voice participants; virtualised 34 px rows and
   visible-only avatar requests. 1 new test; live roster not exercised.

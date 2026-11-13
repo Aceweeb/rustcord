@@ -14,6 +14,11 @@ repository state before changing anything.
 
 ## What changed most recently
 
+The diagnostic status strip under the chat was removed (`DECISIONS.md` D82). It
+duplicated gateway, roster-error and resource data and made server-side
+permission failures look like permanent workspace status. Those figures remain
+in Settings; the suite is unchanged at 354.
+
 Borderless window chrome (`DECISIONS.md` D81): the OS decorations are off and a
 32 px theme-aware title strip carries the centered guild name, drag region,
 double-click maximize/restore, real minimize/maximize/close commands, and eight

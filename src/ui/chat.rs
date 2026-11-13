@@ -578,36 +578,6 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
         app.open_dm_with(&user);
     }
 
-    let mut status = app.gateway_status.clone();
-    if let Some(line) = &app.status_line {
-        status.push_str(" · ");
-        status.push_str(line);
-    }
-
-    // Live measurement, not an estimate: RSS/CPU come from /proc.
-    if let Some(sample) = app.monitor.sample {
-        status.push_str(" · ");
-        status.push_str(&crate::sysinfo::human_bytes(sample.rss_bytes));
-        if let Some(cpu) = app.monitor.cpu_percent {
-            status.push_str(&format!(" · {cpu:.1}% CPU"));
-        }
-        status.push_str(&format!(" · {} thr", sample.threads));
-    }
-    let (image_bytes, _, image_count, _) = app.images.stats();
-    if image_count > 0 {
-        status.push_str(&format!(
-            " · {} in {image_count} img",
-            crate::sysinfo::human_bytes(image_bytes as u64)
-        ));
-    }
-    egui::Panel::bottom("status_bar").show(ui, |ui| {
-        ui.label(
-            RichText::new(status)
-                .small()
-                .color(app.plugins.theme().muted),
-        );
-    });
-
     // A delete is confirmed rather than done on the click that asked for it.
     if let Some(id) = app.pending_delete.clone() {
         egui::Panel::top("delete_confirm").show(ui, |ui| {
