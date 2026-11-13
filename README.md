@@ -39,8 +39,9 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
   read a user's Discord folder settings.
 - Keyboard-only navigation (`Ctrl+Shift+K` by default): arrow through the rail and
   channel list with an in-place focus ring, Enter opens, Escape leaves.
-- Hover a server icon for a peek at its text and voice channels, with unread and
-  mention counts; clicking a channel in the peek opens it directly.
+- Hover a server icon for a peek at its text and voice channels, unread and
+  mention counts, and total/active member counts; clicking a channel in the peek
+  opens it directly.
 - Typing indicators both ways: `TYPING_START` events appear above the composer
   ("alice and bob are typing…") and in the channel header, with the trailing dots
   animating on a 400 ms cycle; writing a draft tells the channel you are typing,
@@ -137,14 +138,14 @@ Measured on the development machine (Arch, Wayland, release build):
 | Metric | Result |
 | --- | --- |
 | Binary size | ~11 MB stripped |
-| Idle RSS (release, 1280×800) | 210 MB (`VmRSS`) |
-| Idle PSS (fair per-process figure) | 145 MB (`smaps_rollup`) |
-| Peak RSS (20 s sample) | 242 MB (`VmHWM`) |
+| Idle RSS (release, 1280×800) | 231 MB (`VmRSS`) |
+| Idle PSS (fair per-process figure) | 167 MB (`smaps_rollup`) |
+| Peak RSS (20 s sample) | 261 MB (`VmHWM`) |
 | CPU | 0.0% with no animation on screen; animated surfaces redraw at 12.5 fps, and guild icons pause when unfocused |
 | Threads | 7–11 |
 
 The sign-in screen measures lower because no channel surface is built until there
-is a session. Peak RSS stays below the project's 300 MB ceiling with ~58 MB of
+is a session. Peak RSS stays below the project's 300 MB ceiling with ~39 MB of
 headroom; the figure includes the shared NVIDIA driver mappings described below.
 
 RSS for a GL application counts shared library pages in full, and on this machine

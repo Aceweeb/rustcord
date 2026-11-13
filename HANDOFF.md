@@ -7,12 +7,16 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 331 lib + 5 bin tests passing (336)
+- `cargo test --all-targets`: 332 lib + 5 bin tests passing (337)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 210 MB RSS, 145 MB PSS, 242 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
+- Runtime: 231 MB RSS, 167 MB PSS, 261 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
 
 ## What changed most recently
+
+Hover-card member counts (`DECISIONS.md` D74): the server peek now shows total
+and active approximate counts under the name, reusing the D73-refreshed data.
+Release peak measured at 261 MB, under the 300 MB ceiling.
 
 Immediate member counts (`DECISIONS.md` D73): returning focus to the window or
 receiving READY/RESUMED forces the guild-count refresh instead of waiting for the
@@ -46,6 +50,11 @@ Periodic guild counts (`DECISIONS.md` D67):
 - `src/app.rs` — five-minute count pass for all guilds, idle repaint scheduling,
   counts independent of roster eviction.
 - `src/api/discord.rs` — non-destructive `GuildCounts::merge`, 1 test.
+
+Hover-card member counts (`DECISIONS.md` D74):
+
+- `src/ui/sidebar.rs` — the peek builds a total/active summary from cached
+  counts, the guild payload and the loaded roster; a helper hides unknown fields.
 
 Immediate member counts (`DECISIONS.md` D73):
 

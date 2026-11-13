@@ -626,6 +626,11 @@ Priority order for the next session:
   in-flight pass is not duplicated. 2 new tests; suite 336. Release peak 242 MB,
   58 MB of headroom. Live focus/reconnect triggers not exercised.
 
+- Server hover member counts (D74): the rail peek shows total and active
+  approximate counts under the server name, falling back to the guild payload
+  and loaded roster, and omitting fields that are not known. 1 new test; suite
+  337. Release peak 261 MB, 39 MB of headroom. Peek not visually checked.
+
 ---
 
 ## 7. Notes for the next agent

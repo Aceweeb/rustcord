@@ -251,6 +251,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [x] Immediate member counts (`DECISIONS.md` D73): focus regain and gateway
   READY/RESUMED bypass the five-minute cadence, while an in-flight pass is kept
   and not duplicated. 2 new tests; peak 242 MB. Live triggers not exercised.
+- [x] Hover-card member counts (`DECISIONS.md` D74): total and active counts under
+  the server name, with payload/roster fallbacks and no invented zeros. 1 new
+  test; peak 261 MB. Peek not visually checked.
 - [x] Roster-backed channel members (`DECISIONS.md` D69): all loaded guild
   members, plus authors and voice participants; virtualised 34 px rows and
   visible-only avatar requests. 1 new test; live roster not exercised.

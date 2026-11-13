@@ -2056,3 +2056,25 @@ bypassing the cadence; the suite is 336. The release binary measures 210 MB RSS 
 The network refresh itself and the real focus/reconnect transitions were not
 exercised in this environment; only the scheduling logic is tested. This adds no
 timer, thread or cache.
+
+
+## D74. The server hover card shows approximate total and active counts
+
+The rail peek listed channels but not who was in the server, even though the
+periodic count pass already held approximate totals. The member panel used those
+numbers; the hover card did not.
+
+The peek now renders a muted summary under the guild name. Total prefers the
+cached approximate count, then the guild payload's `member_count`, then a
+non-empty loaded roster, and never reports less than the roster it is showing.
+Active prefers the cached approximate presence count, then counts non-offline
+loaded roster members. A small formatter only includes known fields: both become
+`N Members · M Active`, one alone becomes that field, and an entirely unknown
+guild shows no line. The offline demo therefore shows nothing rather than a
+convincing-looking zero. The numbers refresh through the existing D73 cadence and
+focus/reconnect triggers; no request is made by hovering.
+
+One unit test covers the label combinations; the suite is 337. The release binary
+measures 231 MB RSS / 167 MB PSS / 261 MB peak in a 20 s sample, about 39 MB below
+the 300 MB ceiling. The peek itself was not visually checked, and live approximate
+counts were not available in this environment.

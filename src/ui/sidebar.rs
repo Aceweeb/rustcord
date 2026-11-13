@@ -1241,6 +1241,27 @@ pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
     if let Some(url) = &banner_url {
         app.images.prepare(std::slice::from_ref(url));
     }
+    let counts = app.guild_counts.get(&guild.id);
+    let roster = app.members.get(&guild.id);
+    let roster_len = roster.map_or(0, Vec::len);
+    let total = counts
+        .and_then(|counts| counts.total)
+        .or(guild.member_count)
+        .map(|count| count as usize)
+        .or_else(|| (roster_len > 0).then_some(roster_len))
+        .map(|count| count.max(roster_len));
+    let active = counts
+        .and_then(|counts| counts.active)
+        .map(|count| count as usize)
+        .or_else(|| {
+            roster.filter(|members| !members.is_empty()).map(|members| {
+                members
+                    .iter()
+                    .filter(|member| member.status != crate::models::Presence::Offline)
+                    .count()
+            })
+        });
+    let member_summary = member_count_label(total, active);
 
     const MAX_TEXT: usize = 8;
     const MAX_VOICE: usize = 5;
@@ -1315,6 +1336,9 @@ pub(crate) fn hover_peek(app: &mut RustcordApp, ctx: &egui::Context) {
                             .strong()
                             .color(theme.text),
                     );
+                    if let Some(summary) = member_summary.as_deref() {
+                        ui.label(RichText::new(summary).size(11.0).color(theme.muted));
+                    }
                     ui.add_space(6.0);
 
                     ui.label(
@@ -1443,9 +1467,38 @@ fn animation_clock(focused: bool, wall_time: f64, last: &mut f64) -> f64 {
     *last
 }
 
+/// Discord's guild hover card shows approximate totals, which can exceed the
+/// capped roster. Only render the fields that are actually known; the offline
+/// demo has no count payload and must not show a made-up zero.
+fn member_count_label(total: Option<usize>, active: Option<usize>) -> Option<String> {
+    match (total, active) {
+        (Some(total), Some(active)) => Some(format!("{total} Members \u{00B7} {active} Active")),
+        (Some(total), None) => Some(format!("{total} Members")),
+        (None, Some(active)) => Some(format!("{active} Active")),
+        (None, None) => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guild_hover_counts_show_only_known_fields() {
+        assert_eq!(
+            member_count_label(Some(1200), Some(87)).as_deref(),
+            Some("1200 Members \u{00B7} 87 Active")
+        );
+        assert_eq!(
+            member_count_label(Some(12), None).as_deref(),
+            Some("12 Members")
+        );
+        assert_eq!(
+            member_count_label(None, Some(7)).as_deref(),
+            Some("7 Active")
+        );
+        assert_eq!(member_count_label(None, None), None);
+    }
 
     #[test]
     fn guild_icon_clock_freezes_while_unfocused() {
