@@ -883,51 +883,188 @@ fn message_row(
     }
 
     response.context_menu(|ui| {
-        ui.set_min_width(190.0);
+        message_menu(ui, app, message, action);
+    });
 
-        ui.horizontal(|ui| {
-            for emoji in QUICK_REACTIONS {
-                if ui
-                    .button(RichText::new(emoji).size(16.0))
-                    .on_hover_text("React")
-                    .clicked()
-                {
-                    *action = Some(RowAction::React {
-                        message_id: message.id.clone(),
-                        emoji: emoji.to_string(),
-                    });
-                    ui.close();
-                }
-            }
-        });
+    hover_action_bar(app, ui, message, response.rect, action);
+}
 
-        ui.separator();
+/// Discord's hover toolbar: react, reply and more, floating inside the row's
+/// top-right corner. It is drawn after the row body so it receives the pointer,
+/// and it stays alive while either of its popups is open even though the pointer
+/// has left the row.
+fn hover_action_bar(
+    app: &RustcordApp,
+    ui: &mut egui::Ui,
+    message: &Message,
+    row: egui::Rect,
+    action: &mut Option<RowAction>,
+) {
+    // `response.rect` only spans the message's content. Discord anchors the bar
+    // at the channel's right edge, and hovering the empty part of the row still
+    // counts, so extend the geometry to the row's full available width.
+    let row = egui::Rect::from_min_max(row.min, egui::pos2(ui.max_rect().right(), row.max.y));
+    let Some((bar, buttons)) = hover_action_rects(row) else {
+        return;
+    };
+    let theme = app.plugins.theme();
 
-        if ui
-            .add_enabled(!message.content.is_empty(), egui::Button::new("Copy text"))
-            .clicked()
-        {
-            *action = Some(RowAction::Copy(message.content.clone()));
-            ui.close();
+    let react_id = egui::Id::unique(("message-react", message.id.as_str()));
+    let reply_id = egui::Id::unique(("message-reply", message.id.as_str()));
+    let more_id = egui::Id::unique(("message-more", message.id.as_str()));
+    let react_open = egui::Popup::is_id_open(ui.ctx(), react_id.with("popup"));
+    let more_open = egui::Popup::is_id_open(ui.ctx(), more_id.with("popup"));
+    // The bar is only shown while the pointer is somewhere on the row. Once it
+    // is visible its own rect is inside the row, so moving onto a button does
+    // not dismiss it; an open popup keeps it alive beyond that.
+    let pointer_over_bar = ui
+        .ctx()
+        .pointer_hover_pos()
+        .is_some_and(|pointer| bar.contains(pointer));
+    let pointer_over_row = ui
+        .ctx()
+        .pointer_hover_pos()
+        .is_some_and(|pointer| row.contains(pointer));
+    if !(pointer_over_row || pointer_over_bar || react_open || more_open) {
+        return;
+    }
+
+    ui.painter().rect_filled(bar, 6.0, theme.surface);
+    ui.painter().rect_stroke(
+        bar,
+        6.0,
+        egui::Stroke::new(1.0, crate::utils::lift(theme.surface, 18)),
+        egui::StrokeKind::Inside,
+    );
+
+    let icon_size = (buttons[0].height() * 0.75).clamp(10.0, 15.0);
+    let icons = ["\u{1f642}", "\u{21a9}", "\u{22ef}"];
+    let names = ["Add reaction", "Reply", "More"];
+    let ids = [react_id, reply_id, more_id];
+    let mut responses = Vec::with_capacity(3);
+    for ((rect, icon), (name, id)) in buttons.iter().zip(icons).zip(names.iter().zip(ids)) {
+        let response = ui
+            .interact(*rect, id, egui::Sense::click())
+            .on_hover_text(*name);
+        if response.hovered() {
+            ui.painter()
+                .rect_filled(rect.shrink(1.0), 4.0, crate::utils::lift(theme.surface, 22));
+            ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            icon,
+            egui::FontId::proportional(icon_size),
+            if response.hovered() {
+                theme.text
+            } else {
+                theme.muted
+            },
+        );
+        responses.push(response);
+    }
 
-        if ui.button("Reply").clicked() {
-            *action = Some(RowAction::Reply(message.id.clone()));
-            ui.close();
-        }
+    // Quick reactions, in the same order as the right-click menu.
+    egui::Popup::menu(&responses[0]).show(|ui| {
+        quick_reactions(ui, message, action);
+    });
+    if responses[1].clicked() {
+        *action = Some(RowAction::Reply(message.id.clone()));
+    }
+    egui::Popup::menu(&responses[2]).show(|ui| {
+        message_menu(ui, app, message, action);
+    });
+}
 
-        if app.can_modify(message) {
-            ui.separator();
-            if ui.button("Edit message").clicked() {
-                *action = Some(RowAction::Edit(message.id.clone()));
-                ui.close();
-            }
-            if ui.button("Delete message").clicked() {
-                *action = Some(RowAction::Delete(message.id.clone()));
+/// The floating bar and its three hit rects, kept inside the row and clear of a
+/// very narrow window. Returning `None` means the row simply has no toolbar.
+fn hover_action_rects(row: egui::Rect) -> Option<(egui::Rect, [egui::Rect; 3])> {
+    const BAR_WIDTH: f32 = 90.0;
+    const BAR_HEIGHT: f32 = 28.0;
+    const BUTTON_WIDTH: f32 = 26.0;
+    const PAD: f32 = 6.0;
+    if row.width() < BAR_WIDTH + 24.0 || row.height() < 16.0 {
+        return None;
+    }
+    // Grouped continuation rows can be only one text line tall. Shrink the bar
+    // to stay inside so adjacent rows cannot both show an overlapping toolbar.
+    let bar_height = BAR_HEIGHT.min(row.height() - 2.0).max(16.0);
+    let bar = egui::Rect::from_min_size(
+        egui::pos2(
+            row.right() - BAR_WIDTH - 8.0,
+            row.top() + (row.height() - bar_height) / 2.0,
+        ),
+        egui::vec2(BAR_WIDTH, bar_height),
+    );
+    let button_height = (bar_height - 4.0).max(10.0);
+    let button_top = bar.top() + (bar_height - button_height) / 2.0;
+    let mut buttons = [egui::Rect::NOTHING; 3];
+    for (index, rect) in buttons.iter_mut().enumerate() {
+        *rect = egui::Rect::from_min_size(
+            egui::pos2(bar.left() + PAD + index as f32 * BUTTON_WIDTH, button_top),
+            egui::vec2(BUTTON_WIDTH, button_height),
+        );
+    }
+    Some((bar, buttons))
+}
+
+/// The four emoji Discord puts first in its reaction picker. Shared by the
+/// right-click menu and the hover bar's reaction button.
+fn quick_reactions(ui: &mut egui::Ui, message: &Message, action: &mut Option<RowAction>) {
+    ui.horizontal(|ui| {
+        for emoji in QUICK_REACTIONS {
+            if ui
+                .button(RichText::new(emoji).size(16.0))
+                .on_hover_text("React")
+                .clicked()
+            {
+                *action = Some(RowAction::React {
+                    message_id: message.id.clone(),
+                    emoji: emoji.to_string(),
+                });
                 ui.close();
             }
         }
     });
+}
+
+/// Everything the right-click context menu and the hover bar's "more" button
+/// offer. Keeping one function means the two menus cannot drift apart.
+fn message_menu(
+    ui: &mut egui::Ui,
+    app: &RustcordApp,
+    message: &Message,
+    action: &mut Option<RowAction>,
+) {
+    ui.set_min_width(190.0);
+    quick_reactions(ui, message, action);
+    ui.separator();
+
+    if ui
+        .add_enabled(!message.content.is_empty(), egui::Button::new("Copy text"))
+        .clicked()
+    {
+        *action = Some(RowAction::Copy(message.content.clone()));
+        ui.close();
+    }
+
+    if ui.button("Reply").clicked() {
+        *action = Some(RowAction::Reply(message.id.clone()));
+        ui.close();
+    }
+
+    if app.can_modify(message) {
+        ui.separator();
+        if ui.button("Edit message").clicked() {
+            *action = Some(RowAction::Edit(message.id.clone()));
+            ui.close();
+        }
+        if ui.button("Delete message").clicked() {
+            *action = Some(RowAction::Delete(message.id.clone()));
+            ui.close();
+        }
+    }
 }
 
 fn message_row_body(
@@ -1470,6 +1607,33 @@ mod tests {
         assert!(!same_message_group("42", at, "43", at, false));
         // A reply introduces a new block even in the same minute.
         assert!(!same_message_group("42", at, "42", at, true));
+    }
+
+    #[test]
+    fn hover_actions_sit_inside_the_row() {
+        let row = egui::Rect::from_min_size(egui::pos2(100.0, 50.0), egui::vec2(420.0, 60.0));
+        let (bar, buttons) = hover_action_rects(row).expect("room for a toolbar");
+        assert!(row.contains(bar.min) && row.contains(bar.max));
+        assert_eq!(buttons.len(), 3);
+        for button in buttons {
+            assert!(bar.contains(button.min) && bar.contains(button.max));
+            assert!(button.width() > 0.0 && button.height() > 0.0);
+        }
+        assert!(buttons[0].right() <= buttons[1].left());
+        assert!(buttons[1].right() <= buttons[2].left());
+    }
+
+    #[test]
+    fn a_short_grouped_row_still_has_hover_actions() {
+        let row = egui::Rect::from_min_size(egui::pos2(20.0, 10.0), egui::vec2(320.0, 20.0));
+        let (bar, _) = hover_action_rects(row).expect("compact toolbar");
+        assert!(row.contains(bar.min) && row.contains(bar.max));
+    }
+
+    #[test]
+    fn a_narrow_row_has_no_hover_actions() {
+        let row = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(80.0, 40.0));
+        assert!(hover_action_rects(row).is_none());
     }
 
     #[test]

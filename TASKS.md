@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Message hover actions (`DECISIONS.md` D68): react, reply and more in a
+  floating bar, sharing the right-click menu. 3 new tests; hover/popup behaviour
+  not visually checked.
 - [x] Periodic server counts (`DECISIONS.md` D67): background five-minute REST
   pass for every guild, idle wake scheduling, counts kept outside the roster
   cache. 1 new test; live cadence not exercised without a bot session.

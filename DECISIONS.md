@@ -1897,3 +1897,25 @@ the whole list; a failure for one guild is skipped rather than aborting the pass
 This endpoint needs no privileged Members intent, so counts still refresh for bots
 without the roster. No timer thread is added: scheduling lives in `ui()` and costs
 nothing between wakes.
+
+## D68. Message actions float in a hover bar and reuse the existing menus
+
+Replying, reacting and deleting were reachable only through the right-click menu
+or the small `⋯` button on a user's own messages. Discord puts a compact action
+bar in the top-right of whichever message row is under the pointer; the client now
+does the same.
+
+The bar has three hit rects painted inside the row rather than allocated as normal
+widgets. That keeps it out of the virtualised row's measured height, so it cannot
+change scroll offsets or push text down. It appears while the pointer is anywhere
+in the row, and its own rect is inside that row, so moving from the text onto a
+button does not dismiss it. The bar also stays drawn while one of its popups is
+open, using egui's stored popup id; otherwise the popup would lose its anchor as
+soon as the pointer left the row.
+
+Reaction opens the same four quick emoji as the context menu. Reply records the
+existing `RowAction::Reply` immediately. More opens one shared `message_menu`,
+which is also used by right-click, so copy/reply/edit/delete cannot drift between
+the two entry points. Button ids are derived globally from the message id (not the
+row's layout id) so a recycled virtual row cannot inherit another message's open
+menu.

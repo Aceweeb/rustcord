@@ -597,6 +597,10 @@ Priority order for the next session:
   and empty responses no longer erase them. 1 new test; suite 325. Live REST
   cadence not exercised without a bot session.
 
+- Message hover action bar (D68): react picker, one-click reply and a more menu
+  that shares the context-menu contents; painted inside the row so row metrics
+  do not move. 3 new tests; suite 328. Hover/popup behaviour not visually checked.
+
 ---
 
 ## 7. Notes for the next agent
