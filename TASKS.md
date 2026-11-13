@@ -239,7 +239,7 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   development sandbox; requires the user's token).
 - [x] Animated server icons (`DECISIONS.md` D66): animated hashes use the GIF
   endpoint, all frames are decoded and cached, rail advances them on the input
-  clock. 3 new tests; motion not visually checked.
+  clock. 4 new tests; motion not visually checked.
 - [x] Server channel categories (`DECISIONS.md` D65): type-4 categories with
   parent/position parsing, collapsible headers, uncategorised fallbacks, matching
   keyboard order. 1 new test; appearance not visually checked.
