@@ -657,28 +657,58 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
             .corner_radius(8.0)
             .inner_margin(egui::Margin::symmetric(12, 10))
             .show(ui, |ui| {
-                if let Some(attachment) = app.composer_attachment.as_ref() {
-                    let filename = attachment.filename.clone();
-                    let size = attachment.size;
-                    let mut remove = false;
+                if !app.composer_attachments.is_empty() {
+                    let count = app.composer_attachments.len();
+                    let total = app.composer_attachment_total();
+                    let limit = crate::api::discord::DiscordClient::MAX_TOTAL_ATTACHMENT_BYTES;
+                    let mut clear = false;
+                    let mut remove = None;
                     ui.horizontal(|ui| {
-                        ui.label(RichText::new("📎").size(15.0).color(theme.text));
-                        ui.label(RichText::new(&filename).size(12.0).color(theme.text));
                         ui.label(
-                            RichText::new(crate::sysinfo::human_bytes(size))
-                                .size(10.0)
-                                .color(theme.muted),
+                            RichText::new(format!(
+                                "{count} attachment{} · {} of {}",
+                                if count == 1 { "" } else { "s" },
+                                crate::sysinfo::human_bytes(total),
+                                crate::sysinfo::human_bytes(limit)
+                            ))
+                            .size(10.0)
+                            .color(theme.muted),
                         );
-                        if ui
-                            .small_button("\u{2715}")
-                            .on_hover_text("Remove attachment")
-                            .clicked()
+                        if count > 1
+                            && ui
+                                .small_button("Clear all")
+                                .on_hover_text("Remove every attachment")
+                                .clicked()
                         {
-                            remove = true;
+                            clear = true;
                         }
                     });
-                    if remove {
-                        app.clear_attachment();
+                    for (index, attachment) in app.composer_attachments.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("📎").size(15.0).color(theme.text));
+                            ui.label(
+                                RichText::new(&attachment.filename)
+                                    .size(12.0)
+                                    .color(theme.text),
+                            );
+                            ui.label(
+                                RichText::new(crate::sysinfo::human_bytes(attachment.size))
+                                    .size(10.0)
+                                    .color(theme.muted),
+                            );
+                            if ui
+                                .small_button("\u{2715}")
+                                .on_hover_text("Remove attachment")
+                                .clicked()
+                            {
+                                remove = Some(index);
+                            }
+                        });
+                    }
+                    if clear {
+                        app.clear_attachments();
+                    } else if let Some(index) = remove {
+                        app.remove_attachment(index);
                     }
                 }
 
@@ -750,10 +780,10 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     if app.editing.is_none() {
                         let attach = ui
                             .add(egui::Button::new(RichText::new("📎").size(15.0)).frame(false))
-                            .on_hover_text("Attach a file");
+                            .on_hover_text("Attach files");
                         if attach.clicked() {
-                            if let Some(path) = rfd::FileDialog::new().pick_file() {
-                                app.attach_file(path);
+                            if let Some(paths) = rfd::FileDialog::new().pick_files() {
+                                app.attach_files(paths);
                             }
                             // The native dialog takes keyboard focus; put it back
                             // so typing the caption needs no extra click.

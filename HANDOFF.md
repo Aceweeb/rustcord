@@ -7,12 +7,19 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 343 lib + 5 bin tests passing (348)
+- `cargo test --all-targets`: 345 lib + 5 bin tests passing (350)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 220 MB RSS, 154 MB PSS, 239 MB peak, 7–12 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
+- Runtime: 216 MB RSS, 154 MB PSS, 238 MB peak, 7–12 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
 
 ## What changed most recently
+
+Bounded attachment queue (`DECISIONS.md` D79): the paperclip accepts multiple
+files, the composer keeps up to ten removable rows with a running total, and the
+send path enforces 10 MiB per file and 20 MiB per batch in both the composer and
+the API. Multipart bodies now map `files[n]` to `attachments[n]` ids and
+filenames. Live upload was not exercised; the limits and payload mapping have
+unit tests.
 
 Caret-aware emoji insertion (`DECISIONS.md` D78): the composer reads the text
 editor's persisted character range, inserts the chosen glyph at the collapsed
@@ -82,6 +89,15 @@ Caret-aware emoji insertion (`DECISIONS.md` D78):
 
 - `src/ui/chat.rs` — read the editor's character range, replace/insert at the
   caret, store the new cursor and restore focus; pure insertion helper + test.
+
+Bounded attachment queue (`DECISIONS.md` D79):
+
+- `src/ui/chat.rs` — multi-file picker, removable attachment rows, running total
+  and clear-all control.
+- `src/app.rs` — attachment vector, per-file/count/total validation, removal and
+  the send path.
+- `src/api/discord.rs` — multipart `files[0..n]`, matching `attachments` ids and
+  filenames, plus a second count/size check over the files actually read.
 
 Role-grouped member panel (`DECISIONS.md` D76):
 

@@ -267,6 +267,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [x] Caret-aware emoji insertion (`DECISIONS.md` D78): insert the chosen glyph
   at the editor caret, replace a selection, and advance the caret; fall back to
   the end when no editor state exists. 1 new test. UI event path not checked.
+- [x] Bounded attachment queue (`DECISIONS.md` D79): multi-file picker, up to ten
+  removable rows, 10 MiB per file and 20 MiB per batch, and multipart `files[n]`
+  metadata. 2 new tests. Live upload not checked.
 - [x] Roster-backed channel members (`DECISIONS.md` D69): all loaded guild
   members, plus authors and voice participants; virtualised 34 px rows and
   visible-only avatar requests. 1 new test; live roster not exercised.

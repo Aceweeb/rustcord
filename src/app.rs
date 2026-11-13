@@ -72,8 +72,8 @@ struct SpotifyConnect {
     exchange: Option<std::sync::mpsc::Receiver<anyhow::Result<crate::api::spotify_auth::Tokens>>>,
 }
 
-/// One file selected in the composer, before it is uploaded. Discord allows
-/// several; the low-memory client keeps a single slot and says so in the UI.
+/// One file selected in the composer, before it is uploaded. The queue is
+/// capped by count and by total bytes to keep a multipart send bounded.
 #[derive(Debug, Clone)]
 pub(crate) struct ComposerAttachment {
     pub path: std::path::PathBuf,
@@ -106,6 +106,24 @@ fn prepare_attachment(path: std::path::PathBuf) -> Result<ComposerAttachment, St
     })
 }
 
+/// Refuse a file that would exceed either the attachment count or the total
+/// batch budget. Kept pure so the limits are testable without a GUI.
+fn attachment_queue_error(count: usize, total: u64, size: u64) -> Option<String> {
+    if count >= crate::api::discord::DiscordClient::MAX_ATTACHMENTS_PER_MESSAGE {
+        return Some(format!(
+            "a message can carry at most {} attachments",
+            crate::api::discord::DiscordClient::MAX_ATTACHMENTS_PER_MESSAGE
+        ));
+    }
+    if total.saturating_add(size) > crate::api::discord::DiscordClient::MAX_TOTAL_ATTACHMENT_BYTES {
+        return Some(format!(
+            "attachments must total at most {} MiB",
+            crate::api::discord::DiscordClient::MAX_TOTAL_ATTACHMENT_BYTES / (1024 * 1024)
+        ));
+    }
+    None
+}
+
 pub struct RustcordApp {
     pub(crate) settings: Settings,
     pub(crate) guilds: Vec<Guild>,
@@ -114,8 +132,8 @@ pub struct RustcordApp {
     pub(crate) selected_guild: Option<String>,
     pub(crate) selected_channel: Option<String>,
     pub(crate) draft: String,
-    /// The one file waiting to be sent with the next message.
-    pub(crate) composer_attachment: Option<ComposerAttachment>,
+    /// Files waiting to be sent with the next message.
+    pub(crate) composer_attachments: Vec<ComposerAttachment>,
     pub(crate) plugins: PluginManager,
     pub(crate) current_user: User,
     pub(crate) show_settings: bool,
@@ -615,7 +633,7 @@ impl RustcordApp {
             voice: crate::models::VoiceTracker::default(),
             editing: None,
             replying_to: None,
-            composer_attachment: None,
+            composer_attachments: Vec::new(),
             pending_delete: None,
             action_tx,
             action_results,
@@ -1606,7 +1624,7 @@ impl RustcordApp {
 
     pub(crate) fn begin_edit(&mut self, message: &Message) {
         self.replying_to = None;
-        self.composer_attachment = None;
+        self.composer_attachments.clear();
         self.editing = Some(message.id.clone());
         self.draft = message.content.clone();
         self.status_line = Some("editing message — Enter saves, Esc cancels".to_string());
@@ -3124,26 +3142,64 @@ impl RustcordApp {
         crate::models::typing_refresh_in(last, channel_id, std::time::Instant::now())
     }
 
-    /// Select one file for the next message. The size check happens here so a
-    /// huge file is rejected before any upload work starts.
-    pub(crate) fn attach_file(&mut self, path: std::path::PathBuf) {
-        match prepare_attachment(path) {
-            Ok(file) => {
-                self.status_line = Some(format!(
-                    "attached {} ({})",
-                    file.filename,
-                    crate::sysinfo::human_bytes(file.size)
-                ));
-                self.composer_attachment = Some(file);
+    /// Select files for the next message. Per-file size, file count and total
+    /// batch size are checked here so rejected files never reach an upload.
+    pub(crate) fn attach_files(&mut self, paths: Vec<std::path::PathBuf>) {
+        let mut added = 0usize;
+        let mut error = None;
+        for path in paths {
+            match prepare_attachment(path) {
+                Ok(file) => {
+                    if let Some(reason) = attachment_queue_error(
+                        self.composer_attachments.len(),
+                        self.composer_attachment_total(),
+                        file.size,
+                    ) {
+                        error = Some(reason);
+                        continue;
+                    }
+                    self.composer_attachments.push(file);
+                    added += 1;
+                }
+                Err(err) => error = Some(err),
             }
-            Err(err) => self.status_line = Some(err),
+        }
+        if added > 0 {
+            let mut message = format!(
+                "attached {added} file{} ({})",
+                if added == 1 { "" } else { "s" },
+                crate::sysinfo::human_bytes(self.composer_attachment_total())
+            );
+            if let Some(error) = error {
+                message.push_str("; ");
+                message.push_str(&error);
+            }
+            self.status_line = Some(message);
+        } else if let Some(error) = error {
+            self.status_line = Some(error);
         }
     }
 
-    pub(crate) fn clear_attachment(&mut self) {
-        if self.composer_attachment.take().is_some() {
-            self.status_line = Some("attachment removed".to_string());
+    pub(crate) fn remove_attachment(&mut self, index: usize) {
+        if index < self.composer_attachments.len() {
+            let file = self.composer_attachments.remove(index);
+            self.status_line = Some(format!("removed {}", file.filename));
         }
+    }
+
+    pub(crate) fn clear_attachments(&mut self) {
+        let count = self.composer_attachments.len();
+        if count > 0 {
+            self.composer_attachments.clear();
+            self.status_line = Some(format!(
+                "removed {count} attachment{}",
+                if count == 1 { "" } else { "s" }
+            ));
+        }
+    }
+
+    pub(crate) fn composer_attachment_total(&self) -> u64 {
+        self.composer_attachments.iter().map(|file| file.size).sum()
     }
 
     pub(crate) fn send_current_draft(&mut self) {
@@ -3160,7 +3216,7 @@ impl RustcordApp {
             ));
             return;
         }
-        if content.is_empty() && self.composer_attachment.is_none() {
+        if content.is_empty() && self.composer_attachments.is_empty() {
             return;
         }
 
@@ -3175,7 +3231,9 @@ impl RustcordApp {
             return;
         }
 
-        let attachment = self.composer_attachment.take();
+        let attachments = std::mem::take(&mut self.composer_attachments);
+        let attachment_paths: Vec<std::path::PathBuf> =
+            attachments.iter().map(|file| file.path.clone()).collect();
 
         if self.live_data {
             if let (Some(runtime), Some(channel_id)) =
@@ -3193,21 +3251,21 @@ impl RustcordApp {
                     let tx = self.send_tx.clone();
                     runtime.spawn(async move {
                         let result = match DiscordClient::new(token, token_is_bot) {
-                            Ok(client) => match (attachment, reply_id) {
-                                (Some(file), target) => {
+                            Ok(client) => match (attachment_paths.is_empty(), reply_id) {
+                                (false, target) => {
                                     client
-                                        .send_attachment(
+                                        .send_attachments(
                                             &channel_id,
                                             &content,
-                                            &file.path,
+                                            &attachment_paths,
                                             target.as_deref(),
                                         )
                                         .await
                                 }
-                                (None, Some(target)) => {
+                                (true, Some(target)) => {
                                     client.send_reply(&channel_id, &content, &target).await
                                 }
-                                (None, None) => client.send_message(&channel_id, &content).await,
+                                (true, None) => client.send_message(&channel_id, &content).await,
                             }
                             .map_err(|err| format!("{err:#}")),
                             Err(err) => Err(format!("{err:#}")),
@@ -3231,7 +3289,7 @@ impl RustcordApp {
         let mut message = Message::new(self.current_user.clone(), content);
         message.channel_id = self.selected_channel.clone();
         message.reply_to = self.replying_to.take();
-        if let Some(file) = attachment {
+        for file in attachments {
             message.attachments.push(crate::models::Attachment {
                 filename: file.filename,
                 size: file.size,
@@ -3542,6 +3600,21 @@ mod tests {
             .expect("size");
         let error = prepare_attachment(huge).expect_err("oversized");
         assert!(error.contains("at most 10 MiB"));
+    }
+
+    #[test]
+    fn attachment_queue_enforces_count_and_total_budgets() {
+        let max_count = crate::api::discord::DiscordClient::MAX_ATTACHMENTS_PER_MESSAGE;
+        let max_total = crate::api::discord::DiscordClient::MAX_TOTAL_ATTACHMENT_BYTES;
+
+        assert!(attachment_queue_error(0, 0, 1).is_none());
+        assert!(attachment_queue_error(max_count, 0, 1)
+            .expect("count limit")
+            .contains("at most 10 attachments"));
+        assert!(attachment_queue_error(1, max_total - 1, 1).is_none());
+        assert!(attachment_queue_error(1, max_total, 1)
+            .expect("total limit")
+            .contains("at most 20 MiB"));
     }
 
     #[test]

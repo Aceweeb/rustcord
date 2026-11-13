@@ -2111,7 +2111,8 @@ Three tests cover attachment validation, emoji-choice uniqueness and the
 attachment MIME/payload helpers; the suite is 340. The picker, popup and live
 multipart upload were not visually or end-to-end exercised in this environment,
 so the UI wiring and Discord's acceptance of the form remain unverified. D78
-later changed emoji insertion from appending to using the editor caret.
+later changed emoji insertion from appending to using the editor caret, and D79
+expanded the single attachment slot into a bounded multi-file queue.
 
 
 ## D76. Member sections follow hoisted guild roles, with presence as a fallback
@@ -2191,3 +2192,31 @@ multi-character selection with an emoji, and the append fallback; the suite is
 348. The 20 s release sample measured 220 MB RSS / 154 MB PSS / 239 MB peak,
 61 MB below the ceiling. The popup's live click path and visible caret were not
 exercised in a desktop session.
+
+
+## D79. The composer queues multiple attachments under a total byte budget
+
+The composer had one attachment slot. Discord accepts up to ten files per
+message, and the file picker already had a multi-select API; the single slot was
+a client limitation rather than an API one.
+
+The composer now keeps a `Vec<ComposerAttachment>` and opens the picker in
+multi-select mode. Each selected file is validated as a regular file at most
+10 MiB, then accepted only while the queue has fewer than ten entries and its
+total would stay at or below 20 MiB. The row list shows the running total and
+allows removing one file or clearing all of them. Editing a message clears the
+queue because message edits cannot add attachments.
+
+The total budget is deliberately below the 100 MiB that ten files at Discord's
+per-file ceiling could reach. The upload path reads files into memory and
+multipart construction clones them for the rate-limit retry, so 20 MiB keeps the
+worst-case transient allocation bounded. The API repeats the count, per-file and
+total checks after reading, so a file that grows after selection cannot bypass
+the queue check. Each `files[n]` part now has a matching `attachments[n]` entry
+with its id and filename, as Discord's upload format expects.
+
+Two tests cover the count/total queue helper and the multipart attachment
+mapping; the suite is 350. The 20 s release sample measured 216 MB RSS / 154 MB
+PSS / 238 MB peak, 62 MB below the ceiling. The live multi-file upload and
+composer rows were not exercised in a desktop session, so Discord's acceptance
+of the multipart form remains unverified.

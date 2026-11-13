@@ -299,9 +299,16 @@ impl DiscordClient {
     /// Discord's message limit. Longer content is refused by the API, so it is
     /// refused here first instead of after a round trip.
     pub const MAX_CONTENT_CHARS: usize = 2000;
-    /// Discord's default upload ceiling for a guild channel (10 MiB). Boosted
-    /// guilds can raise it, but the client does not know the tier here.
+    /// Discord's default upload ceiling for one file in a guild channel
+    /// (10 MiB). Boosted guilds can raise it, but the client does not know the
+    /// tier here.
     pub const MAX_ATTACHMENT_BYTES: u64 = 10 * 1024 * 1024;
+    /// Discord accepts up to ten files on one message.
+    pub const MAX_ATTACHMENTS_PER_MESSAGE: usize = 10;
+    /// Local memory bound for one multipart send. Discord's per-file ceiling
+    /// alone would allow 100 MiB across ten files, which is too much to read
+    /// into memory; this client keeps the whole batch at 20 MiB.
+    pub const MAX_TOTAL_ATTACHMENT_BYTES: u64 = 20 * 1024 * 1024;
 
     pub async fn edit_message(
         &self,
@@ -481,25 +488,24 @@ impl DiscordClient {
         Message::try_from(raw)
     }
 
-    /// Upload one file with an optional caption/reply. Discord expects
-    /// `payload_json` plus `files[0]` in a multipart form.
-    pub async fn send_attachment(
+    /// Upload several files with an optional caption/reply. Discord expects
+    /// `payload_json` plus `files[0]`, `files[1]`, … in a multipart form.
+    pub async fn send_attachments(
         &self,
         channel_id: &str,
         content: &str,
-        path: &std::path::Path,
+        paths: &[std::path::PathBuf],
         reply_to: Option<&str>,
     ) -> Result<Message> {
-        let metadata = tokio::fs::metadata(path)
-            .await
-            .with_context(|| format!("could not read attachment {}", path.display()))?;
-        if !metadata.is_file() {
-            anyhow::bail!("attachment is not a regular file: {}", path.display());
+        if paths.is_empty() {
+            return self
+                .send_message_with_reference(channel_id, content, reply_to)
+                .await;
         }
-        if metadata.len() > Self::MAX_ATTACHMENT_BYTES {
+        if paths.len() > Self::MAX_ATTACHMENTS_PER_MESSAGE {
             anyhow::bail!(
-                "attachment is larger than Discord's {} MiB upload limit",
-                Self::MAX_ATTACHMENT_BYTES / (1024 * 1024)
+                "a message can carry at most {} attachments",
+                Self::MAX_ATTACHMENTS_PER_MESSAGE
             );
         }
         if content.chars().count() > Self::MAX_CONTENT_CHARS {
@@ -509,28 +515,81 @@ impl DiscordClient {
             );
         }
 
-        let file_name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| "attachment".to_string());
-        let bytes = tokio::fs::read(path)
-            .await
-            .with_context(|| format!("could not read attachment {}", path.display()))?;
-        if bytes.len() as u64 > Self::MAX_ATTACHMENT_BYTES {
-            anyhow::bail!("attachment grew past the upload limit while being read");
+        // Validate every path before reading any bytes, so an oversized batch is
+        // refused without filling memory first.
+        let mut selected = Vec::with_capacity(paths.len());
+        let mut declared_total = 0u64;
+        for path in paths {
+            let metadata = tokio::fs::metadata(path)
+                .await
+                .with_context(|| format!("could not read attachment {}", path.display()))?;
+            if !metadata.is_file() {
+                anyhow::bail!("attachment is not a regular file: {}", path.display());
+            }
+            if metadata.len() > Self::MAX_ATTACHMENT_BYTES {
+                anyhow::bail!(
+                    "attachment is larger than Discord's {} MiB upload limit",
+                    Self::MAX_ATTACHMENT_BYTES / (1024 * 1024)
+                );
+            }
+            declared_total = declared_total
+                .checked_add(metadata.len())
+                .context("attachment sizes overflowed")?;
+            if declared_total > Self::MAX_TOTAL_ATTACHMENT_BYTES {
+                anyhow::bail!(
+                    "attachments must total at most {} MiB",
+                    Self::MAX_TOTAL_ATTACHMENT_BYTES / (1024 * 1024)
+                );
+            }
+            let file_name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "attachment".to_string());
+            let content_type = attachment_mime(&file_name);
+            selected.push((path.clone(), file_name, content_type));
         }
 
-        let payload_json = message_payload(channel_id, content, reply_to).to_string();
-        let content_type = attachment_mime(&file_name);
+        let mut files = Vec::with_capacity(selected.len());
+        let mut actual_total = 0u64;
+        for (path, file_name, content_type) in selected {
+            let bytes = tokio::fs::read(&path)
+                .await
+                .with_context(|| format!("could not read attachment {}", path.display()))?;
+            if bytes.len() as u64 > Self::MAX_ATTACHMENT_BYTES {
+                anyhow::bail!("attachment grew past the upload limit while being read");
+            }
+            actual_total = actual_total
+                .checked_add(bytes.len() as u64)
+                .context("attachment sizes overflowed")?;
+            if actual_total > Self::MAX_TOTAL_ATTACHMENT_BYTES {
+                anyhow::bail!(
+                    "attachments grew past the {} MiB total upload limit while being read",
+                    Self::MAX_TOTAL_ATTACHMENT_BYTES / (1024 * 1024)
+                );
+            }
+            files.push((file_name, bytes, content_type));
+        }
+
+        let file_names: Vec<&str> = files
+            .iter()
+            .map(|(file_name, _, _)| file_name.as_str())
+            .collect();
+        let payload_json =
+            message_payload_with_attachments(channel_id, content, reply_to, &file_names)
+                .to_string();
         let body = self
             .request_with(
                 reqwest::Method::POST,
                 &format!("/channels/{channel_id}/messages"),
                 move |builder| {
-                    let file = attachment_part(&file_name, bytes.clone(), content_type);
-                    let form = reqwest::multipart::Form::new()
-                        .text("payload_json", payload_json.clone())
-                        .part("files[0]", file);
+                    let mut form =
+                        reqwest::multipart::Form::new().text("payload_json", payload_json.clone());
+                    for (index, (file_name, bytes, content_type)) in files.iter().enumerate() {
+                        form = form.part(
+                            format!("files[{index}]"),
+                            attachment_part(file_name, bytes.clone(), content_type),
+                        );
+                    }
                     builder.multipart(form)
                 },
             )
@@ -551,6 +610,29 @@ fn message_payload(channel_id: &str, content: &str, reply_to: Option<&str>) -> s
             "channel_id": channel_id,
             "fail_if_not_exists": false
         });
+    }
+    payload
+}
+
+/// The payload for a multipart send. Discord maps each `files[n]` part to the
+/// attachment entry with the matching string id.
+fn message_payload_with_attachments(
+    channel_id: &str,
+    content: &str,
+    reply_to: Option<&str>,
+    file_names: &[&str],
+) -> serde_json::Value {
+    let mut payload = message_payload(channel_id, content, reply_to);
+    if !file_names.is_empty() {
+        payload["attachments"] = serde_json::Value::Array(
+            file_names
+                .iter()
+                .enumerate()
+                .map(|(index, file_name)| {
+                    serde_json::json!({ "id": index.to_string(), "filename": file_name })
+                })
+                .collect(),
+        );
     }
     payload
 }
@@ -1047,6 +1129,21 @@ mod tests {
         assert_eq!(message_payload("10", "", None)["content"], "");
         assert!(message_payload("10", "", None)
             .get("message_reference")
+            .is_none());
+    }
+
+    #[test]
+    fn multipart_payload_ids_each_file() {
+        let payload = message_payload_with_attachments("10", "hi", Some("42"), &["a.png", "b.jpg"]);
+        let attachments = payload["attachments"].as_array().expect("array");
+        assert_eq!(attachments.len(), 2);
+        assert_eq!(attachments[0]["id"], "0");
+        assert_eq!(attachments[0]["filename"], "a.png");
+        assert_eq!(attachments[1]["id"], "1");
+        assert_eq!(attachments[1]["filename"], "b.jpg");
+        assert_eq!(payload["message_reference"]["message_id"], "42");
+        assert!(message_payload_with_attachments("10", "hi", None, &[])
+            .get("attachments")
             .is_none());
     }
 

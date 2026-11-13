@@ -654,6 +654,13 @@ Priority order for the next session:
   suite 348. Release 220 MB RSS / 154 MB PSS / 239 MB peak, 61 MB of headroom.
   UI event path not visually checked.
 
+- Bounded attachment queue (D79): the composer accepts multiple files, shows up
+  to ten removable rows with a running total, and enforces 10 MiB per file plus
+  20 MiB per batch in both the composer and the upload path. Multipart sends
+  map `files[n]` to matching attachment ids and filenames. 2 new tests; suite
+  350. Release 216 MB RSS / 154 MB PSS / 238 MB peak, 62 MB of headroom. Live
+  multi-file upload not exercised.
+
 ---
 
 ## 7. Notes for the next agent

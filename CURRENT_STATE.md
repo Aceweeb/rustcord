@@ -6,7 +6,7 @@ Last verified: 2026-11-13, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **348 passed (343 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **350 passed (345 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -17,14 +17,14 @@ Release binary, 1280×800 window, default settings, theme file loaded.
 
 | Metric | Latest | How measured |
 | --- | --- | --- |
-| RSS | **220 MB** | `/proc/<pid>/status` `VmRSS`, 20 s sample |
+| RSS | **216 MB** | `/proc/<pid>/status` `VmRSS`, 20 s sample |
 | PSS | **154 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
-| Peak (`VmHWM`) | **239 MB** | kernel high-water mark |
+| Peak (`VmHWM`) | **238 MB** | kernel high-water mark |
 | CPU | **0.0% without animation; nonzero while animated surfaces are visible** | ticks/s; 12.5 fps redraws; guild icons stop when unfocused |
 | Threads | **7–12** | `/proc/<pid>/status` |
 | Sign-in screen | lower than a channel session | no channel surface is built |
 
-The 300 MB ceiling holds with about 61 MB of headroom. The earlier 159 MB figure
+The 300 MB ceiling holds with about 62 MB of headroom. The earlier 159 MB figure
 predates animated guild icons, the roster-backed member panel, and periodic count
 refreshes; re-measure after any surface that adds textures or caches.
 
@@ -294,13 +294,14 @@ Message attachments and embeds render inline through a byte-bounded image cache
   use Discord's reported dimensions so rows do not jump when a texture lands.
 - The Memory settings page shows live cache usage and a budget slider.
 
-The composer can send one file at a time through the paperclip's native
-`rfd` dialog (XDG Desktop Portal on this desktop). Files are checked to be
-regular and at most 10 MiB once on selection and again on upload, shown as a
-removable chip, and sent as `payload_json` + `files[0]` multipart with the
-same caption/reply path as text. The emoji button opens a scrollable grid of
-the built-in Unicode set and inserts the chosen glyph at the current caret,
-replacing any selection; custom guild emoji are not listed yet.
+The composer can send up to ten files through the paperclip's native `rfd`
+dialog (XDG Desktop Portal on this desktop). Each file is checked to be regular
+and at most 10 MiB, and the queue is capped at 20 MiB total; both limits are
+rechecked on upload. Files appear as removable rows with a running total and
+are sent as `payload_json` + `files[0..n]` multipart with the same caption/reply
+path as text. The emoji button opens a scrollable grid of the built-in Unicode
+set and inserts the chosen glyph at the current caret, replacing any selection;
+custom guild emoji are not listed yet.
 
 ## Coverage
 
