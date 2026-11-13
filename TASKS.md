@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Server icons and member totals (`DECISIONS.md` D60): CDN guild icons with
+  initial/folder fallbacks; approximate member and online counts via `with_counts`,
+  shown as `MEMBERS — total` and `n active`. 2 new tests; live data unverified.
 - [x] Spotify now-playing in Discord Rich Presence (`DECISIONS.md` D59): playing
   tracks replace the server activity with song/artist, progress and end timestamps;
   paused/idle falls back to channel presence. 1 new test; live IPC unverified.

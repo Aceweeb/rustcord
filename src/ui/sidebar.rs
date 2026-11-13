@@ -30,6 +30,8 @@ struct RailView<'a> {
     selected: Option<&'a str>,
     /// Rail index that arrow-key navigation is on, when it is on the rail.
     focus: Option<usize>,
+    /// Decoded guild icons, keyed by guild id. Missing means the initial is used.
+    icons: &'a std::collections::HashMap<String, egui::TextureHandle>,
 }
 
 #[derive(Debug, Clone)]
@@ -84,12 +86,25 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
     } else {
         None
     };
+    // Guild icons share the existing bounded image cache. They are requested
+    // before the rail draws, so a decoded texture is used on the next frame.
+    let mut icons = std::collections::HashMap::new();
+    for guild in &guilds {
+        let Some(url) = guild.icon_url() else {
+            continue;
+        };
+        app.images.prepare(std::slice::from_ref(&url));
+        if let Some(texture) = app.images.peek(&url) {
+            icons.insert(guild.id.clone(), texture.clone());
+        }
+    }
     let view = RailView {
         theme: &theme,
         badges: &badges,
         folders: &folders,
         selected: selected.as_deref(),
         focus,
+        icons: &icons,
     };
     let mut actions: Vec<RailAction> = Vec::new();
     let mut hover: Option<(String, egui::Rect)> = None;
@@ -355,20 +370,33 @@ fn guild_row(
             crate::utils::mix(theme.surface, colour, 0.55)
         })
     };
-    let response = ui.add(
-        egui::Button::new(
-            RichText::new(if guild.id == crate::models::DM_GUILD_ID {
-                "@".to_string()
-            } else {
-                initial(&guild.name)
-            })
-            .size(18.0)
-            .color(Color32::WHITE),
-        )
-        .min_size(egui::vec2(GUILD_ICON, GUILD_ICON))
-        .corner_radius(egui::CornerRadius::same(radius))
-        .fill(fill),
-    );
+    let (rect, response) =
+        ui.allocate_exact_size(egui::vec2(GUILD_ICON, GUILD_ICON), egui::Sense::click());
+    let corner = egui::CornerRadius::same(radius);
+    ui.painter().rect_filled(rect, corner, fill);
+    match view.icons.get(&guild.id) {
+        Some(texture) => {
+            ui.put(
+                rect,
+                egui::Image::new(egui::load::SizedTexture::new(texture.id(), rect.size()))
+                    .corner_radius(corner),
+            );
+        }
+        None => {
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                if guild.id == crate::models::DM_GUILD_ID {
+                    "@".to_string()
+                } else {
+                    initial(&guild.name)
+                },
+                egui::FontId::proportional(18.0),
+                Color32::WHITE,
+            );
+        }
+    }
+    let response = response.on_hover_text(&guild.name);
     if response.clicked() {
         actions.push(RailAction::Select(guild.id.clone()));
     }

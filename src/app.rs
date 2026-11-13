@@ -174,6 +174,8 @@ pub struct RustcordApp {
     pub(crate) member_intent_missing: bool,
     member_tx: Sender<MemberResult>,
     member_results: Receiver<MemberResult>,
+    /// Approximate total/online counts per guild, refreshed with the roster.
+    pub(crate) guild_counts: HashMap<String, crate::api::discord::GuildCounts>,
     /// Recipient user id → DM channel id, for the channels opened this session.
     dm_channels: HashMap<String, String>,
     dm_tx: Sender<DmResult>,
@@ -218,6 +220,7 @@ enum MemberResult {
     Loaded {
         guild_id: String,
         members: Vec<User>,
+        counts: crate::api::discord::GuildCounts,
     },
     Failed {
         guild_id: String,
@@ -302,16 +305,19 @@ impl RustcordApp {
                 id: "1".to_string(),
                 name: "Rustcord Lounge".to_string(),
                 icon: None,
+                member_count: None,
             },
             Guild {
                 id: "2".to_string(),
                 name: "Arch Linux".to_string(),
                 icon: None,
+                member_count: None,
             },
             Guild {
                 id: "3".to_string(),
                 name: "Rustaceans".to_string(),
                 icon: None,
+                member_count: None,
             },
         ];
 
@@ -493,6 +499,7 @@ impl RustcordApp {
             member_intent_missing: false,
             member_tx,
             member_results,
+            guild_counts: HashMap::new(),
             dm_channels: HashMap::new(),
             dm_tx,
             dm_results,
@@ -1125,6 +1132,7 @@ impl RustcordApp {
                     id: crate::models::DM_GUILD_ID.to_string(),
                     name: "Direct Messages".to_string(),
                     icon: None,
+                    member_count: None,
                 },
             );
         }
@@ -1157,16 +1165,26 @@ impl RustcordApp {
         self.members_loading.insert(guild_id.clone());
 
         runtime.spawn(async move {
-            let result = match DiscordClient::new(token, token_is_bot) {
-                Ok(client) => client
-                    .fetch_members(&guild_id)
-                    .await
-                    .map_err(|err| format!("{err:#}")),
-                Err(err) => Err(format!("{err:#}")),
+            let (result, counts) = match DiscordClient::new(token, token_is_bot) {
+                Ok(client) => {
+                    let (members, counts) = tokio::join!(
+                        client.fetch_members(&guild_id),
+                        client.fetch_guild_counts(&guild_id)
+                    );
+                    (
+                        members.map_err(|err| format!("{err:#}")),
+                        counts.unwrap_or_default(),
+                    )
+                }
+                Err(err) => (Err(format!("{err:#}")), Default::default()),
             };
 
             let _ = tx.send(match result {
-                Ok(members) => MemberResult::Loaded { guild_id, members },
+                Ok(members) => MemberResult::Loaded {
+                    guild_id,
+                    members,
+                    counts,
+                },
                 Err(error) => MemberResult::Failed { guild_id, error },
             });
         });
@@ -1175,9 +1193,14 @@ impl RustcordApp {
     fn poll_members(&mut self) {
         while let Ok(result) = self.member_results.try_recv() {
             match result {
-                MemberResult::Loaded { guild_id, members } => {
+                MemberResult::Loaded {
+                    guild_id,
+                    members,
+                    counts,
+                } => {
                     self.members_loading.remove(&guild_id);
-                    self.members.insert(guild_id, members);
+                    self.members.insert(guild_id.clone(), members);
+                    self.guild_counts.insert(guild_id, counts);
                 }
                 MemberResult::Failed { guild_id, error } => {
                     self.members_loading.remove(&guild_id);

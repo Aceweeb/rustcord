@@ -169,6 +169,7 @@ mod tests {
             id: id.to_string(),
             name: name.to_string(),
             icon: None,
+            member_count: None,
         }
     }
 

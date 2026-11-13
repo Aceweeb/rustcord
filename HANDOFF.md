@@ -7,12 +7,21 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 310 lib + 5 bin tests passing (315)
+- `cargo test --all-targets`: 312 lib + 5 bin tests passing (317)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Server icons and member counts (`DECISIONS.md` D60):
+
+- `src/models.rs` — `Guild::icon_url`, `member_count`.
+- `src/api/gateway.rs` — parses `icon`/`member_count` (1 test with the URL).
+- `src/api/discord.rs` — `fetch_guild_counts` / `GuildCounts`, 1 test.
+- `src/app.rs` — counts fetched alongside the roster, cached per guild.
+- `src/ui/sidebar.rs` — real guild icons in the rail.
+- `src/ui/chat.rs` — `MEMBERS — total` and active count header.
 
 Spotify Rich Presence (`DECISIONS.md` D59):
 

@@ -98,6 +98,23 @@ pub struct Guild {
     pub id: String,
     pub name: String,
     pub icon: Option<String>,
+    /// Discord's total member count for the guild, when the payload carried it.
+    /// It is larger than the loaded roster for big servers, so the member panel
+    /// shows this as the total and the roster length only as a fallback.
+    #[serde(default)]
+    pub member_count: Option<u64>,
+}
+
+impl Guild {
+    /// CDN URL for the guild's icon, when it has one.
+    pub fn icon_url(&self) -> Option<String> {
+        self.icon.as_ref().map(|hash| {
+            format!(
+                "https://cdn.discordapp.com/icons/{}/{hash}.png?size=96",
+                self.id
+            )
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -625,6 +625,7 @@ fn parse_guild(value: &Value) -> Option<(Guild, Vec<Channel>)> {
         .unwrap_or("Unnamed guild")
         .to_string();
     let icon = value["icon"].as_str().map(str::to_string);
+    let member_count = value["member_count"].as_u64();
 
     let channels = value["channels"]
         .as_array()
@@ -636,7 +637,15 @@ fn parse_guild(value: &Value) -> Option<(Guild, Vec<Channel>)> {
         })
         .unwrap_or_default();
 
-    Some((Guild { id, name, icon }, channels))
+    Some((
+        Guild {
+            id,
+            name,
+            icon,
+            member_count,
+        },
+        channels,
+    ))
 }
 
 fn parse_channel(value: &Value, guild_id: &str) -> Option<Channel> {
@@ -803,6 +812,24 @@ mod tests {
         assert!(!is_disallowed_intents(Some(4004)));
         assert!(!is_disallowed_intents(Some(1000)));
         assert!(!is_disallowed_intents(None));
+    }
+
+    #[test]
+    fn a_guild_keeps_its_icon_and_member_total() {
+        let (guild, _) = parse_guild(&json!({
+            "id": "10",
+            "name": "Rustaceans",
+            "icon": "abc123",
+            "member_count": 42,
+            "channels": []
+        }))
+        .expect("guild");
+        assert_eq!(guild.icon.as_deref(), Some("abc123"));
+        assert_eq!(guild.member_count, Some(42));
+        assert_eq!(
+            guild.icon_url().as_deref(),
+            Some("https://cdn.discordapp.com/icons/10/abc123.png?size=96")
+        );
     }
 
     #[test]

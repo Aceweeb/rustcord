@@ -564,6 +564,10 @@ Priority order for the next session:
   text; paused/idle falls back to server/channel. 1 new test; suite 315. Not
   exercised against a running Discord client/IPC socket.
 
+- Server icons and member counts (D60): rail loads guild icons through the image
+  cache; `GET /guilds/{id}?with_counts=true` supplies approximate total/online
+  counts beside the roster. 2 new tests; suite 317. Live CDN/REST unverified.
+
 ---
 
 ## 7. Notes for the next agent

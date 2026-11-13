@@ -218,6 +218,49 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                 ui.add(egui::Label::new(RichText::new(hint).size(11.0).color(theme.muted)).wrap());
             }
 
+            let counts = app
+                .selected_guild
+                .as_ref()
+                .and_then(|id| app.guild_counts.get(id));
+            // Discord's approximate counts cover members beyond the roster cap.
+            // Without them fall back to the guild payload and then the roster.
+            let active = counts
+                .and_then(|counts| counts.active)
+                .map(|count| count as usize)
+                .unwrap_or_else(|| {
+                    members
+                        .iter()
+                        .filter(|member| member.status != crate::models::Presence::Offline)
+                        .count()
+                });
+            let total = counts
+                .and_then(|counts| counts.total)
+                .map(|count| count as usize)
+                .or_else(|| {
+                    app.selected_guild
+                        .as_ref()
+                        .and_then(|id| app.guilds.iter().find(|guild| &guild.id == id))
+                        .and_then(|guild| guild.member_count)
+                        .map(|count| count as usize)
+                })
+                .unwrap_or(members.len())
+                .max(members.len());
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!("MEMBERS \u{2014} {total}"))
+                        .size(11.0)
+                        .strong()
+                        .color(theme.muted),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        RichText::new(format!("{active} active"))
+                            .size(10.0)
+                            .color(theme.muted),
+                    );
+                });
+            });
+
             ui.add_space(6.0);
             // The roster is capped and the loader deduplicates, so each avatar
             // starts downloading once; the textures share the attachment budget.

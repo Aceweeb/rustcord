@@ -308,6 +308,7 @@ mod tests {
                 id: id.to_string(),
                 name: format!("guild {id}"),
                 icon: None,
+                member_count: None,
             })
             .collect()
     }

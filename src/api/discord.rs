@@ -326,6 +326,15 @@ impl DiscordClient {
         Ok(())
     }
 
+    /// Approximate member and online counts from `GET /guilds/{id}?with_counts`.
+    /// The presence half is Discord's estimate and needs no privileged intent.
+    pub async fn fetch_guild_counts(&self, guild_id: &str) -> Result<GuildCounts> {
+        let body = self
+            .get_text(&format!("/guilds/{guild_id}?with_counts=true"))
+            .await?;
+        parse_guild_counts(&body)
+    }
+
     /// Every guild member, newest id first order, in pages of 1000. Needs the
     /// privileged Members intent enabled for the application; without it Discord
     /// answers 403. The cap bounds memory for very large guilds.
@@ -643,6 +652,24 @@ struct DiscordEmoji {
 pub const MEMBER_PAGE_LIMIT: usize = 1000;
 pub const MEMBER_CAP: usize = 5000;
 
+/// Discord's approximate counts for a guild.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct GuildCounts {
+    pub total: Option<u64>,
+    pub active: Option<u64>,
+}
+
+/// Parse the count fields of a guild payload. Absent counts stay `None` rather
+/// than becoming a misleading zero.
+pub fn parse_guild_counts(body: &str) -> Result<GuildCounts> {
+    let value: serde_json::Value =
+        serde_json::from_str(body).context("could not decode guild counts")?;
+    Ok(GuildCounts {
+        total: value["approximate_member_count"].as_u64(),
+        active: value["approximate_presence_count"].as_u64(),
+    })
+}
+
 /// Parse a `GET /guilds/{id}/members` body. Order is preserved because the
 /// caller paginates with `after=<last user id>`; display sorting happens later.
 /// Duplicate and malformed entries are dropped.
@@ -744,6 +771,18 @@ impl TryFrom<DiscordMessage> for Message {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guild_counts_keep_presence_separate_from_total() {
+        let counts = parse_guild_counts(
+            r#"{"id":"1","approximate_member_count":420,"approximate_presence_count":37}"#,
+        )
+        .expect("counts");
+        assert_eq!(counts.total, Some(420));
+        assert_eq!(counts.active, Some(37));
+        let absent = parse_guild_counts(r#"{"id":"1"}"#).expect("no counts");
+        assert_eq!(absent, GuildCounts::default());
+    }
 
     #[test]
     fn members_parse_without_reordering() {

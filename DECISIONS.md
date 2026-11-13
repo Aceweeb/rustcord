@@ -1727,3 +1727,29 @@ leaving the now-playing strip to show the paused state locally.
 
 This remains opt-in through the existing Discord Rich Presence settings: with the
 toggle off, or no local Discord client running, nothing leaves the process.
+
+## D60. Guild icons come from the CDN and member counts from with_counts
+
+The rail painted an initial for every server even though the gateway had always
+delivered `icon`, and the member panel only knew how many users the roster happened
+to contain. Both are now real data.
+
+**Icons.** `Guild::icon_url` builds the 96 px CDN URL from the guild id and hash.
+The rail requests every guild icon through the existing bounded image cache before
+drawing, keeps the decoded textures in a small id→texture map for that frame, and
+paints the rounded/circular image in place of the initial. A guild without an icon,
+or one still decoding, keeps the initial and the folder tint, so the rail never
+goes blank. Icons count against the same image byte budget as avatars and
+attachments.
+
+**Counts.** The members fetch now runs alongside
+`GET /guilds/{id}?with_counts=true`; that endpoint returns Discord's approximate
+member and online counts and, unlike presence events, needs no privileged
+`GUILD_PRESENCES` intent. The panel shows `MEMBERS — total` and `n active`, using
+the approximate counts when present, then the gateway's `member_count`, then the
+loaded roster. The ONLINE/OFFLINE sections still come from the actual roster, so a
+large server can show a larger total than its capped 5000-member list. `Guild` now
+carries `member_count` too, for READY/GUILD_CREATE payloads that include it.
+
+Counts are refreshed when the roster is fetched (once per guild per session), not
+on every frame, and a failed counts request falls back quietly to the roster.
