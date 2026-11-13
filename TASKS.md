@@ -237,6 +237,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   no live Discord traffic has been exercised yet.
 - [ ] Live gateway integration test with a real bot token (not possible in the
   development sandbox; requires the user's token).
+- [x] Periodic server counts (`DECISIONS.md` D67): background five-minute REST
+  pass for every guild, idle wake scheduling, counts kept outside the roster
+  cache. 1 new test; live cadence not exercised without a bot session.
 - [x] Animated server icons (`DECISIONS.md` D66): animated hashes use the GIF
   endpoint, all frames are decoded and cached, rail advances them on the input
   clock. 4 new tests; motion not visually checked.

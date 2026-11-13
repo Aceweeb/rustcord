@@ -663,6 +663,19 @@ pub struct GuildCounts {
     pub active: Option<u64>,
 }
 
+impl GuildCounts {
+    /// Fold a fresh response into known counts. Discord omits a field when it
+    /// has no estimate; that must not erase a value fetched a moment earlier.
+    pub fn merge(&mut self, fresh: Self) {
+        if fresh.total.is_some() {
+            self.total = fresh.total;
+        }
+        if fresh.active.is_some() {
+            self.active = fresh.active;
+        }
+    }
+}
+
 /// Parse the count fields of a guild payload. Absent counts stay `None` rather
 /// than becoming a misleading zero.
 pub fn parse_guild_counts(body: &str) -> Result<GuildCounts> {
@@ -786,6 +799,23 @@ mod tests {
         assert_eq!(counts.active, Some(37));
         let absent = parse_guild_counts(r#"{"id":"1"}"#).expect("no counts");
         assert_eq!(absent, GuildCounts::default());
+    }
+
+    #[test]
+    fn guild_counts_merge_does_not_erase_known_values() {
+        let mut counts = GuildCounts {
+            total: Some(420),
+            active: Some(37),
+        };
+        counts.merge(GuildCounts {
+            total: Some(425),
+            active: None,
+        });
+        assert_eq!(counts.total, Some(425));
+        assert_eq!(counts.active, Some(37));
+        counts.merge(GuildCounts::default());
+        assert_eq!(counts.total, Some(425));
+        assert_eq!(counts.active, Some(37));
     }
 
     #[test]

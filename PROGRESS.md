@@ -592,6 +592,11 @@ Priority order for the next session:
   with delays, texture cache animates them on egui's clock at ≤12 fps. 4 new
   tests; suite 324. Motion not visually checked.
 
+- Periodic guild counts (D67): every real guild refreshes approximate total/active
+  numbers at session start and every five minutes; counts survive roster eviction
+  and empty responses no longer erase them. 1 new test; suite 325. Live REST
+  cadence not exercised without a bot session.
+
 ---
 
 ## 7. Notes for the next agent

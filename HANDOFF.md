@@ -7,12 +7,18 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 319 lib + 5 bin tests passing (324)
+- `cargo test --all-targets`: 320 lib + 5 bin tests passing (325)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
 - Runtime: 159 MB RSS, 57–61 MB PSS, 2 threads, 0.0% idle CPU at 0.2 fps
 
 ## What changed most recently
+
+Periodic guild counts (`DECISIONS.md` D67):
+
+- `src/app.rs` — five-minute count pass for all guilds, idle repaint scheduling,
+  counts independent of roster eviction.
+- `src/api/discord.rs` — non-destructive `GuildCounts::merge`, 1 test.
 
 Animated guild icons (`DECISIONS.md` D66):
 

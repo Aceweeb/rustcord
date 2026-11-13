@@ -1874,3 +1874,26 @@ repaint. The rail uses egui's input clock and repaints at most every 80 ms, so a
 idle client with no animated icons stays idle. Animation decoding is deliberately
 limited to guild icons: animated attachments and embeds keep their first-frame
 behaviour and cannot fill the cache with frames the UI never draws.
+
+## D67. Approximate guild counts refresh every five minutes, in the background
+
+The member panel's total and "active" labels came from `GET /guilds/{id}?with_counts`,
+but that request only ran while loading the selected guild's roster. Servers whose
+roster had not been visited had no counts, and evicting a roster evicted its counts
+with it. The numbers therefore only changed when a user happened to open a server
+for the first time.
+
+A single background pass now fetches counts for every real guild (DMs excluded)
+when the session starts and every five minutes after that. Results stream back one
+guild at a time, are applied only while the guild still exists, and update both the
+member-panel map and the gateway's fallback `Guild.member_count`. The counts map is
+no longer tied to the three-guild roster cache, and a partial or failed roster
+response merges rather than erasing values from the latest count pass.
+
+The UI is event-driven, so the scheduler asks egui to wake when the next pass is
+due and once a second while a pass is in flight to collect results. Each pass uses
+one `DiscordClient` sequentially, so the existing route-aware rate limiter covers
+the whole list; a failure for one guild is skipped rather than aborting the pass.
+This endpoint needs no privileged Members intent, so counts still refresh for bots
+without the roster. No timer thread is added: scheduling lives in `ui()` and costs
+nothing between wakes.

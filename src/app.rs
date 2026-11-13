@@ -55,6 +55,13 @@ pub(crate) const GLASS_ALPHA: u8 = 205;
 /// servers cannot grow the cache without bound.
 const MEMBER_CACHE_GUILDS: usize = 3;
 
+/// Approximate guild counts are cheap but not free. Five minutes keeps online
+/// numbers current without turning an idle client into a REST poll loop.
+const GUILD_COUNTS_REFRESH: Duration = Duration::from_secs(300);
+/// How often an in-flight count refresh wakes the UI to collect results. The app
+/// is otherwise event-driven and would not repaint on its own.
+const GUILD_COUNTS_POLL: Duration = Duration::from_secs(1);
+
 /// The Spotify authorisation round trip: listener, state and, once the code
 /// arrives, the token exchange running on a worker thread (D43).
 struct SpotifyConnect {
@@ -179,8 +186,13 @@ pub struct RustcordApp {
     pub(crate) member_intent_missing: bool,
     member_tx: Sender<MemberResult>,
     member_results: Receiver<MemberResult>,
-    /// Approximate total/online counts per guild, refreshed with the roster.
+    /// Approximate total/online counts per guild, kept independently of the
+    /// capped roster cache and refreshed periodically from REST.
     pub(crate) guild_counts: HashMap<String, crate::api::discord::GuildCounts>,
+    counts_tx: Sender<GuildCountsResult>,
+    counts_results: Receiver<GuildCountsResult>,
+    counts_loading: bool,
+    last_counts_refresh: Option<std::time::Instant>,
     /// Recipient user id → DM channel id, for the channels opened this session.
     dm_channels: HashMap<String, String>,
     dm_tx: Sender<DmResult>,
@@ -234,6 +246,16 @@ enum MemberResult {
         guild_id: String,
         error: String,
     },
+}
+
+/// One periodic guild-counts refresh. Results stream in per guild so a large
+/// server list can update the UI as it goes; `Finished` releases the next cycle.
+enum GuildCountsResult {
+    Loaded {
+        guild_id: String,
+        counts: crate::api::discord::GuildCounts,
+    },
+    Finished,
 }
 
 /// A DM channel opened (or reused) through REST.
@@ -466,6 +488,7 @@ impl RustcordApp {
         let (history_tx, history_rx) = mpsc::channel();
         let (action_tx, action_results) = mpsc::channel();
         let (member_tx, member_results) = mpsc::channel();
+        let (counts_tx, counts_results) = mpsc::channel();
         let (dm_tx, dm_results) = mpsc::channel();
 
         let mut app = Self {
@@ -530,6 +553,10 @@ impl RustcordApp {
             member_tx,
             member_results,
             guild_counts: HashMap::new(),
+            counts_tx,
+            counts_results,
+            counts_loading: false,
+            last_counts_refresh: None,
             dm_channels: HashMap::new(),
             dm_tx,
             dm_results,
@@ -1170,6 +1197,98 @@ impl RustcordApp {
         }
     }
 
+    /// Refresh every real guild's approximate counts on a fixed cadence. This
+    /// endpoint needs no privileged intent, so it still works when the roster is
+    /// unavailable. The schedule is started by the first live frame and survives
+    /// guild switches; results for guilds that have since left are ignored.
+    fn ensure_guild_counts(&mut self, ctx: &egui::Context) {
+        if !self.live_data {
+            return;
+        }
+        let now = std::time::Instant::now();
+        if self.counts_loading {
+            ctx.request_repaint_after(GUILD_COUNTS_POLL);
+            return;
+        }
+        if let Some(last) = self.last_counts_refresh {
+            let next = last + GUILD_COUNTS_REFRESH;
+            if now < next {
+                // Wake up when the next refresh is due; egui has no background
+                // timer of its own.
+                ctx.request_repaint_after(next - now);
+                return;
+            }
+        }
+
+        let guild_ids: Vec<String> = self
+            .guilds
+            .iter()
+            .filter(|guild| guild.id != crate::models::DM_GUILD_ID)
+            .map(|guild| guild.id.clone())
+            .collect();
+        if guild_ids.is_empty() {
+            // Guilds have not arrived yet; check again next frame without
+            // recording a refresh (which would delay the first real fetch).
+            ctx.request_repaint_after(GUILD_COUNTS_POLL);
+            return;
+        }
+        let Some(runtime) = &self.runtime else {
+            return;
+        };
+
+        let token = self.token_draft.clone();
+        let token_is_bot = self.token_is_bot;
+        let tx = self.counts_tx.clone();
+        self.counts_loading = true;
+        self.last_counts_refresh = Some(now);
+
+        runtime.spawn(async move {
+            if let Ok(client) = DiscordClient::new(token, token_is_bot) {
+                for guild_id in guild_ids {
+                    match client.fetch_guild_counts(&guild_id).await {
+                        Ok(counts) => {
+                            if tx
+                                .send(GuildCountsResult::Loaded { guild_id, counts })
+                                .is_err()
+                            {
+                                return;
+                            }
+                        }
+                        // A guild the bot left, or a transient REST failure, must
+                        // not stop the rest of the refresh.
+                        Err(_) => continue,
+                    }
+                }
+            }
+            let _ = tx.send(GuildCountsResult::Finished);
+        });
+        ctx.request_repaint_after(GUILD_COUNTS_POLL);
+    }
+
+    fn poll_guild_counts(&mut self) {
+        while let Ok(result) = self.counts_results.try_recv() {
+            match result {
+                GuildCountsResult::Loaded { guild_id, counts } => {
+                    let Some(guild) = self.guilds.iter_mut().find(|guild| guild.id == guild_id)
+                    else {
+                        continue;
+                    };
+                    if let Some(total) = counts.total {
+                        guild.member_count = Some(total);
+                    }
+                    self.guild_counts.entry(guild_id).or_default().merge(counts);
+                }
+                GuildCountsResult::Finished => {
+                    self.counts_loading = false;
+                    // Measure the next five minutes from completion, not from
+                    // the start, so a slow/rate-limited pass cannot immediately
+                    // trigger another one.
+                    self.last_counts_refresh = Some(std::time::Instant::now());
+                }
+            }
+        }
+    }
+
     /// Fetch the selected guild's roster once. The Members intent is privileged;
     /// `member_intent_missing` stops the retry loop when Discord refuses it.
     fn ensure_members(&mut self) {
@@ -1232,7 +1351,9 @@ impl RustcordApp {
                 } => {
                     self.members_loading.remove(&guild_id);
                     self.members.insert(guild_id.clone(), members);
-                    self.guild_counts.insert(guild_id, counts);
+                    // A failed counts half of the roster join must not wipe the
+                    // periodic refresh's fresher values.
+                    self.guild_counts.entry(guild_id).or_default().merge(counts);
                     // Evict other guilds' rosters rather than accumulating one
                     // capped 5000-member list per server visited this session.
                     while self.members.len() > MEMBER_CACHE_GUILDS {
@@ -1246,7 +1367,8 @@ impl RustcordApp {
                             break;
                         };
                         self.members.remove(&victim);
-                        self.guild_counts.remove(&victim);
+                        // Counts are small and are refreshed for every guild,
+                        // so evicting a roster must not take them with it.
                     }
                 }
                 MemberResult::Failed { guild_id, error } => {
@@ -2207,6 +2329,11 @@ impl RustcordApp {
                         self.voice.clear();
                         self.selected_guild = None;
                         self.selected_channel = None;
+                        // A new session must fetch fresh counts immediately
+                        // rather than inherit the previous account's numbers.
+                        self.guild_counts.clear();
+                        self.counts_loading = false;
+                        self.last_counts_refresh = None;
                         self.live_data = true;
                     }
 
@@ -2758,6 +2885,9 @@ impl RustcordApp {
         self.log_filter.clear();
         self.members.clear();
         self.members_loading.clear();
+        self.guild_counts.clear();
+        self.counts_loading = false;
+        self.last_counts_refresh = None;
         self.dm_channels.clear();
         self.dm_loaded = false;
         self.dm_loading = false;
@@ -2782,6 +2912,8 @@ impl RustcordApp {
         }
         self.runtime = None;
         self.live_data = false;
+        self.counts_loading = false;
+        self.last_counts_refresh = None;
 
         if self.token_draft.trim().is_empty() {
             self.gateway_status = "No token stored".to_string();
@@ -2993,9 +3125,11 @@ impl eframe::App for RustcordApp {
         self.poll_action_results();
         self.poll_history();
         self.poll_members();
+        self.poll_guild_counts();
         self.poll_dm();
         self.ensure_history();
         self.ensure_members();
+        self.ensure_guild_counts(&ctx);
         self.ensure_dms();
         self.sync_image_budget();
         if self.images.poll(&ctx) > 0 {

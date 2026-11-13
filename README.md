@@ -95,7 +95,8 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
   never written to `settings.json`.
 - Direct messages and group DMs, loaded at startup into a "Direct Messages" rail
   entry; open new ones from a member row, with history, sending, unread and typing.
-- Real server icons in the guild rail, with the server's approximate member total
+- Real server icons in the guild rail, with member totals and online counts
+  refreshed every five minutes.
 - Animated server icons (`a_` hashes) play their GIF frames in the rail.
   and online count in the member panel.
 - A member panel scoped to the open channel: its message authors and current voice
