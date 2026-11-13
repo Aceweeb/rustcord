@@ -245,6 +245,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
   frame pipeline; server banner shown in the rail hover peek; profile banners
   fetched only while their card is open. 3 new tests; peak 256 MB. Motion not
   visually checked.
+- [x] Guild icon focus pause (`DECISIONS.md` D72): the rail freezes its animation
+  clock and stops scheduling repaints while the window is unfocused. 1 new test;
+  peak 264 MB. Focus transition not visually checked.
 - [x] Roster-backed channel members (`DECISIONS.md` D69): all loaded guild
   members, plus authors and voice participants; virtualised 34 px rows and
   visible-only avatar requests. 1 new test; live roster not exercised.

@@ -268,8 +268,7 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                     .as_deref()
                     .map(|id| app.voice.members(id).to_vec())
                     .unwrap_or_default();
-                voice_members
-                    .sort_by(|a, b| a.username.to_lowercase().cmp(&b.username.to_lowercase()));
+                voice_members.sort_by_key(|member| member.username.to_lowercase());
 
                 let mut extras = authors;
                 for member in voice_members {
@@ -409,15 +408,14 @@ pub fn show(app: &mut RustcordApp, ui: &mut egui::Ui) {
                                                         .size(14.0)
                                                         .color(theme.text),
                                                 );
-                                                if app.live_data && member.id != app.current_user.id
-                                                {
-                                                    if ui
+                                                if app.live_data
+                                                    && member.id != app.current_user.id
+                                                    && ui
                                                         .small_button("DM")
                                                         .on_hover_text("Open a direct message")
                                                         .clicked()
-                                                    {
-                                                        dm_target = Some((*member).clone());
-                                                    }
+                                                {
+                                                    dm_target = Some((*member).clone());
                                                 }
                                             },
                                         )
@@ -1243,15 +1241,11 @@ fn message_row_body(
     });
 }
 
-/// Draw an attachment or embed image, or a placeholder of the same size while
-/// it decodes. The placeholder uses Discord's reported dimensions so the row
-/// does not jump when the texture arrives.
-
 const PROFILE_IMAGE_REQUESTS: &str = "rustcord-profile-image-requests";
 
 fn queue_profile_image(ctx: &egui::Context, url: &str) {
     ctx.data_mut(|data| {
-        data.get_temp_mut_or_default::<Vec<String>>(egui::Id::new(PROFILE_IMAGE_REQUESTS))
+        data.get_temp_mut_or_default::<Vec<String>>(egui::Id::unique(PROFILE_IMAGE_REQUESTS))
             .push(url.to_string());
     });
 }
@@ -1262,7 +1256,7 @@ fn queue_profile_image(ctx: &egui::Context, url: &str) {
 pub(crate) fn take_profile_image_requests(ctx: &egui::Context) -> Vec<String> {
     ctx.data_mut(|data| {
         std::mem::take(
-            data.get_temp_mut_or_default::<Vec<String>>(egui::Id::new(PROFILE_IMAGE_REQUESTS)),
+            data.get_temp_mut_or_default::<Vec<String>>(egui::Id::unique(PROFILE_IMAGE_REQUESTS)),
         )
     })
 }
@@ -1480,6 +1474,9 @@ fn accent_color(packed: u32) -> egui::Color32 {
     )
 }
 
+/// Draw an attachment or embed image, or a placeholder of the same size while
+/// it decodes. The placeholder uses Discord's reported dimensions so the row
+/// does not jump when the texture arrives.
 fn image_block(app: &RustcordApp, ui: &mut egui::Ui, url: &str, known: Option<(u32, u32)>) {
     let theme = app.plugins.theme();
 

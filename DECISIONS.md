@@ -1995,11 +1995,38 @@ looking at.
 
 Three focused tests cover animated cosmetic endpoints, the GIF-path allowlist and
 the profile-request queue (the guild-banner assertions extend the existing D66
-test); the suite is 333. The
-release binary measures 233 MB RSS / 168 MB PSS / 256 MB peak in a 20 s sample,
-leaving about 44 MB below the 300 MB ceiling. The 240 px animated-banner request
+test); the suite was 333 at that point. The release binary measured 233 MB RSS /
+168 MB PSS / 256 MB peak in a 20 s sample, about 44 MB below the 300 MB
+ceiling. The 240 px animated-banner request
 is what keeps a single banner's frame set well inside the 32 MB image cache.
 Motion and the new server banner have not been visually checked: there is no
 signed-in bot session in this environment. While animated avatars or guild icons
 are on screen the client redraws at 12.5 fps and CPU rises to roughly 27%; with no
 animation visible it returns to 0%.
+
+
+## D72. Guild icon animation freezes while the window is unfocused
+
+The rail advanced animated guild icons from egui's raw input clock and requested
+another frame every 80 ms whenever any loaded icon was animated. That kept the
+GL surface redrawing in the background even though nobody could see the motion.
+Other events could also repaint the rail, so merely skipping the timer would still
+let icons jump forward while the window was behind another application.
+
+`RustcordApp` now stores `rail_animation_time`, the last timestamp advanced while
+focused. `animation_clock` updates it only when egui reports the window as
+focused; while unfocused it returns the frozen timestamp, so incidental repaints
+draw the same frame. The rail requests its next animation frame only when the
+window is focused and an animated icon is loaded. On refocus the clock resumes at
+the current wall time, which jumps the GIF to its normal phase rather than
+fast-forwarding through every missed frame.
+
+A unit test covers freeze and resume; the suite is 334. The release binary
+measures 233 MB RSS / 168 MB PSS / 264 MB peak in a 20 s sample, leaving about
+36 MB below the 300 MB ceiling. The actual focus transition was not exercised
+without a desktop session; only the clock logic is tested. Other animated
+surfaces (avatars and banners) still follow their own repaint path when visible,
+so this decision deliberately scopes the pause to the guild rail the request
+named. The clippy gate also surfaced seven pre-existing style lints under the
+current toolchain; those were fixed in the same increment so the documented
+`-D warnings` check stays green.

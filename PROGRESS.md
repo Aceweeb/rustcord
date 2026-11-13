@@ -616,6 +616,11 @@ Priority order for the next session:
   gained a server banner. 3 new tests; suite 333. Release peak 256 MB, 44 MB of
   headroom. Motion and appearance not visually checked.
 
+- Guild icon focus pause (D72): the rail keeps its own animation clock, advances
+  it only while the window has focus, and stops scheduling frames in the
+  background. 1 new test; suite 334. Release peak 264 MB, 36 MB of headroom.
+  Focus transition not exercised without a desktop session.
+
 ---
 
 ## 7. Notes for the next agent

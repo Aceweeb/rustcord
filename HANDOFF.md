@@ -7,12 +7,16 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 328 lib + 5 bin tests passing (333)
+- `cargo test --all-targets`: 329 lib + 5 bin tests passing (334)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 233 MB RSS, 168 MB PSS, 256 MB peak, 7–11 threads; CPU is 0.0% without animation and ~27% while animated avatars/icons redraw
+- Runtime: 233 MB RSS, 168 MB PSS, 264 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
 
 ## What changed most recently
+
+Guild icon focus pause (`DECISIONS.md` D72): the rail uses its own animation
+clock, advances it only while the window has focus, and only then schedules the
+next 12.5 fps repaint. Release peak measured at 264 MB, under the 300 MB ceiling.
 
 Animated avatars and banners (`DECISIONS.md` D71): user avatar and profile-banner
 hashes with `a_` request GIFs, guild banners are parsed and shown in the rail
@@ -38,6 +42,12 @@ Periodic guild counts (`DECISIONS.md` D67):
 - `src/app.rs` — five-minute count pass for all guilds, idle repaint scheduling,
   counts independent of roster eviction.
 - `src/api/discord.rs` — non-destructive `GuildCounts::merge`, 1 test.
+
+Guild icon focus pause (`DECISIONS.md` D72):
+
+- `src/app.rs` — `rail_animation_time` holds the last focused timestamp.
+- `src/ui/sidebar.rs` — `animation_clock` freezes that timestamp while unfocused;
+  the rail only schedules animation repaints when focused.
 
 Animated avatars and banners (`DECISIONS.md` D71):
 

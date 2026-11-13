@@ -6,7 +6,7 @@ Last verified: 2026-11-13, CachyOS, NVIDIA (proprietary 620.70.06), Wayland sess
 
 | Check | Command | Result |
 | --- | --- | --- |
-| Tests | `cargo test --all-targets` | **333 passed (328 lib + 5 bin), 0 failed** |
+| Tests | `cargo test --all-targets` | **334 passed (329 lib + 5 bin), 0 failed** |
 | Lints | `cargo clippy --all-targets -- -D warnings` | clean |
 | Formatting | `cargo fmt --all` | clean |
 | Release build | `cargo build --release` | success |
@@ -19,12 +19,12 @@ Release binary, 1280×800 window, default settings, theme file loaded.
 | --- | --- | --- |
 | RSS | **233 MB** | `/proc/<pid>/status` `VmRSS`, 20 s sample |
 | PSS | **168 MB** | `/proc/<pid>/smaps_rollup`; moves with other GL clients |
-| Peak (`VmHWM`) | **256 MB** | kernel high-water mark |
-| CPU | **0.0% without animation; ~27% while animated avatars/icons are visible** | ticks/s; animation redraws at 12.5 fps |
+| Peak (`VmHWM`) | **264 MB** | kernel high-water mark |
+| CPU | **0.0% without animation; nonzero while animated surfaces are visible** | ticks/s; 12.5 fps redraws; guild icons stop when unfocused |
 | Threads | **7–11** | `/proc/<pid>/status` |
 | Sign-in screen | lower than a channel session | no channel surface is built |
 
-The 300 MB ceiling holds with about 44 MB of headroom. The earlier 159 MB figure
+The 300 MB ceiling holds with about 36 MB of headroom. The earlier 159 MB figure
 predates animated guild icons, the roster-backed member panel, and periodic count
 refreshes; re-measure after any surface that adds textures or caches.
 

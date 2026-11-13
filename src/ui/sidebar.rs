@@ -90,7 +90,10 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
     // before the rail draws, so a decoded texture is used on the next frame.
     let mut icons = std::collections::HashMap::new();
     // GIF frames share one clock so every guild icon advances on the same tick.
-    let now = ui.ctx().input(|input| input.time);
+    // The clock stops while the window is unfocused, leaving the last frame up.
+    let focused = ui.ctx().input(|input| input.focused);
+    let wall_time = ui.ctx().input(|input| input.time);
+    let now = animation_clock(focused, wall_time, &mut app.rail_animation_time);
     let mut animated = false;
     for guild in &guilds {
         let Some(url) = guild.icon_url() else {
@@ -102,9 +105,9 @@ fn guild_rail(app: &mut RustcordApp, ui: &mut egui::Ui) {
             animated |= app.images.is_animated(&url);
         }
     }
-    if animated {
+    if animated && focused {
         // ~12 fps is enough for Discord's guild icons and avoids a hot repaint
-        // loop when no animation is on screen.
+        // loop when no animation is on screen or the window is in the background.
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(80));
     }
@@ -1430,9 +1433,28 @@ fn peek_target(
     }
 }
 
+/// Advance the rail's animation clock only while the window has focus. While
+/// unfocused the last focused timestamp is returned, so incidental repaints do
+/// not step the guild icons forward.
+fn animation_clock(focused: bool, wall_time: f64, last: &mut f64) -> f64 {
+    if focused {
+        *last = wall_time;
+    }
+    *last
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn guild_icon_clock_freezes_while_unfocused() {
+        let mut last = 0.0;
+        assert_eq!(animation_clock(true, 10.5, &mut last), 10.5);
+        assert_eq!(animation_clock(false, 30.0, &mut last), 10.5);
+        assert_eq!(animation_clock(false, 40.0, &mut last), 10.5);
+        assert_eq!(animation_clock(true, 50.0, &mut last), 50.0);
+    }
 
     fn rect(x: f32, y: f32) -> egui::Rect {
         egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(48.0, 48.0))

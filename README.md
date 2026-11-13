@@ -98,8 +98,8 @@ Discord requires DAVE end-to-end encryption for all media sessions since March
 - Real server icons in the guild rail, with member totals and online counts
   refreshed every five minutes.
 - Animated server icons, avatars and profile/server banners (`a_` hashes) play
-  their GIF frames from the shared image pipeline; GIF attachments still show
-  their first frame.
+  their GIF frames from the shared image pipeline; guild icons freeze while the
+  window is unfocused, and GIF attachments still show their first frame.
 - A channel member panel seeded from the loaded guild roster, so members who have
   not spoken are included alongside message authors and current voice members;
   thread participants who remain guild members come in through the same roster.
@@ -138,12 +138,12 @@ Measured on the development machine (Arch, Wayland, release build):
 | Binary size | ~11 MB stripped |
 | Idle RSS (release, 1280×800) | 233 MB (`VmRSS`) |
 | Idle PSS (fair per-process figure) | 168 MB (`smaps_rollup`) |
-| Peak RSS (20 s sample) | 256 MB (`VmHWM`) |
-| CPU | 0.0% with no animation on screen; ~27% while animated avatars/icons redraw at 12.5 fps |
+| Peak RSS (20 s sample) | 264 MB (`VmHWM`) |
+| CPU | 0.0% with no animation on screen; animated surfaces redraw at 12.5 fps, and guild icons pause when unfocused |
 | Threads | 7–11 |
 
 The sign-in screen measures lower because no channel surface is built until there
-is a session. Peak RSS stays below the project's 300 MB ceiling with ~44 MB of
+is a session. Peak RSS stays below the project's 300 MB ceiling with ~36 MB of
 headroom; the figure includes the shared NVIDIA driver mappings described below.
 
 RSS for a GL application counts shared library pages in full, and on this machine

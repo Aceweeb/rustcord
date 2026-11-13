@@ -89,10 +89,9 @@ pub struct DiscordClient {
 impl DiscordClient {
     /// Create a REST client for a Discord token.
     ///
-    /// `use_bot_scheme` selects the `Authorization` header shape:
-    ///   - `true`  → `Authorization: Bot <token>` (bot accounts)
-    ///   `false` → `Authorization: <token>` (personal/user-account tokens,
-    ///             sent raw as Discord expects)
+    /// `use_bot_scheme` selects the `Authorization` header shape: `true` sends
+    /// `Authorization: Bot <token>` for bot accounts, while `false` sends the
+    /// personal/user-account token raw, as Discord expects.
     pub fn new(token: impl Into<String>, use_bot_scheme: bool) -> Result<Self> {
         let http = reqwest::Client::builder()
             .user_agent("Rustcord/0.1")
@@ -102,9 +101,7 @@ impl DiscordClient {
         let token = token.into();
         let token = token.trim();
         let token = if use_bot_scheme {
-            if token.starts_with("Bot ") {
-                token.to_string()
-            } else if token.starts_with("Bearer ") {
+            if token.starts_with("Bot ") || token.starts_with("Bearer ") {
                 token.to_string()
             } else {
                 format!("Bot {token}")

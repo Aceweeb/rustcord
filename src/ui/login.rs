@@ -23,17 +23,12 @@ use crate::app::RustcordApp;
 use egui::RichText;
 
 /// Which credential kind the user is entering on the login page.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum LoginKind {
+    #[default]
     Bot,
     Personal,
     Qr,
-}
-
-impl Default for LoginKind {
-    fn default() -> Self {
-        Self::Bot
-    }
 }
 
 impl LoginKind {
@@ -67,6 +62,7 @@ impl LoginKind {
 /// State for QR-code authentication. The QR image is regenerated when the
 /// session ID changes; the app polls Discord to learn when the code was
 /// scanned and a token was issued.
+#[derive(Default)]
 pub struct QrState {
     pub visible: bool,
     /// Random session identifier embedded in the QR code.
@@ -83,14 +79,7 @@ pub struct QrState {
 
 impl QrState {
     pub fn new() -> Self {
-        Self {
-            visible: false,
-            session_id: String::new(),
-            image: None,
-            status: None,
-            error: None,
-            token: None,
-        }
+        Self::default()
     }
 }
 

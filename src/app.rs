@@ -167,6 +167,9 @@ pub struct RustcordApp {
     /// The peek drawn last frame, so the pointer can travel from the icon onto a
     /// channel row without the flyout closing first.
     pub(crate) rail_peek: Option<crate::ui::sidebar::Peek>,
+    /// Clock for animated guild icons. It only advances while the window is
+    /// focused, so a background Rustcord freezes on its current frame.
+    pub(crate) rail_animation_time: f64,
     /// Folder being renamed right now, if the dialog is open.
     pub(crate) rail_rename: Option<crate::rail::FolderRename>,
     /// Arrow-key focus over the rail and channel list (no overlay).
@@ -534,6 +537,7 @@ impl RustcordApp {
             switcher: crate::switcher::SwitcherState::default(),
             rail_expanded: std::collections::BTreeSet::new(),
             navigator: crate::nav::Navigator::default(),
+            rail_animation_time: 0.0,
             rail_rename: None,
             rail_hover: None,
             rail_peek: None,
