@@ -621,6 +621,11 @@ Priority order for the next session:
   background. 1 new test; suite 334. Release peak 264 MB, 36 MB of headroom.
   Focus transition not exercised without a desktop session.
 
+- Immediate counts refresh (D73): focus regain and gateway READY/RESUMED force
+  the next guild-count pass instead of waiting for the five-minute cadence; an
+  in-flight pass is not duplicated. 2 new tests; suite 336. Release peak 242 MB,
+  58 MB of headroom. Live focus/reconnect triggers not exercised.
+
 ---
 
 ## 7. Notes for the next agent

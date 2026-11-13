@@ -7,12 +7,16 @@ repository state before changing anything.
 
 - Path: `/mnt/storage/Default Project/rustcord`
 - Branch: `main`, remote `origin` = `https://github.com/Aceweeb/rustcord`
-- `cargo test --all-targets`: 329 lib + 5 bin tests passing (334)
+- `cargo test --all-targets`: 331 lib + 5 bin tests passing (336)
 - `cargo clippy --all-targets -- -D warnings`: clean
 - `cargo build --release`: success
-- Runtime: 233 MB RSS, 168 MB PSS, 264 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
+- Runtime: 210 MB RSS, 145 MB PSS, 242 MB peak, 7–11 threads; CPU is 0.0% without animation and nonzero while animated surfaces redraw
 
 ## What changed most recently
+
+Immediate member counts (`DECISIONS.md` D73): returning focus to the window or
+receiving READY/RESUMED forces the guild-count refresh instead of waiting for the
+five-minute cadence. Release peak measured at 242 MB, under the 300 MB ceiling.
 
 Guild icon focus pause (`DECISIONS.md` D72): the rail uses its own animation
 clock, advances it only while the window has focus, and only then schedules the
@@ -42,6 +46,12 @@ Periodic guild counts (`DECISIONS.md` D67):
 - `src/app.rs` — five-minute count pass for all guilds, idle repaint scheduling,
   counts independent of roster eviction.
 - `src/api/discord.rs` — non-destructive `GuildCounts::merge`, 1 test.
+
+Immediate member counts (`DECISIONS.md` D73):
+
+- `src/app.rs` — `window_focused` detects the focus edge, `counts_refresh_immediate`
+  queues one forced pass, and `counts_refresh_due` bypasses the cadence. READY
+  and RESUMED set the same flag.
 
 Guild icon focus pause (`DECISIONS.md` D72):
 

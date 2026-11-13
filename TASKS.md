@@ -248,6 +248,9 @@ Legend: `[x]` done and verified, `[~]` implemented but unverified, `[ ]` not don
 - [x] Guild icon focus pause (`DECISIONS.md` D72): the rail freezes its animation
   clock and stops scheduling repaints while the window is unfocused. 1 new test;
   peak 264 MB. Focus transition not visually checked.
+- [x] Immediate member counts (`DECISIONS.md` D73): focus regain and gateway
+  READY/RESUMED bypass the five-minute cadence, while an in-flight pass is kept
+  and not duplicated. 2 new tests; peak 242 MB. Live triggers not exercised.
 - [x] Roster-backed channel members (`DECISIONS.md` D69): all loaded guild
   members, plus authors and voice participants; virtualised 34 px rows and
   visible-only avatar requests. 1 new test; live roster not exercised.

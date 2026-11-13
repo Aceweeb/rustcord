@@ -2030,3 +2030,29 @@ so this decision deliberately scopes the pause to the guild rail the request
 named. The clippy gate also surfaced seven pre-existing style lints under the
 current toolchain; those were fixed in the same increment so the documented
 `-D warnings` check stays green.
+
+
+## D73. Counts refresh immediately on focus return or gateway reconnect
+
+Guild counts were fetched on a five-minute cadence driven by `ensure_guild_counts`
+inside the frame loop. That is adequate while the window stays open, but after a
+long spell in the background, or after a gateway disconnect and resume, the rail
+could keep showing numbers that were stale by up to five minutes. The reconnect
+case was worse: the socket could have missed joins and leaves entirely.
+
+`RustcordApp` now detects the focused edge with `window_focused` and sets
+`counts_refresh_immediate` when focus returns. Gateway `READY` and `RESUMED`
+events set the same flag; READY covers a fresh identify after a refused resume,
+while RESUMED covers a reconnect that kept the session. `counts_refresh_due`
+bypasses the five-minute interval when the flag is set. The flag is not consumed
+while a pass is already in flight: that pass is allowed to finish, then the forced
+pass runs, so two workers never hit the endpoint together. The flag clears only
+when a pass actually starts, and an empty guild list keeps it queued until guilds
+exist.
+
+Two unit tests cover the focus edge firing once per transition and a forced pass
+bypassing the cadence; the suite is 336. The release binary measures 210 MB RSS /
+145 MB PSS / 242 MB peak in a 20 s sample, about 58 MB below the 300 MB ceiling.
+The network refresh itself and the real focus/reconnect transitions were not
+exercised in this environment; only the scheduling logic is tested. This adds no
+timer, thread or cache.

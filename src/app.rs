@@ -196,6 +196,11 @@ pub struct RustcordApp {
     counts_results: Receiver<GuildCountsResult>,
     counts_loading: bool,
     last_counts_refresh: Option<std::time::Instant>,
+    /// Bypass the five-minute cadence once, after focus returns or the gateway
+    /// resumes. Kept set while a refresh is already in flight.
+    counts_refresh_immediate: bool,
+    /// Window focus on the previous frame, used to detect a focus regain.
+    window_focused: bool,
     /// Recipient user id → DM channel id, for the channels opened this session.
     dm_channels: HashMap<String, String>,
     dm_tx: Sender<DmResult>,
@@ -314,6 +319,24 @@ struct HistoryPage {
 struct HistoryResult {
     channel_id: String,
     result: Result<HistoryPage, String>,
+}
+
+/// A forced refresh ignores the five-minute cadence; otherwise the first pass
+/// or an expired interval starts one.
+fn counts_refresh_due(
+    force: bool,
+    last: Option<std::time::Instant>,
+    now: std::time::Instant,
+) -> bool {
+    force || last.is_none_or(|last| now >= last + GUILD_COUNTS_REFRESH)
+}
+
+/// True on the frame where focus returns after being lost. Updates the stored
+/// state so callers can use one boolean without a separate last-frame variable.
+fn focus_regained(focused: bool, was_focused: &mut bool) -> bool {
+    let regained = focused && !*was_focused;
+    *was_focused = focused;
+    regained
 }
 
 impl RustcordApp {
@@ -575,6 +598,8 @@ impl RustcordApp {
             counts_results,
             counts_loading: false,
             last_counts_refresh: None,
+            counts_refresh_immediate: false,
+            window_focused: true,
             dm_channels: HashMap::new(),
             dm_tx,
             dm_results,
@@ -1230,14 +1255,15 @@ impl RustcordApp {
             ctx.request_repaint_after(GUILD_COUNTS_POLL);
             return;
         }
-        if let Some(last) = self.last_counts_refresh {
-            let next = last + GUILD_COUNTS_REFRESH;
-            if now < next {
+        let force = self.counts_refresh_immediate;
+        if !counts_refresh_due(force, self.last_counts_refresh, now) {
+            if let Some(last) = self.last_counts_refresh {
+                let next = last + GUILD_COUNTS_REFRESH;
                 // Wake up when the next refresh is due; egui has no background
                 // timer of its own.
-                ctx.request_repaint_after(next - now);
-                return;
+                ctx.request_repaint_after(next.saturating_duration_since(now));
             }
+            return;
         }
 
         let guild_ids: Vec<String> = self
@@ -1259,6 +1285,7 @@ impl RustcordApp {
         let token = self.token_draft.clone();
         let token_is_bot = self.token_is_bot;
         let tx = self.counts_tx.clone();
+        self.counts_refresh_immediate = false;
         self.counts_loading = true;
         self.last_counts_refresh = Some(now);
 
@@ -2327,6 +2354,9 @@ impl RustcordApp {
                     guild_count,
                 } => {
                     self.gateway_status = format!("Ready as {username} · {guild_count} guild(s)");
+                    // A fresh identify (initial or after a resume was refused)
+                    // should not wait for the periodic count pass.
+                    self.counts_refresh_immediate = true;
                     self.current_user.username = username;
                     self.current_user.id = user_id.clone();
                     self.current_user.avatar = avatar;
@@ -2530,6 +2560,9 @@ impl RustcordApp {
                 }
                 GatewayEvent::Resumed => {
                     self.gateway_status = "Gateway session resumed".to_string();
+                    // The socket was down long enough to resume; member counts
+                    // may have drifted while no events were arriving.
+                    self.counts_refresh_immediate = true;
                 }
                 GatewayEvent::Error(err) => {
                     self.gateway_status = format!("Gateway error: {err}");
@@ -3130,6 +3163,12 @@ impl eframe::App for RustcordApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         self.frames = self.frames.wrapping_add(1);
+        // Returning from the background is a cheap signal that the counts the
+        // user is looking at may be stale.
+        let focused = ctx.input(|input| input.focused);
+        if focus_regained(focused, &mut self.window_focused) {
+            self.counts_refresh_immediate = true;
+        }
         // Background layer: the blurred wallpaper sits under every panel.
         self.paint_backdrop(&ctx);
 
@@ -3350,4 +3389,31 @@ fn start_gateway(token: &str) -> anyhow::Result<(tokio::runtime::Runtime, Gatewa
         .build()?;
     let gateway = GatewayClient::new(token, DEFAULT_INTENTS).start(&runtime);
     Ok((runtime, gateway))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forced_counts_refresh_bypasses_the_cadence() {
+        let now = std::time::Instant::now();
+        assert!(counts_refresh_due(true, Some(now), now));
+        assert!(!counts_refresh_due(false, Some(now), now));
+        assert!(counts_refresh_due(
+            false,
+            Some(now - GUILD_COUNTS_REFRESH),
+            now
+        ));
+    }
+
+    #[test]
+    fn focus_regain_fires_once_per_transition() {
+        let mut was_focused = true;
+        assert!(!focus_regained(true, &mut was_focused));
+        assert!(!focus_regained(false, &mut was_focused));
+        assert!(!focus_regained(false, &mut was_focused));
+        assert!(focus_regained(true, &mut was_focused));
+        assert!(!focus_regained(true, &mut was_focused));
+    }
 }
